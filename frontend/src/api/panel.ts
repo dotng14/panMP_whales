@@ -1,3 +1,4 @@
+import { API_BASE } from './base';
 import type { ArrayMeta, PanelProps } from './types';
 import type { SpectrogramViewerProps } from '../components/SpectrogramViewer/types';
 
@@ -45,7 +46,7 @@ function readArray(
  *   [uint8 magnitude][float32 energyRaw][float32 energySmoothed]
  */
 export async function fetchPanel(jobId: string): Promise<SpectrogramViewerProps> {
-  const res = await fetch(`/api/jobs/${jobId}/panel`);
+  const res = await fetch(`${API_BASE}/api/jobs/${jobId}/panel`);
   if (!res.ok) throw new Error(`Panel fetch failed: ${res.status}`);
   const buf = await res.arrayBuffer();
 

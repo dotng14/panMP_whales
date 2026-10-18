@@ -1,3 +1,4 @@
+import { API_BASE } from './base';
 import type { JobCreated } from './types';
 
 export interface LibraryRoot {
@@ -39,7 +40,7 @@ export interface BrowseParams {
 }
 
 export async function getLibraryRoots(): Promise<LibraryRoot[]> {
-  const res = await fetch('/api/library/roots');
+  const res = await fetch(`${API_BASE}/api/library/roots`);
   if (!res.ok) throw new Error(`Roots fetch failed: ${res.status}`);
   const data = await res.json();
   return data.roots as LibraryRoot[];
@@ -56,13 +57,13 @@ export async function browseLibrary(params: BrowseParams = {}): Promise<BrowseRe
   if (params.limit !== undefined) q.set('limit', String(params.limit));
   if (params.recursive) q.set('recursive', 'true');
 
-  const res = await fetch(`/api/library/browse?${q}`);
+  const res = await fetch(`${API_BASE}/api/library/browse?${q}`);
   if (!res.ok) throw new Error(`Browse failed: ${res.status}`);
   return res.json() as Promise<BrowseResponse>;
 }
 
 export async function createJobFromLibrary(fileId: string): Promise<JobCreated> {
-  const res = await fetch('/api/jobs/from-library', {
+  const res = await fetch(`${API_BASE}/api/jobs/from-library`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ fileId }),

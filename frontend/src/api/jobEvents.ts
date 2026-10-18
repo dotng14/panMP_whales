@@ -1,3 +1,4 @@
+import { API_BASE } from './base';
 import type { WsMessage, WsManifest, WsComplete, WsError } from './types';
 
 export interface JobEventHandlers {
@@ -12,7 +13,7 @@ export interface JobEventHandlers {
 
 export function connectJobEvents(jobId: string, handlers: JobEventHandlers): () => void {
   const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-  const ws = new WebSocket(`${protocol}//${window.location.host}/api/jobs/${jobId}/events`);
+  const ws = new WebSocket(`${protocol}//${window.location.host}${API_BASE}/api/jobs/${jobId}/events`);
 
   ws.addEventListener('message', (ev) => {
     if (typeof ev.data !== 'string') return; // panel data now arrives via HTTP, not WS

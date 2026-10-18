@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, useCallback, useId, useMemo } from 'react';
+import { API_BASE } from '../../api/base';
 import type { SpectrogramViewerProps } from './types';
 import { announcePlayback, subscribeToPlayback } from '../../utils/audioCoordinator';
 import { SPEC_TARGET_H, SpectrogramCanvas } from './SpectrogramCanvas';
@@ -84,7 +85,7 @@ export function SpectrogramViewer({
   // Create audio element + Web Audio gain node when jobId is available
   useEffect(() => {
     if (!jobId) return;
-    const audio = new Audio(`/api/jobs/${jobId}/audio`);
+    const audio = new Audio(`${API_BASE}/api/jobs/${jobId}/audio`);
     audio.preload = 'metadata';
     audio.crossOrigin = 'anonymous';
     audioRef.current = audio;
