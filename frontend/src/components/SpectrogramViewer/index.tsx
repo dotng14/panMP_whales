@@ -156,7 +156,7 @@ export function SpectrogramViewer({
       audio.play().then(() => {
         setPlaying(true);
         rafRef.current = requestAnimationFrame(syncLine);
-      });
+      }).catch(err => console.error('Audio playback failed:', err));
     } else {
       audio.pause();
       setPlaying(false);
