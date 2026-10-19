@@ -1,7 +1,10 @@
-import { memo, useEffect, useRef } from 'react';
+import { memo, useEffect, useRef, useState, type RefObject } from 'react';
 import { JET, JET_RGBA, magnitudeToIndex } from '../../utils/colormap';
 
 export const SPEC_TARGET_H = 400;
+
+/** Browsers reject canvases near ~16k–32k px; stay well under that (matches LaneCanvas). */
+const MAX_CANVAS_CSS_W = 8192;
 
 interface Props {
   magnitude: Float32Array | Uint8Array;
@@ -10,6 +13,8 @@ interface Props {
   timeCols: number;
   /** Song/theme/phrase/motif boundary markers, colored to match their lane row. */
   structureLines: { col: number; color: string }[];
+  /** Scroll container the lines overlay syncs to, so it only draws the visible slice. */
+  scrollRef: RefObject<HTMLDivElement | null>;
   brightness: number;
   normMax?: number;
   onColClick?: (col: number) => void;
@@ -27,6 +32,7 @@ export const SpectrogramCanvas = memo(function SpectrogramCanvas({
   freqBins,
   timeCols,
   structureLines,
+  scrollRef,
   brightness,
   normMax,
   onColClick,
@@ -35,6 +41,7 @@ export const SpectrogramCanvas = memo(function SpectrogramCanvas({
   displayHeight,
 }: Props) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const linesCanvasRef = useRef<HTMLCanvasElement>(null);
   const cssWidth = displayWidth ?? timeCols;
   const cssContainerHeight = containerHeight ?? SPEC_TARGET_H;
   const cssHeight = displayHeight ?? cssContainerHeight;
@@ -95,6 +102,61 @@ export const SpectrogramCanvas = memo(function SpectrogramCanvas({
     ctx.putImageData(imageData, 0, 0);
   }, [magnitude, magnitudeIsUint8, freqBins, timeCols, brightness, normMax]);
 
+  // Structure boundary lines on a separate overlay canvas, sized in CSS pixels
+  // (not native timeCols) and windowed to the visible scroll range — same
+  // technique as LaneCanvas below. A native-resolution canvas can't produce a
+  // crisp zoom-independent line (one data column alone can span 15+ CSS px
+  // once stretched), and drawing every line across the full (possibly
+  // million-pixel-wide) displayWidth is both slow and exceeds canvas limits.
+  const [scrollLeft, setScrollLeft] = useState(0);
+  const [viewWidth, setViewWidth] = useState(800);
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    const sync = () => {
+      setScrollLeft(el.scrollLeft);
+      setViewWidth(Math.max(1, el.clientWidth));
+    };
+    sync();
+    el.addEventListener('scroll', sync, { passive: true });
+    const ro = new ResizeObserver(sync);
+    ro.observe(el);
+    return () => {
+      el.removeEventListener('scroll', sync);
+      ro.disconnect();
+    };
+  }, [scrollRef, cssWidth]);
+
+  const overlayCssW = Math.max(1, Math.min(viewWidth, MAX_CANVAS_CSS_W));
+
+  useEffect(() => {
+    const canvas = linesCanvasRef.current;
+    if (!canvas || timeCols <= 0 || cssWidth <= 0) return;
+    const dpr = Math.min(window.devicePixelRatio || 1, 2);
+    canvas.width = Math.max(1, Math.round(overlayCssW * dpr));
+    canvas.height = Math.max(1, Math.round(cssHeight * dpr));
+    canvas.style.width = `${overlayCssW}px`;
+    canvas.style.height = `${cssHeight}px`;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.clearRect(0, 0, overlayCssW, cssHeight);
+
+    const col0 = (scrollLeft / cssWidth) * timeCols;
+    const col1 = ((scrollLeft + overlayCssW) / cssWidth) * timeCols;
+    const haloWidth = 3;
+
+    for (const line of structureLines) {
+      if (line.col < col0 - 1 || line.col > col1 + 1) continue;
+      const x = (line.col / timeCols) * cssWidth - scrollLeft;
+      const haloLeft = Math.min(Math.max(0, x - haloWidth / 2), Math.max(0, overlayCssW - haloWidth));
+      ctx.fillStyle = 'rgba(0, 0, 0, 0.45)';
+      ctx.fillRect(haloLeft, 0, haloWidth, cssHeight);
+      ctx.fillStyle = line.color;
+      ctx.fillRect(haloLeft + (haloWidth - 1) / 2, 0, 1, cssHeight);
+    }
+  }, [structureLines, timeCols, cssWidth, cssHeight, scrollLeft, overlayCssW]);
+
   function handleClick(e: React.MouseEvent<HTMLCanvasElement>) {
     if (!onColClick) return;
     const rect = e.currentTarget.getBoundingClientRect();
@@ -104,40 +166,38 @@ export const SpectrogramCanvas = memo(function SpectrogramCanvas({
   }
 
   return (
-    <div style={{ position: 'relative', width: cssWidth, height: cssContainerHeight, overflow: 'hidden' }}>
-      <canvas
-        ref={canvasRef}
+    <div style={{ position: 'relative', width: cssWidth, height: cssContainerHeight }}>
+      {/* Clipping scoped to just the main canvas (vertical freq-zoom) — an
+          overflow:hidden ancestor here would otherwise break the lines
+          overlay's position:sticky below, which needs an unclipped path up
+          to the real scrolling container. */}
+      <div style={{ position: 'absolute', inset: 0, overflow: 'hidden' }}>
+        <canvas
+          ref={canvasRef}
+          style={{
+            display: 'block',
+            position: 'absolute',
+            bottom: 0,
+            left: 0,
+            width: cssWidth,
+            height: cssHeight,
+            cursor: onColClick ? 'pointer' : 'default',
+          }}
+          onClick={handleClick}
+        />
+      </div>
+      <div
         style={{
-          display: 'block',
-          position: 'absolute',
-          bottom: 0,
+          position: 'sticky',
           left: 0,
-          width: cssWidth,
-          height: cssHeight,
-          cursor: onColClick ? 'pointer' : 'default',
+          width: overlayCssW,
+          height: cssContainerHeight,
+          overflow: 'hidden',
+          pointerEvents: 'none',
         }}
-        onClick={handleClick}
-      />
-      {structureLines.map((line, index) => {
-        const center = (line.col / timeCols) * cssWidth;
-        // Centering a 3px-wide line on `center` would let it straddle the
-        // container edge for the last chunk's trailing line (center === cssWidth)
-        // — half of it then falls outside this overflow:hidden box and gets
-        // clipped to an invisible sliver. Clamp so the whole line stays inside.
-        const haloWidth = 3;
-        const haloLeft = Math.min(
-          Math.max(0, center - haloWidth / 2),
-          Math.max(0, cssWidth - haloWidth),
-        );
-        const coreLeft = haloLeft + (haloWidth - 1) / 2;
-        return (
-          <div key={`${line.col}-${line.color}-${index}`} aria-hidden style={{ position: 'absolute', top: 0, bottom: 0, left: 0, zIndex: 1 }}>
-            {/* Dark halo behind the colored core so the line stays visible against every JET hue. */}
-            <div style={{ position: 'absolute', top: 0, bottom: 0, left: `${haloLeft}px`, width: `${haloWidth}px`, background: 'rgba(0, 0, 0, 0.45)' }} />
-            <div style={{ position: 'absolute', top: 0, bottom: 0, left: `${coreLeft}px`, width: '1px', background: line.color }} />
-          </div>
-        );
-      })}
+      >
+        <canvas ref={linesCanvasRef} aria-hidden style={{ display: 'block' }} />
+      </div>
     </div>
   );
 });

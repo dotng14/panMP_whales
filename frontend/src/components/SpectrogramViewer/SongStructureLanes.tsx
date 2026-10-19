@@ -238,6 +238,9 @@ export function SongStructureLaneLabels({
 
 interface Props {
   structure: SongStructure;
+  /** Pre-built, merged segments per lane — shared with the spectrogram's
+   *  boundary-line overlay so the (expensive, full-file) build only runs once. */
+  lanes: Record<LaneName, LaneSeg[]>;
   timeCols: number;
   audioDurationSec: number;
   displayWidth: number;
@@ -250,6 +253,7 @@ interface Props {
 
 export function SongStructureLanes({
   structure,
+  lanes,
   timeCols,
   audioDurationSec,
   displayWidth,
@@ -257,16 +261,6 @@ export function SongStructureLanes({
   activeRange,
   onSelectRange,
 }: Props) {
-  const lanes = useMemo(() => {
-    const raw = buildLanes(structure.units, structure.songs, audioDurationSec, timeCols);
-    return {
-      motif: mergeAdjacent(raw.motif),
-      phrase: mergeAdjacent(raw.phrase),
-      theme: mergeAdjacent(raw.theme),
-      song: mergeAdjacent(raw.song),
-    };
-  }, [structure.units, structure.songs, audioDurationSec, timeCols]);
-
   const songBoundaries = useMemo(
     () =>
       structure.songs

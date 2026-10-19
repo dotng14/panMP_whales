@@ -246,20 +246,33 @@ export function SpectrogramViewer({
 
   const structureHighlight = laneHighlight ?? activeSongRange;
 
+  // Built once per structure/zoom change (not per toggle) and shared with the
+  // lane rows below — this full-file scan is the expensive part, so toggling
+  // a checkbox should only filter already-built segments, not rebuild them.
+  const mergedLanes = useMemo(() => {
+    if (!songStructure || !audioDurationSec) return null;
+    const raw = buildLanes(songStructure.units, songStructure.songs, audioDurationSec, timeCols);
+    return {
+      motif: mergeAdjacent(raw.motif),
+      phrase: mergeAdjacent(raw.phrase),
+      theme: mergeAdjacent(raw.theme),
+      song: mergeAdjacent(raw.song),
+    };
+  }, [songStructure, audioDurationSec, timeCols]);
+
   // Boundary markers drawn directly on the spectrogram, colored to match each
   // category's lane row; gated per-category by the toggle switches in the gutter.
   const structureLines = useMemo(() => {
-    if (!songStructure || !audioDurationSec) return [];
-    const raw = buildLanes(songStructure.units, songStructure.songs, audioDurationSec, timeCols);
+    if (!mergedLanes) return [];
     const lines: { col: number; color: string }[] = [];
     for (const name of LANE_ORDER) {
       if (!lineVisibility[name]) continue;
-      for (const seg of mergeAdjacent(raw[name])) {
+      for (const seg of mergedLanes[name]) {
         lines.push({ col: seg.startCol, color: seg.color });
       }
     }
     return lines;
-  }, [songStructure, audioDurationSec, timeCols, lineVisibility]);
+  }, [mergedLanes, lineVisibility]);
 
   const jumpToColRange = useCallback((range: { startCol: number; endCol: number }) => {
     const el = scrollRef.current;
@@ -429,6 +442,7 @@ export function SpectrogramViewer({
                   freqBins={freqBins}
                   timeCols={timeCols}
                   structureLines={structureLines}
+                  scrollRef={scrollRef}
                   brightness={brightness}
                   normMax={normMax}
                   onColClick={jobId && audioDurationSec ? handleColClick : undefined}
@@ -451,9 +465,10 @@ export function SpectrogramViewer({
                     willChange: 'transform', // hint browser to promote to compositor layer
                   }}
                 />
-                {songStructure && audioDurationSec != null && audioDurationSec > 0 && (
+                {songStructure && mergedLanes && audioDurationSec != null && audioDurationSec > 0 && (
                   <SongStructureLanes
                     structure={songStructure}
+                    lanes={mergedLanes}
                     timeCols={timeCols}
                     audioDurationSec={audioDurationSec}
                     displayWidth={displayWidth}
