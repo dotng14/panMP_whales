@@ -5,8 +5,6 @@ export interface SpectrogramViewerProps {
   magnitudeIsUint8?: boolean;
   freqBins: number;
   timeCols: number;
-  /** Column indices for red vertical dividers */
-  cutoffs: number[];
   /** Column-sum energy; omit to hide the energy plot */
   energyRaw?: Float32Array;
   /** Gaussian-smoothed (σ=3) energy; omit to hide smoothed line */

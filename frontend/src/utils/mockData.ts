@@ -78,7 +78,6 @@ export function generateMockData(seed = 0): SpectrogramViewerProps {
     magnitude,
     freqBins: FREQ_BINS,
     timeCols: TIME_COLS,
-    cutoffs,
     energyRaw,
     energySmoothed,
     title: seed === 0

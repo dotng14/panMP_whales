@@ -8,7 +8,8 @@ interface Props {
   magnitudeIsUint8: boolean;
   freqBins: number;
   timeCols: number;
-  cutoffs: number[];
+  /** Song/theme/phrase/motif boundary markers, colored to match their lane row. */
+  structureLines: { col: number; color: string }[];
   brightness: number;
   normMax?: number;
   onColClick?: (col: number) => void;
@@ -25,7 +26,7 @@ export const SpectrogramCanvas = memo(function SpectrogramCanvas({
   magnitudeIsUint8,
   freqBins,
   timeCols,
-  cutoffs,
+  structureLines,
   brightness,
   normMax,
   onColClick,
@@ -117,8 +118,8 @@ export const SpectrogramCanvas = memo(function SpectrogramCanvas({
         }}
         onClick={handleClick}
       />
-      {cutoffs.map((cut, index) => {
-        const center = (cut / timeCols) * cssWidth;
+      {structureLines.map((line, index) => {
+        const center = (line.col / timeCols) * cssWidth;
         // Centering a 3px-wide line on `center` would let it straddle the
         // container edge for the last chunk's trailing line (center === cssWidth)
         // — half of it then falls outside this overflow:hidden box and gets
@@ -130,10 +131,10 @@ export const SpectrogramCanvas = memo(function SpectrogramCanvas({
         );
         const coreLeft = haloLeft + (haloWidth - 1) / 2;
         return (
-          <div key={`${cut}-${index}`} aria-hidden style={{ position: 'absolute', top: 0, bottom: 0, left: 0, zIndex: 1 }}>
-            {/* Dark halo behind a red core so the line stays visible against every JET hue. */}
-            <div style={{ position: 'absolute', top: 0, bottom: 0, left: `${haloLeft}px`, width: `${haloWidth}px`, background: 'rgba(60, 0, 0, 0.45)' }} />
-            <div style={{ position: 'absolute', top: 0, bottom: 0, left: `${coreLeft}px`, width: '1px', background: '#ff2020' }} />
+          <div key={`${line.col}-${line.color}-${index}`} aria-hidden style={{ position: 'absolute', top: 0, bottom: 0, left: 0, zIndex: 1 }}>
+            {/* Dark halo behind the colored core so the line stays visible against every JET hue. */}
+            <div style={{ position: 'absolute', top: 0, bottom: 0, left: `${haloLeft}px`, width: `${haloWidth}px`, background: 'rgba(0, 0, 0, 0.45)' }} />
+            <div style={{ position: 'absolute', top: 0, bottom: 0, left: `${coreLeft}px`, width: '1px', background: line.color }} />
           </div>
         );
       })}

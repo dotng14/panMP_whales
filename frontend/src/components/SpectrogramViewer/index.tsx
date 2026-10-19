@@ -11,14 +11,23 @@ import { XAxis, XAXIS_H } from './XAxis';
 import { ScaleControls } from './ScaleControls';
 import { HorizontalScrollbar } from './HorizontalScrollbar';
 import { useSpectrogramScale, type SpectrogramScale } from './useSpectrogramScale';
-import { SongStructureLaneLabels, SongStructureLanes, secToCol } from './SongStructureLanes';
+import {
+  buildLanes,
+  LANE_ORDER,
+  mergeAdjacent,
+  SongStructureLaneLabels,
+  SongStructureLanes,
+  secToCol,
+  type LaneName,
+} from './SongStructureLanes';
+
+const ALL_LINES_VISIBLE: Record<LaneName, boolean> = { motif: true, phrase: true, theme: true, song: true };
 
 export function SpectrogramViewer({
   magnitude,
   magnitudeIsUint8 = false,
   freqBins,
   timeCols,
-  cutoffs,
   title,
   brightness = 1.0,
   normMax,
@@ -43,6 +52,11 @@ export function SpectrogramViewer({
   const [songNavActive, setSongNavActive] = useState(false);
   /** Clicked lane segment (or cleared); drawn on the lanes themselves. */
   const [laneHighlight, setLaneHighlight] = useState<{ startCol: number; endCol: number } | null>(null);
+  /** Per-category show/hide for the boundary lines drawn on the spectrogram itself. */
+  const [lineVisibility, setLineVisibility] = useState<Record<LaneName, boolean>>(ALL_LINES_VISIBLE);
+  const toggleLineVisibility = useCallback((name: LaneName) => {
+    setLineVisibility(v => ({ ...v, [name]: !v[name] }));
+  }, []);
 
   // Fall back to private scale state when no shared one is supplied (e.g. mock mode).
   const ownScale = useSpectrogramScale({ audioDurationSec, freqLo, freqHi });
@@ -232,6 +246,21 @@ export function SpectrogramViewer({
 
   const structureHighlight = laneHighlight ?? activeSongRange;
 
+  // Boundary markers drawn directly on the spectrogram, colored to match each
+  // category's lane row; gated per-category by the toggle switches in the gutter.
+  const structureLines = useMemo(() => {
+    if (!songStructure || !audioDurationSec) return [];
+    const raw = buildLanes(songStructure.units, songStructure.songs, audioDurationSec, timeCols);
+    const lines: { col: number; color: string }[] = [];
+    for (const name of LANE_ORDER) {
+      if (!lineVisibility[name]) continue;
+      for (const seg of mergeAdjacent(raw[name])) {
+        lines.push({ col: seg.startCol, color: seg.color });
+      }
+    }
+    return lines;
+  }, [songStructure, audioDurationSec, timeCols, lineVisibility]);
+
   const jumpToColRange = useCallback((range: { startCol: number; endCol: number }) => {
     const el = scrollRef.current;
     if (!el || !audioDurationSec) return;
@@ -385,7 +414,7 @@ export function SpectrogramViewer({
             <div style={{ display: 'flex', flexDirection: 'column', flexShrink: 0 }}>
               <YAxis freqBins={freqBins} height={spectrogramH} freqLo={freqLo} freqHi={hasFreqRange ? maxFreqHz : freqHi} />
               {songStructure && audioDurationSec != null && audioDurationSec > 0 && (
-                <SongStructureLaneLabels />
+                <SongStructureLaneLabels visibility={lineVisibility} onToggle={toggleLineVisibility} />
               )}
               {/* Spacer matching XAxis + label height */}
               <div style={{ height: XAXIS_H + 20 }} />
@@ -399,7 +428,7 @@ export function SpectrogramViewer({
                   magnitudeIsUint8={magnitudeIsUint8}
                   freqBins={freqBins}
                   timeCols={timeCols}
-                  cutoffs={cutoffs}
+                  structureLines={structureLines}
                   brightness={brightness}
                   normMax={normMax}
                   onColClick={jobId && audioDurationSec ? handleColClick : undefined}

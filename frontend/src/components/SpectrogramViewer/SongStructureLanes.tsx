@@ -7,18 +7,18 @@ import {
   type MouseEvent as ReactMouseEvent,
   type RefObject,
 } from 'react';
-import type { SongStructure, SongStructureUnit } from '../../api/songStructure';
-import { motifColor, phraseColor, themeColor } from './songStructureColors';
+import type { SongStructure, SongStructureSong, SongStructureUnit } from '../../api/songStructure';
+import { motifColor, phraseColor, songColor, themeColor } from './songStructureColors';
 
 export const LANE_H = 18;
-export const LANE_ORDER = ['motif', 'phrase', 'theme'] as const;
+export const LANE_ORDER = ['motif', 'phrase', 'theme', 'song'] as const;
 export type LaneName = (typeof LANE_ORDER)[number];
 
 const LABEL_MIN_PX = 28;
 /** Browsers reject canvases near ~16k–32k px; stay well under that. */
 const MAX_CANVAS_CSS_W = 8192;
 
-interface LaneSeg {
+export interface LaneSeg {
   startCol: number;
   endCol: number;
   color: string;
@@ -31,14 +31,16 @@ export function secToCol(sec: number, audioDurationSec: number, timeCols: number
   return Math.max(0, Math.min(timeCols, Math.round((sec / audioDurationSec) * timeCols)));
 }
 
-function buildLanes(
+export function buildLanes(
   units: SongStructureUnit[],
+  songs: SongStructureSong[],
   audioDurationSec: number,
   timeCols: number,
 ): Record<LaneName, LaneSeg[]> {
   const motif: LaneSeg[] = [];
   const theme: LaneSeg[] = [];
   const phrase: LaneSeg[] = [];
+  const song: LaneSeg[] = [];
 
   for (const u of units) {
     const startCol = secToCol(u.startSec, audioDurationSec, timeCols);
@@ -67,11 +69,25 @@ function buildLanes(
       title,
     });
   }
-  return { motif, theme, phrase };
+
+  for (const s of songs) {
+    const startCol = secToCol(s.startSec, audioDurationSec, timeCols);
+    const endCol = secToCol(s.endSec, audioDurationSec, timeCols);
+    if (endCol <= startCol) continue;
+    song.push({
+      startCol,
+      endCol,
+      color: songColor(s.song),
+      label: String(s.song),
+      title: `song ${s.song}`,
+    });
+  }
+
+  return { motif, theme, phrase, song };
 }
 
 /** Merge adjacent same-label segments so we draw fewer rects at full zoom. */
-function mergeAdjacent(segs: LaneSeg[]): LaneSeg[] {
+export function mergeAdjacent(segs: LaneSeg[]): LaneSeg[] {
   if (segs.length === 0) return segs;
   const out: LaneSeg[] = [{ ...segs[0] }];
   for (let i = 1; i < segs.length; i++) {
@@ -173,26 +189,47 @@ function LaneCanvas({
   );
 }
 
-/** Labels for the Y-axis column — outside the scroll, left of the colored bars. */
-export function SongStructureLaneLabels({ yAxisWidth }: { yAxisWidth?: number }) {
-  const style: CSSProperties = {
+/** Labels for the Y-axis column — outside the scroll, left of the colored bars.
+ *  Each row carries a checkbox toggling whether that category's boundary
+ *  lines are drawn on the spectrogram (the lane row itself always stays visible). */
+export function SongStructureLaneLabels({
+  yAxisWidth,
+  visibility,
+  onToggle,
+}: {
+  yAxisWidth?: number;
+  visibility: Record<LaneName, boolean>;
+  onToggle: (name: LaneName) => void;
+}) {
+  const rowStyle: CSSProperties = {
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 4,
+    height: LANE_H,
+    width: yAxisWidth,
+    boxSizing: 'border-box',
+    paddingRight: 6,
+  };
+  const textStyle: CSSProperties = {
     fontSize: 10,
     color: '#475569',
     fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace',
     fontWeight: 600,
-    height: LANE_H,
-    lineHeight: `${LANE_H}px`,
-    textAlign: 'right',
-    paddingRight: 6,
-    width: yAxisWidth,
-    boxSizing: 'border-box',
   };
   return (
     <div style={{ marginTop: 4 }}>
       <div style={{ height: 14 }} />
       {LANE_ORDER.map(name => (
-        <div key={name} style={style}>
-          {name}
+        <div key={name} style={rowStyle}>
+          <input
+            type="checkbox"
+            checked={visibility[name]}
+            onChange={() => onToggle(name)}
+            title={`Show/hide ${name} lines on the spectrogram`}
+            style={{ width: 11, height: 11, margin: 0, cursor: 'pointer', accentColor: '#2563eb', flexShrink: 0 }}
+          />
+          <span style={textStyle}>{name}</span>
         </div>
       ))}
     </div>
@@ -221,13 +258,14 @@ export function SongStructureLanes({
   onSelectRange,
 }: Props) {
   const lanes = useMemo(() => {
-    const raw = buildLanes(structure.units, audioDurationSec, timeCols);
+    const raw = buildLanes(structure.units, structure.songs, audioDurationSec, timeCols);
     return {
       motif: mergeAdjacent(raw.motif),
       phrase: mergeAdjacent(raw.phrase),
       theme: mergeAdjacent(raw.theme),
+      song: mergeAdjacent(raw.song),
     };
-  }, [structure.units, audioDurationSec, timeCols]);
+  }, [structure.units, structure.songs, audioDurationSec, timeCols]);
 
   const songBoundaries = useMemo(
     () =>

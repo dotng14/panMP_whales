@@ -21,7 +21,6 @@ export interface PanelProps {
   panelVersion?: number;
   freqBins: number;
   timeCols: number;
-  cutoffs: number[];
   title: string;
   colormap: 'jet' | 'viridis';
   brightness: number;

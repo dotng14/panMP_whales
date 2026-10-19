@@ -16,6 +16,11 @@ const PHRASE_PALETTE = [
   '#fbbf24', '#2dd4bf', '#e879f9',
 ];
 
+const SONG_PALETTE = [
+  '#1d4ed8', '#b45309', '#047857', '#7c3aed', '#be123c',
+  '#0369a1', '#a16207', '#15803d',
+];
+
 function hashLabel(label: string): number {
   let h = 0;
   for (let i = 0; i < label.length; i++) {
@@ -34,4 +39,8 @@ export function themeColor(theme: number): string {
 
 export function phraseColor(phraseId: number): string {
   return PHRASE_PALETTE[Math.abs(phraseId) % PHRASE_PALETTE.length];
+}
+
+export function songColor(song: number): string {
+  return SONG_PALETTE[Math.abs(song) % SONG_PALETTE.length];
 }

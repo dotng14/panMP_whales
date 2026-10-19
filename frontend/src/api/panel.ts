@@ -77,7 +77,6 @@ export async function fetchPanel(jobId: string): Promise<SpectrogramViewerProps>
     energySmoothed: arrays['energySmoothed'] as Float32Array,
     freqBins: header.freqBins,
     timeCols: header.timeCols,
-    cutoffs: header.cutoffs,
     title: header.title,
     colormap: header.colormap,
     brightness: header.brightness,
