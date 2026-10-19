@@ -43,9 +43,10 @@ def _sidecar_freq_stale(output_dir: Path) -> bool:
     version that capped end_freq below the recording's real range.
     """
     try:
-        meta = json.loads(
-            next((output_dir / "spectrogram_npy").glob("spwhiten_*.json")).read_text()
-        )
+        # sorted(): glob() order isn't stable across calls, and an arbitrary
+        # pick here can flip this check non-deterministically between calls.
+        sc = sorted((output_dir / "spectrogram_npy").glob("spwhiten_*.json"))[0]
+        meta = json.loads(sc.read_text())
         end_freq = float(meta.get("end_freq", 0.0))
         nyquist = float(meta.get("sample_freq", 0.0)) / 2
         expected = min(5000.0, nyquist) if nyquist > 0 else 5000.0
@@ -56,7 +57,8 @@ def _sidecar_freq_stale(output_dir: Path) -> bool:
 
 def _sidecar_npy_legacy(output_dir: Path) -> bool:
     try:
-        sc = next((output_dir / "spectrogram_npy").glob("spwhiten_*.json"))
+        # sorted(): see _sidecar_freq_stale — same non-determinism risk.
+        sc = sorted((output_dir / "spectrogram_npy").glob("spwhiten_*.json"))[0]
         return json.loads(sc.read_text()).get("npy_is_clipped", True)
     except Exception:
         return False
