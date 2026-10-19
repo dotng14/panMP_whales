@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import uuid
+from pathlib import Path
 
 from fastapi import APIRouter, HTTPException, UploadFile, WebSocket, WebSocketDisconnect
 from fastapi.responses import FileResponse
@@ -125,6 +126,22 @@ async def get_job_audio(job_id: str) -> FileResponse:
     if not wav_path.exists():
         raise HTTPException(status_code=404, detail="Audio file not found")
     return FileResponse(wav_path, media_type="audio/wav")
+
+
+@router.get("/api/jobs/{job_id}/song-structure")
+async def get_song_structure(job_id: str) -> dict:
+    """Motif / song / theme / phrase units for the job's WAV stem, if a CSV exists."""
+    from app.services.song_structure import load_song_structure  # noqa: PLC0415
+
+    job = _require_job(job_id)
+    stem = Path(job.filename).stem
+    try:
+        payload = load_song_structure(stem)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    if payload is None:
+        raise HTTPException(status_code=404, detail="No song-structure CSV for this WAV")
+    return payload
 
 
 @router.websocket("/api/jobs/{job_id}/events")

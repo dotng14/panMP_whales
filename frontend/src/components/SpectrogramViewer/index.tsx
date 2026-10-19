@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, useCallback, useId, useMemo } from 'react'
 import { API_BASE } from '../../api/base';
 import type { SpectrogramViewerProps } from './types';
 import { announcePlayback, subscribeToPlayback } from '../../utils/audioCoordinator';
+import { fetchSongStructure, type SongStructure } from '../../api/songStructure';
 import { SPEC_TARGET_H, SpectrogramCanvas } from './SpectrogramCanvas';
 import { ColorScaleBar } from './ColorScaleBar';
 import { PlayButton } from './PlayButton';
@@ -10,6 +11,7 @@ import { XAxis, XAXIS_H } from './XAxis';
 import { ScaleControls } from './ScaleControls';
 import { HorizontalScrollbar } from './HorizontalScrollbar';
 import { useSpectrogramScale, type SpectrogramScale } from './useSpectrogramScale';
+import { SongStructureLaneLabels, SongStructureLanes, secToCol } from './SongStructureLanes';
 
 export function SpectrogramViewer({
   magnitude,
@@ -36,11 +38,44 @@ export function SpectrogramViewer({
   const [volume, setVolume] = useState(8); // default 8x gain
   const [followPlayhead, setFollowPlayhead] = useState(true);
   const followPlayheadRef = useRef(true);
+  const [songStructure, setSongStructure] = useState<SongStructure | null>(null);
+  const [songIndex, setSongIndex] = useState(0);
+  const [songNavActive, setSongNavActive] = useState(false);
+  /** Clicked lane segment (or cleared); drawn on the lanes themselves. */
+  const [laneHighlight, setLaneHighlight] = useState<{ startCol: number; endCol: number } | null>(null);
 
   // Fall back to private scale state when no shared one is supplied (e.g. mock mode).
   const ownScale = useSpectrogramScale({ audioDurationSec, freqLo, freqHi });
   const scale = sharedScale ?? ownScale;
   const { pxPerSec, maxFreqHz, hasFreqRange, freqCropFraction } = scale;
+
+  // Fetch motif/song/theme/phrase boundaries for this job — independent of the
+  // GPL pipeline, so this can resolve even if no CSV exists for the file (404).
+  useEffect(() => {
+    if (!jobId) {
+      setSongStructure(null);
+      return;
+    }
+    let cancelled = false;
+    fetchSongStructure(jobId)
+      .then(data => {
+        if (!cancelled) {
+          setSongStructure(data);
+          setSongIndex(0);
+          setSongNavActive(false);
+          setLaneHighlight(null);
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setSongStructure(null);
+          setLaneHighlight(null);
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [jobId]);
 
   const spectrogramH = SPEC_TARGET_H;
 
@@ -186,6 +221,56 @@ export function SpectrogramViewer({
     }
   }, [audioDurationSec, timeCols, displayWidth, syncLine]);
 
+  const activeSong = songStructure?.songs[songIndex] ?? null;
+  const activeSongRange = useMemo(() => {
+    if (!songNavActive || !activeSong || !audioDurationSec) return null;
+    return {
+      startCol: secToCol(activeSong.startSec, audioDurationSec, timeCols),
+      endCol: secToCol(activeSong.endSec, audioDurationSec, timeCols),
+    };
+  }, [songNavActive, activeSong, audioDurationSec, timeCols]);
+
+  const structureHighlight = laneHighlight ?? activeSongRange;
+
+  const jumpToColRange = useCallback((range: { startCol: number; endCol: number }) => {
+    const el = scrollRef.current;
+    if (!el || !audioDurationSec) return;
+    const centerCol = (range.startCol + range.endCol) / 2;
+    el.scrollTo({
+      left: (centerCol / timeCols) * displayWidth - el.clientWidth / 2,
+      behavior: 'smooth',
+    });
+    const startSec = (range.startCol / timeCols) * audioDurationSec;
+    const audio = audioRef.current;
+    if (audio) {
+      audio.currentTime = startSec;
+      const line = lineRef.current;
+      if (line) {
+        line.style.transform = `translateX(${(startSec / audioDurationSec) * displayWidth}px)`;
+      }
+    }
+  }, [audioDurationSec, timeCols, displayWidth]);
+
+  const jumpToSong = useCallback((index: number) => {
+    if (!songStructure || !audioDurationSec) return;
+    const song = songStructure.songs[index];
+    if (!song) return;
+    setSongIndex(index);
+    setSongNavActive(true);
+    setLaneHighlight(null);
+    const range = {
+      startCol: secToCol(song.startSec, audioDurationSec, timeCols),
+      endCol: secToCol(song.endSec, audioDurationSec, timeCols),
+    };
+    jumpToColRange(range);
+  }, [songStructure, audioDurationSec, timeCols, jumpToColRange]);
+
+  const onLaneSelect = useCallback((range: { startCol: number; endCol: number } | null) => {
+    setLaneHighlight(range);
+    setSongNavActive(false);
+    if (range) jumpToColRange(range);
+  }, [jumpToColRange]);
+
   // Green line covers the spectrogram only (not the x-axis below)
   const totalH = spectrogramH;
 
@@ -243,6 +328,50 @@ export function SpectrogramViewer({
           )}
 
           <ScaleControls scale={scale} />
+
+          {songStructure && songStructure.songs.length > 0 && (
+            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4, marginTop: 8 }}>
+              <div style={{ display: 'flex', gap: 4 }}>
+                <button
+                  type="button"
+                  disabled={songIndex <= 0}
+                  onClick={() => jumpToSong(songIndex - 1)}
+                  style={{
+                    fontSize: 11,
+                    padding: '3px 8px',
+                    borderRadius: 4,
+                    border: '1px solid #d1d5db',
+                    background: songIndex <= 0 ? '#f3f4f6' : '#fff',
+                    color: '#374151',
+                    cursor: songIndex <= 0 ? 'default' : 'pointer',
+                  }}
+                >
+                  ← Song
+                </button>
+                <button
+                  type="button"
+                  disabled={songIndex >= songStructure.songs.length - 1}
+                  onClick={() => jumpToSong(songIndex + 1)}
+                  style={{
+                    fontSize: 11,
+                    padding: '3px 8px',
+                    borderRadius: 4,
+                    border: '1px solid #d1d5db',
+                    background: songIndex >= songStructure.songs.length - 1 ? '#f3f4f6' : '#fff',
+                    color: '#374151',
+                    cursor: songIndex >= songStructure.songs.length - 1 ? 'default' : 'pointer',
+                  }}
+                >
+                  Song →
+                </button>
+              </div>
+              <span style={{ fontSize: 11, color: '#4b5563', whiteSpace: 'nowrap' }}>
+                Song {songStructure.songs[songIndex]?.song ?? songIndex + 1}
+                {' / '}
+                {songStructure.songs.length}
+              </span>
+            </div>
+          )}
         </div>
 
         {/* Center: title + spectrogram — takes all remaining space */}
@@ -255,6 +384,9 @@ export function SpectrogramViewer({
             {/* Y-axis column */}
             <div style={{ display: 'flex', flexDirection: 'column', flexShrink: 0 }}>
               <YAxis freqBins={freqBins} height={spectrogramH} freqLo={freqLo} freqHi={hasFreqRange ? maxFreqHz : freqHi} />
+              {songStructure && audioDurationSec != null && audioDurationSec > 0 && (
+                <SongStructureLaneLabels />
+              )}
               {/* Spacer matching XAxis + label height */}
               <div style={{ height: XAXIS_H + 20 }} />
             </div>
@@ -290,6 +422,17 @@ export function SpectrogramViewer({
                     willChange: 'transform', // hint browser to promote to compositor layer
                   }}
                 />
+                {songStructure && audioDurationSec != null && audioDurationSec > 0 && (
+                  <SongStructureLanes
+                    structure={songStructure}
+                    timeCols={timeCols}
+                    audioDurationSec={audioDurationSec}
+                    displayWidth={displayWidth}
+                    scrollRef={scrollRef}
+                    activeRange={structureHighlight}
+                    onSelectRange={onLaneSelect}
+                  />
+                )}
               </div>
               <HorizontalScrollbar scrollRef={scrollRef} contentWidth={displayWidth} />
               <XAxis timeCols={timeCols} audioDurationSec={audioDurationSec} displayWidth={displayWidth} scrollRef={scrollRef} />
