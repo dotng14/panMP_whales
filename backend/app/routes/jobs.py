@@ -125,7 +125,12 @@ async def get_job_audio(job_id: str) -> FileResponse:
     wav_path = job.job_dir / "input.wav"
     if not wav_path.exists():
         raise HTTPException(status_code=404, detail="Audio file not found")
-    return FileResponse(wav_path, media_type="audio/wav")
+    # Content-Encoding: identity makes GZipMiddleware skip compression.
+    # GZip on a 206 Range response gzips only the requested byte slice,
+    # not the whole file, so the bytes no longer match what Content-Range
+    # claims - this silently breaks audio seeking/streaming for any file
+    # large enough that the <audio> element issues Range requests.
+    return FileResponse(wav_path, media_type="audio/wav", headers={"Content-Encoding": "identity"})
 
 
 @router.get("/api/jobs/{job_id}/song-structure")
