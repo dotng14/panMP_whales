@@ -16,7 +16,7 @@ export function ScaleControls({ scale }: { scale: SpectrogramScale }) {
           value={scale.pxPerSec}
           min={MIN_PX_PER_SEC}
           max={MAX_PX_PER_SEC}
-          step={1}
+          step={0.01}
           onChange={scale.setPxPerSec}
         />
       )}

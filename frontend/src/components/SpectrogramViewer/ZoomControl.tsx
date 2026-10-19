@@ -9,13 +9,26 @@ interface Props {
   onChange: (value: number) => void;
 }
 
+function formatZoom(value: number, step: number): string {
+  if (step >= 1) return String(Math.round(value));
+  // Enough decimals to express the step (e.g. 0.01 → 2 places).
+  const decimals = Math.max(0, Math.ceil(-Math.log10(step)));
+  return value.toFixed(decimals);
+}
+
+function displayKey(value: number, step: number): string {
+  return formatZoom(value, step);
+}
+
 export function ZoomControl({ label, value, min, max, step, onChange }: Props) {
-  const [text, setText] = useState(String(Math.round(value)));
+  const [text, setText] = useState(formatZoom(value, step));
 
   // Keep the text field in sync when value changes from outside (e.g. slider drag, zoom reset).
-  // Compare rounded-to-rounded so this settles in one render instead of looping forever.
-  if (Math.round(Number(text)) !== Math.round(value) && document.activeElement?.getAttribute('data-zoom-label') !== label) {
-    setText(String(Math.round(value)));
+  if (
+    displayKey(Number(text), step) !== displayKey(value, step) &&
+    document.activeElement?.getAttribute('data-zoom-label') !== label
+  ) {
+    setText(formatZoom(value, step));
   }
 
   function commitText() {
@@ -23,9 +36,9 @@ export function ZoomControl({ label, value, min, max, step, onChange }: Props) {
     if (Number.isFinite(n)) {
       const clamped = Math.min(max, Math.max(min, n));
       onChange(clamped);
-      setText(String(Math.round(clamped)));
+      setText(formatZoom(clamped, step));
     } else {
-      setText(String(Math.round(value)));
+      setText(formatZoom(value, step));
     }
   }
 

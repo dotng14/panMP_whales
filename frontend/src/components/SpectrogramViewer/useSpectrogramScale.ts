@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
 import type { SpectrogramViewerProps } from './types';
 
-export const MIN_PX_PER_SEC = 5;
+export const MIN_PX_PER_SEC = 0.01;
 export const MAX_PX_PER_SEC = 500;
 export const MIN_FREQ_ZOOM_HZ = 100;
 
