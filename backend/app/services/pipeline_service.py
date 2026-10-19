@@ -4,7 +4,7 @@ import asyncio
 from pathlib import Path
 
 from app.services.gpl_cache import finalize_gpl_cache
-from app.services.job_store import JobState
+from app.services.job_store import JobState, clear_in_flight_library_job
 from app.services.manifest_builder import build_manifest_from_outputs
 from app.ws.hub import broadcast_json
 
@@ -26,6 +26,8 @@ def _run_job_sync(job: JobState, loop: asyncio.AbstractEventLoop) -> None:
     except Exception as exc:
         job.status = "error"
         job.error = str(exc)
+        if job.library_wav_path is not None:
+            clear_in_flight_library_job(job.library_wav_path)
         asyncio.run_coroutine_threadsafe(
             broadcast_json(job.ws_clients, {"type": "error", "message": str(exc)}), loop
         ).result()
@@ -56,6 +58,8 @@ def _run_job_sync(job: JobState, loop: asyncio.AbstractEventLoop) -> None:
             ).result()
 
     job.status = "complete"
+    if job.library_wav_path is not None:
+        clear_in_flight_library_job(job.library_wav_path)
     asyncio.run_coroutine_threadsafe(
         broadcast_json(job.ws_clients, {"type": "complete", "jobId": job.job_id}), loop
     ).result()

@@ -9,7 +9,13 @@ from pydantic import BaseModel
 
 from app.config import MAX_UPLOAD_MB, TMP_DIR
 from app.services.gpl_cache import cache_dir_for, is_gpl_cached
-from app.services.job_store import JobState, create_job, get_job
+from app.services.job_store import (
+    JobState,
+    create_job,
+    get_in_flight_library_job,
+    get_job,
+    set_in_flight_library_job,
+)
 from app.services.library_service import resolve_file_id
 from app.services.pipeline_service import start_job, start_job_fast
 
@@ -53,6 +59,13 @@ async def create_job_endpoint(file: UploadFile) -> dict:
 async def create_job_from_library(body: LibraryJobRequest) -> dict:
     wav_path = resolve_file_id(body.fileId)  # raises 400/403/404 on bad input
 
+    # Attach to an already-running job for this file instead of starting a
+    # second concurrent pipeline run that would race the first over the same
+    # cache output dir.
+    existing = get_in_flight_library_job(wav_path)
+    if existing is not None:
+        return {"jobId": existing.job_id, "eventsUrl": f"/api/jobs/{existing.job_id}/events"}
+
     job_id = str(uuid.uuid4())
     job_dir = TMP_DIR / job_id
     job_dir.mkdir(parents=True, exist_ok=True)
@@ -78,6 +91,7 @@ async def create_job_from_library(body: LibraryJobRequest) -> dict:
         cache_output.mkdir(parents=True, exist_ok=True)
         (job_dir / "output").symlink_to(cache_output, target_is_directory=True)
         job.library_wav_path = wav_path
+        set_in_flight_library_job(wav_path, job_id)
         await start_job(job)
 
     return {"jobId": job_id, "eventsUrl": f"/api/jobs/{job_id}/events"}
