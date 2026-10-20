@@ -1,0 +1,464 @@
+[
+  {
+    "template_id": 5,
+    "window_id": "spwhiten_SOCAL_H_76_230427_003345.x_w000001_s000000001_e015000000",
+    "t_start": 55,
+    "amplitude": 1.2721200146582061,
+    "energy": 1.6182893316939946
+  },
+  {
+    "template_id": 5,
+    "window_id": "spwhiten_SOCAL_H_76_230427_003345.x_w000001_s000000001_e015000000",
+    "t_start": 149,
+    "amplitude": 1.3832799352431238,
+    "energy": 1.9134633792462206
+  },
+  {
+    "template_id": 5,
+    "window_id": "spwhiten_SOCAL_H_76_230427_003345.x_w000001_s000000001_e015000000",
+    "t_start": 236,
+    "amplitude": 0.8586917984798603,
+    "energy": 0.737351604776577
+  },
+  {
+    "template_id": 5,
+    "window_id": "spwhiten_SOCAL_H_76_230427_003345.x_w000001_s000000001_e015000000",
+    "t_start": 326,
+    "amplitude": 0.8882809545565422,
+    "energy": 0.7890430542278818
+  },
+  {
+    "template_id": 5,
+    "window_id": "spwhiten_SOCAL_H_76_230427_003345.x_w000001_s000000001_e015000000",
+    "t_start": 408,
+    "amplitude": 0.8745488587847546,
+    "energy": 0.7648357064017167
+  },
+  {
+    "template_id": 5,
+    "window_id": "spwhiten_SOCAL_H_76_230427_003345.x_w000001_s000000001_e015000000",
+    "t_start": 422,
+    "amplitude": 1.1449597688164992,
+    "energy": 1.3109328722083313
+  },
+  {
+    "template_id": 5,
+    "window_id": "spwhiten_SOCAL_H_76_230427_003345.x_w000001_s000000001_e015000000",
+    "t_start": 477,
+    "amplitude": 0.6659541881231704,
+    "energy": 0.44349498067879106
+  },
+  {
+    "template_id": 5,
+    "window_id": "spwhiten_SOCAL_H_76_230427_003345.x_w000001_s000000001_e015000000",
+    "t_start": 483,
+    "amplitude": 1.2074114610202893,
+    "energy": 1.4578424362031495
+  },
+  {
+    "template_id": 5,
+    "window_id": "spwhiten_SOCAL_H_76_230427_003345.x_w000001_s000000001_e015000000",
+    "t_start": 548,
+    "amplitude": 0.785064962994105,
+    "energy": 0.6163269961209354
+  },
+  {
+    "template_id": 8,
+    "window_id": "spwhiten_SOCAL_H_76_230427_003345.x_w000002_s015000001_e030000000",
+    "t_start": 100,
+    "amplitude": 0.3771241428181057,
+    "energy": 0.14222261909629097
+  },
+  {
+    "template_id": 5,
+    "window_id": "spwhiten_SOCAL_H_76_230427_003345.x_w000002_s015000001_e030000000",
+    "t_start": 168,
+    "amplitude": 0.22267107185564486,
+    "energy": 0.049582406241341755
+  },
+  {
+    "template_id": 8,
+    "window_id": "spwhiten_SOCAL_H_76_230427_003345.x_w000002_s015000001_e030000000",
+    "t_start": 176,
+    "amplitude": 0.27845811375045715,
+    "energy": 0.07753892111346253
+  },
+  {
+    "template_id": 8,
+    "window_id": "spwhiten_SOCAL_H_76_230427_003345.x_w000002_s015000001_e030000000",
+    "t_start": 180,
+    "amplitude": 0.35894294118624237,
+    "energy": 0.12884003502743024
+  },
+  {
+    "template_id": 1,
+    "window_id": "spwhiten_SOCAL_H_76_230427_003345.x_w000002_s015000001_e030000000",
+    "t_start": 194,
+    "amplitude": 0.5029030598462467,
+    "energy": 0.2529114876027176
+  },
+  {
+    "template_id": 1,
+    "window_id": "spwhiten_SOCAL_H_76_230427_003345.x_w000002_s015000001_e030000000",
+    "t_start": 269,
+    "amplitude": 0.616937691516296,
+    "energy": 0.38061211521345634
+  },
+  {
+    "template_id": 8,
+    "window_id": "spwhiten_SOCAL_H_76_230427_003345.x_w000002_s015000001_e030000000",
+    "t_start": 332,
+    "amplitude": 0.3226445272285094,
+    "energy": 0.10409949095050834
+  },
+  {
+    "template_id": 1,
+    "window_id": "spwhiten_SOCAL_H_76_230427_003345.x_w000002_s015000001_e030000000",
+    "t_start": 348,
+    "amplitude": 0.7898578898942902,
+    "energy": 0.6238754862282606
+  },
+  {
+    "template_id": 8,
+    "window_id": "spwhiten_SOCAL_H_76_230427_003345.x_w000002_s015000001_e030000000",
+    "t_start": 406,
+    "amplitude": 0.43158615885405416,
+    "energy": 0.18626661251439688
+  },
+  {
+    "template_id": 1,
+    "window_id": "spwhiten_SOCAL_H_76_230427_003345.x_w000002_s015000001_e030000000",
+    "t_start": 424,
+    "amplitude": 0.5570492917767925,
+    "energy": 0.31030391346902614
+  },
+  {
+    "template_id": 8,
+    "window_id": "spwhiten_SOCAL_H_76_230427_003345.x_w000002_s015000001_e030000000",
+    "t_start": 491,
+    "amplitude": 0.31255360307521407,
+    "energy": 0.09768975479529847
+  },
+  {
+    "template_id": 8,
+    "window_id": "spwhiten_SOCAL_H_76_230427_003345.x_w000002_s015000001_e030000000",
+    "t_start": 564,
+    "amplitude": 0.43619132477662464,
+    "energy": 0.19026287181038684
+  },
+  {
+    "template_id": 1,
+    "window_id": "spwhiten_SOCAL_H_76_230427_003345.x_w000002_s015000001_e030000000",
+    "t_start": 582,
+    "amplitude": 0.986127491869081,
+    "energy": 0.9724474302200045
+  },
+  {
+    "template_id": 5,
+    "window_id": "spwhiten_SOCAL_H_76_230427_003345.x_w000003_s030000001_e045000000",
+    "t_start": 22,
+    "amplitude": 0.22309770692808806,
+    "energy": 0.04977258683657107
+  },
+  {
+    "template_id": 8,
+    "window_id": "spwhiten_SOCAL_H_76_230427_003345.x_w000003_s030000001_e045000000",
+    "t_start": 29,
+    "amplitude": 0.4704220395547791,
+    "energy": 0.22129689529887817
+  },
+  {
+    "template_id": 1,
+    "window_id": "spwhiten_SOCAL_H_76_230427_003345.x_w000003_s030000001_e045000000",
+    "t_start": 60,
+    "amplitude": 0.551992966330435,
+    "energy": 0.3046962348782728
+  },
+  {
+    "template_id": 5,
+    "window_id": "spwhiten_SOCAL_H_76_230427_003345.x_w000003_s030000001_e045000000",
+    "t_start": 107,
+    "amplitude": 0.2264155791321977,
+    "energy": 0.05126401447376848
+  },
+  {
+    "template_id": 8,
+    "window_id": "spwhiten_SOCAL_H_76_230427_003345.x_w000003_s030000001_e045000000",
+    "t_start": 114,
+    "amplitude": 0.3106776771477699,
+    "energy": 0.09652061907793394
+  },
+  {
+    "template_id": 5,
+    "window_id": "spwhiten_SOCAL_H_76_230427_003345.x_w000003_s030000001_e045000000",
+    "t_start": 121,
+    "amplitude": 0.09759276014121383,
+    "energy": 0.009524346831980496
+  },
+  {
+    "template_id": 1,
+    "window_id": "spwhiten_SOCAL_H_76_230427_003345.x_w000003_s030000001_e045000000",
+    "t_start": 143,
+    "amplitude": 0.6218489629534414,
+    "energy": 0.3866961327262705
+  },
+  {
+    "template_id": 8,
+    "window_id": "spwhiten_SOCAL_H_76_230427_003345.x_w000003_s030000001_e045000000",
+    "t_start": 360,
+    "amplitude": 0.23466562311495076,
+    "energy": 0.05506795467192811
+  },
+  {
+    "template_id": 8,
+    "window_id": "spwhiten_SOCAL_H_76_230427_003345.x_w000004_s045000001_e060000000",
+    "t_start": 20,
+    "amplitude": 0.38162655089623915,
+    "energy": 0.1456388243489598
+  },
+  {
+    "template_id": 1,
+    "window_id": "spwhiten_SOCAL_H_76_230427_003345.x_w000005_s060000001_e075000000",
+    "t_start": 413,
+    "amplitude": 0.9714956207870742,
+    "energy": 0.9438037412084627
+  },
+  {
+    "template_id": 1,
+    "window_id": "spwhiten_SOCAL_H_76_230427_003345.x_w000005_s060000001_e075000000",
+    "t_start": 422,
+    "amplitude": 0.8823516781430304,
+    "energy": 0.7785444839218219
+  },
+  {
+    "template_id": 1,
+    "window_id": "spwhiten_SOCAL_H_76_230427_003345.x_w000006_s075000001_e090000000",
+    "t_start": 5,
+    "amplitude": 0.38931075317833,
+    "energy": 0.1515628625402786
+  },
+  {
+    "template_id": 1,
+    "window_id": "spwhiten_SOCAL_H_76_230427_003345.x_w000006_s075000001_e090000000",
+    "t_start": 31,
+    "amplitude": 0.2921168836341848,
+    "energy": 0.08533227370414787
+  },
+  {
+    "template_id": 1,
+    "window_id": "spwhiten_SOCAL_H_76_230427_003345.x_w000006_s075000001_e090000000",
+    "t_start": 274,
+    "amplitude": 0.4570397248078617,
+    "energy": 0.20888531005244595
+  },
+  {
+    "template_id": 1,
+    "window_id": "spwhiten_SOCAL_H_76_230427_003345.x_w000006_s075000001_e090000000",
+    "t_start": 295,
+    "amplitude": 0.3352055720781004,
+    "energy": 0.11236277555220658
+  },
+  {
+    "template_id": 1,
+    "window_id": "spwhiten_SOCAL_H_76_230427_003345.x_w000007_s090000001_e105000000",
+    "t_start": 257,
+    "amplitude": 0.413427642282929,
+    "energy": 0.1709224154036215
+  },
+  {
+    "template_id": 1,
+    "window_id": "spwhiten_SOCAL_H_76_230427_003345.x_w000007_s090000001_e105000000",
+    "t_start": 346,
+    "amplitude": 0.2525659158459744,
+    "energy": 0.06378954184711581
+  },
+  {
+    "template_id": 1,
+    "window_id": "spwhiten_SOCAL_H_76_230427_003345.x_w000007_s090000001_e105000000",
+    "t_start": 413,
+    "amplitude": 0.29763672800066643,
+    "energy": 0.08858762185494269
+  },
+  {
+    "template_id": 1,
+    "window_id": "spwhiten_SOCAL_H_76_230427_003345.x_w000007_s090000001_e105000000",
+    "t_start": 561,
+    "amplitude": 0.45192122399404305,
+    "energy": 0.20423279269627403
+  },
+  {
+    "template_id": 1,
+    "window_id": "spwhiten_SOCAL_H_76_230427_003345.x_w000007_s090000001_e105000000",
+    "t_start": 575,
+    "amplitude": 0.5354277338934703,
+    "energy": 0.28668285822229683
+  },
+  {
+    "template_id": 1,
+    "window_id": "spwhiten_SOCAL_H_76_230427_003345.x_w000008_s105000001_e120000000",
+    "t_start": 52,
+    "amplitude": 1.1080815827902513,
+    "energy": 1.2278447941189485
+  },
+  {
+    "template_id": 1,
+    "window_id": "spwhiten_SOCAL_H_76_230427_003345.x_w000008_s105000001_e120000000",
+    "t_start": 121,
+    "amplitude": 1.3907476301805195,
+    "energy": 1.934178970852731
+  },
+  {
+    "template_id": 1,
+    "window_id": "spwhiten_SOCAL_H_76_230427_003345.x_w000008_s105000001_e120000000",
+    "t_start": 202,
+    "amplitude": 1.3086095735822454,
+    "energy": 1.7124590160711062
+  },
+  {
+    "template_id": 1,
+    "window_id": "spwhiten_SOCAL_H_76_230427_003345.x_w000008_s105000001_e120000000",
+    "t_start": 217,
+    "amplitude": 1.235134905270605,
+    "energy": 1.5255582342178267
+  },
+  {
+    "template_id": 1,
+    "window_id": "spwhiten_SOCAL_H_76_230427_003345.x_w000008_s105000001_e120000000",
+    "t_start": 291,
+    "amplitude": 1.1186051563856982,
+    "energy": 1.2512774958926725
+  },
+  {
+    "template_id": 1,
+    "window_id": "spwhiten_SOCAL_H_76_230427_003345.x_w000008_s105000001_e120000000",
+    "t_start": 319,
+    "amplitude": 0.9580855487995806,
+    "energy": 0.9179279188185936
+  },
+  {
+    "template_id": 1,
+    "window_id": "spwhiten_SOCAL_H_76_230427_003345.x_w000008_s105000001_e120000000",
+    "t_start": 413,
+    "amplitude": 1.7529827315079527,
+    "energy": 3.072948456965083
+  },
+  {
+    "template_id": 1,
+    "window_id": "spwhiten_SOCAL_H_76_230427_003345.x_w000008_s105000001_e120000000",
+    "t_start": 427,
+    "amplitude": 1.185167498423684,
+    "energy": 1.404621999319853
+  },
+  {
+    "template_id": 1,
+    "window_id": "spwhiten_SOCAL_H_76_230427_003345.x_w000008_s105000001_e120000000",
+    "t_start": 497,
+    "amplitude": 2.0968579406550294,
+    "energy": 4.396813223288051
+  },
+  {
+    "template_id": 1,
+    "window_id": "spwhiten_SOCAL_H_76_230427_003345.x_w000008_s105000001_e120000000",
+    "t_start": 511,
+    "amplitude": 1.4165101101308195,
+    "energy": 2.0065008921028262
+  },
+  {
+    "template_id": 8,
+    "window_id": "spwhiten_SOCAL_H_76_230427_003345.x_w000009_s120000001_e135000000",
+    "t_start": 206,
+    "amplitude": 1.9336352981277858,
+    "energy": 3.738945466165731
+  },
+  {
+    "template_id": 8,
+    "window_id": "spwhiten_SOCAL_H_76_230427_003345.x_w000009_s120000001_e135000000",
+    "t_start": 301,
+    "amplitude": 1.5012180330110347,
+    "energy": 2.25365558263752
+  },
+  {
+    "template_id": 8,
+    "window_id": "spwhiten_SOCAL_H_76_230427_003345.x_w000009_s120000001_e135000000",
+    "t_start": 492,
+    "amplitude": 2.353864336269903,
+    "energy": 5.540677313563352
+  },
+  {
+    "template_id": 8,
+    "window_id": "spwhiten_SOCAL_H_76_230427_003345.x_w000009_s120000001_e135000000",
+    "t_start": 577,
+    "amplitude": 2.6704609264560975,
+    "energy": 7.1313615597287585
+  },
+  {
+    "template_id": 5,
+    "window_id": "spwhiten_SOCAL_H_76_230427_003345.x_w000010_s135000001_e150000000",
+    "t_start": 169,
+    "amplitude": 0.4153246652878838,
+    "energy": 0.17249457759649273
+  },
+  {
+    "template_id": 5,
+    "window_id": "spwhiten_SOCAL_H_76_230427_003345.x_w000010_s135000001_e150000000",
+    "t_start": 318,
+    "amplitude": 0.40132253709511473,
+    "energy": 0.16105977878045974
+  },
+  {
+    "template_id": 8,
+    "window_id": "spwhiten_SOCAL_H_76_230427_003345.x_w000010_s135000001_e150000000",
+    "t_start": 324,
+    "amplitude": 0.3432549375538144,
+    "energy": 0.11782395215507303
+  },
+  {
+    "template_id": 1,
+    "window_id": "spwhiten_SOCAL_H_76_230427_003345.x_w000010_s135000001_e150000000",
+    "t_start": 346,
+    "amplitude": 0.7680707679906308,
+    "energy": 0.5899327046417174
+  },
+  {
+    "template_id": 5,
+    "window_id": "spwhiten_SOCAL_H_76_230427_003345.x_w000010_s135000001_e150000000",
+    "t_start": 396,
+    "amplitude": 0.3355797514602446,
+    "energy": 0.11261376959011954
+  },
+  {
+    "template_id": 8,
+    "window_id": "spwhiten_SOCAL_H_76_230427_003345.x_w000010_s135000001_e150000000",
+    "t_start": 405,
+    "amplitude": 0.3355630650436133,
+    "energy": 0.11260257062146423
+  },
+  {
+    "template_id": 1,
+    "window_id": "spwhiten_SOCAL_H_76_230427_003345.x_w000010_s135000001_e150000000",
+    "t_start": 424,
+    "amplitude": 0.6565843670391839,
+    "energy": 0.4311030310402457
+  },
+  {
+    "template_id": 5,
+    "window_id": "spwhiten_SOCAL_H_76_230427_003345.x_w000010_s135000001_e150000000",
+    "t_start": 475,
+    "amplitude": 0.31128313903083715,
+    "energy": 0.0968971926448915
+  },
+  {
+    "template_id": 8,
+    "window_id": "spwhiten_SOCAL_H_76_230427_003345.x_w000010_s135000001_e150000000",
+    "t_start": 546,
+    "amplitude": 0.376077653942656,
+    "energy": 0.14143440179501213
+  },
+  {
+    "template_id": 1,
+    "window_id": "spwhiten_SOCAL_H_76_230427_003345.x_w000010_s135000001_e150000000",
+    "t_start": 564,
+    "amplitude": 1.3741905808507442,
+    "energy": 1.8883997524989058
+  }
+]

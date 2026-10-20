@@ -4,11 +4,76 @@ GPL **analysis** science: reference detection (WAV → whitened spectrograms + d
 
 The product’s **offline** path is **preprocessing**: [`backend/preprocess.py`](../backend/preprocess.py) (usually via [`backend/scripts/preprocess_cron.sh`](../backend/scripts/preprocess_cron.sh)), which batch-builds spectrogram / `.gpl` caches for the library. Production interactive detection uses the CUDA-capable fork in [`backend/`](../backend/). FastAPI does not import this package directly.
 
+## Song analysis pipeline
+
+Three stages. Payne and McVay (1971) supply the hierarchy the model is meant to recover: **subunit < unit < phrase < theme < song**. A song of type A is six themes in a fixed cycle. Phrase-repeat count varies; theme order does not, and no theme is dropped. See [`../papers/payne_mcvay_1971_song_structure.md`](../papers/payne_mcvay_1971_song_structure.md).
+
+A **motif** here is a convolution kernel. A **unit** is a latent state that emits a distribution over those motifs. The labeled `motif` column (`U1`…`U11`) in [`../backend/data/song_structure/`](../backend/data/song_structure/) is a reference annotation, loaded by [`../backend/app/services/song_structure.py`](../backend/app/services/song_structure.py) for display. How the two motif methods are combined, and the exact HMM topology, stay open.
+
+```
+whitened sequence → motif dictionary → trained HMM → Viterbi path
+```
+
+### Stage 1 — Motif dictionary
+
+**Input.** Whitened window spectrograms in `spectrogram_npy/`, written by [`GPL_Python/gpl_outputs.py`](GPL_Python/gpl_outputs.py).
+
+**Method.** Two existing pieces to combine:
+
+- Matrix Profile over motif length: [`panMP.py`](panMP.py) on [`mpxForPan.py`](mpxForPan.py). Finds repeated subsequences without a fixed length.
+- Matching Pursuit: the Mallat loop in [`dict_learning/`](dict_learning/) (seed a patch, average its matches, re-pursue, deflate the residual). See [How `build_dictionary` works](#how-build_dictionary-works) below.
+
+**Combination (sketch).** Use pan-MP peaks to propose candidate kernels (location and length). Use Matching Pursuit to place, average, and deflate them into a small dictionary.
+
+**Output.** A dictionary of convolution kernels, plus the score of each kernel convolved along the sequence.
+
+**Quality.**
+
+- **Coverage.** Fraction of the sequence where at least one motif score is more than 2 standard deviations above that motif’s mean.
+- **Specificity.** For each motif, the ratio of the score at a peak to the scores obtained when that motif is shifted by half its length to either side.
+
+Repeat count, residual energy, and time-bin coverage stay internal stopping rules of `build_dictionary` / `extend_dictionary`. The stage score is coverage and specificity above.
+
+### Stage 2 — Train the HMM
+
+**Input.** The motif dictionary and its score sequence from stage 1.
+
+**States.** One hierarchical HMM, trained with Baum–Welch:
+
+- **6 themes** in a cycle (1→2→3→4→5→6→1). Each theme is present; only the number of repeats changes.
+- **Phrases** repeat inside a theme. A phrase is a short chain of units.
+- **Units** are the emitting states. Each unit has a distribution over motifs.
+
+HMM training is still to be written.
+
+**Output.** Fitted transition and emission parameters, and the posterior over states on the training sequence.
+
+**Quality.**
+
+- **Posterior-weighted likelihood** of the sequence.
+- **Parameter sensitivity:** how much that likelihood moves when any single parameter is perturbed.
+
+### Stage 3 — Inference
+
+**Input.** A trained HMM and a new sequence scored with the same motif dictionary.
+
+**Method.** Viterbi: the most likely state path (theme, phrase, unit).
+
+**Output.** That path, aligned to the sequence.
+
+**Quality.**
+
+- **Likelihood** of the sequence.
+- **Boundary sensitivity:** how much that likelihood moves when the boundaries between themes are shifted.
+
 ## Layout
 
 ```
 analysis/
 ├── GPL_Python/         # CPU-only Python reference detector (parity baseline)
+├── panMP.py            # pan matrix profile over motif length
+├── mpxForPan.py        # matrix profile used by panMP
+├── test/               # panMP tests
 └── dict_learning/      # Seed / Mallat MP / dictionary build
     ├── code/           # library (core, mp, learn, io, catalog, tools, cli)
     ├── experiments/    # compare / bench harnesses
@@ -20,6 +85,7 @@ analysis/
 | Directory                          | Language | Role                                                                                                                   |
 | ---------------------------------- | -------- | ---------------------------------------------------------------------------------------------------------------------- |
 | [`GPL_Python/`](GPL_Python/)       | Python   | Reference detector (STFT, whitening, detect, exports); CLI + tests                                                     |
+| [`panMP.py`](panMP.py)             | Python   | Length sweep of the matrix profile; motif peaks are candidate kernels                                                 |
 | [`dict_learning/`](dict_learning/) | Python   | Dictionary tools: `Seed`, Mallat MP, `build_dictionary` / `extend_dictionary` (design: [`../documentation/Docs/analysis.md`](../documentation/Docs/analysis.md)) |
 
 ## Responsibilities

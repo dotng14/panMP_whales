@@ -1,0 +1,101 @@
+{
+  "n_windows": 10,
+  "n_detections": 1939,
+  "eps_step_fraction": 0.01,
+  "create_pool_size": 177,
+  "create_n_sampled": 10,
+  "refine_iters": 3,
+  "n_min": 5,
+  "m": 10,
+  "n_atoms_after_refine": 10,
+  "n_pruned_total": 0,
+  "n_matchings": 385,
+  "energies": [
+    201251397.1706307,
+    149371770.2378154,
+    117884981.11372972,
+    110985683.82244432
+  ],
+  "atoms": [
+    {
+      "template_id": 0,
+      "width": 23,
+      "n_components": 1,
+      "n_patches": 31,
+      "source_segment_id": "spwhiten_SOCAL_H_76_230427_003345.x_w000009_s120000001_e135000000::det870::547",
+      "path": "atoms/template_000.npy"
+    },
+    {
+      "template_id": 1,
+      "width": 14,
+      "n_components": 1,
+      "n_patches": 100,
+      "source_segment_id": "spwhiten_SOCAL_H_76_230427_003345.x_w000009_s120000001_e135000000::det871::548",
+      "path": "atoms/template_001.npy"
+    },
+    {
+      "template_id": 2,
+      "width": 20,
+      "n_components": 1,
+      "n_patches": 17,
+      "source_segment_id": "spwhiten_SOCAL_H_76_230427_003345.x_w000007_s090000001_e105000000::det798::383",
+      "path": "atoms/template_002.npy"
+    },
+    {
+      "template_id": 3,
+      "width": 16,
+      "n_components": 1,
+      "n_patches": 23,
+      "source_segment_id": "spwhiten_SOCAL_H_76_230427_003345.x_w000006_s075000001_e090000000::det114::304",
+      "path": "atoms/template_003.npy"
+    },
+    {
+      "template_id": 4,
+      "width": 17,
+      "n_components": 1,
+      "n_patches": 22,
+      "source_segment_id": "spwhiten_SOCAL_H_76_230427_003345.x_w000003_s030000001_e045000000::det49::129",
+      "path": "atoms/template_004.npy"
+    },
+    {
+      "template_id": 5,
+      "width": 14,
+      "n_components": 1,
+      "n_patches": 32,
+      "source_segment_id": "spwhiten_SOCAL_H_76_230427_003345.x_w000001_s000000001_e015000000::det702::28",
+      "path": "atoms/template_005.npy"
+    },
+    {
+      "template_id": 6,
+      "width": 19,
+      "n_components": 1,
+      "n_patches": 39,
+      "source_segment_id": "spwhiten_SOCAL_H_76_230427_003345.x_w000001_s000000001_e015000000::det15::15",
+      "path": "atoms/template_006.npy"
+    },
+    {
+      "template_id": 7,
+      "width": 22,
+      "n_components": 1,
+      "n_patches": 68,
+      "source_segment_id": "spwhiten_SOCAL_H_76_230427_003345.x_w000003_s030000001_e045000000::det734::151",
+      "path": "atoms/template_007.npy"
+    },
+    {
+      "template_id": 8,
+      "width": 17,
+      "n_components": 1,
+      "n_patches": 32,
+      "source_segment_id": "spwhiten_SOCAL_H_76_230427_003345.x_w000002_s015000001_e030000000::det1359::88",
+      "path": "atoms/template_008.npy"
+    },
+    {
+      "template_id": 9,
+      "width": 17,
+      "n_components": 1,
+      "n_patches": 21,
+      "source_segment_id": "spwhiten_SOCAL_H_76_230427_003345.x_w000001_s000000001_e015000000::det1341::43",
+      "path": "atoms/template_009.npy"
+    }
+  ]
+}
