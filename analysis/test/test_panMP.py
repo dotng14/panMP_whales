@@ -38,7 +38,9 @@ class TestPanMP:
             panMP(ts, plot=False, MinMotifLen=16, MaxMotifLen=8)
 
     def test_output_shape(self, rng):
-        MinMotifLen, MaxMotifLen, StepSize = 8, 24, 8
+        # MaxMotifLen is not on the step grid (like MATLAB's 32:64:512), so the
+        # last computed length is 24 and MATLAB's pan ends at column 24+8-1.
+        MinMotifLen, MaxMotifLen, StepSize = 8, 28, 8
         n = MaxMotifLen + MinMotifLen + 40  # enough headroom after trim
         ts = rng.standard_normal(n)
         pan = panMP(
@@ -49,7 +51,7 @@ class TestPanMP:
             StepSize=StepSize,
         )
         expected_rows = (n - MinMotifLen + 1) - MaxMotifLen - 1
-        expected_cols = MaxMotifLen + StepSize - 1
+        expected_cols = 24 + StepSize - 1
         assert pan.shape == (expected_rows, expected_cols)
 
     def test_short_motif_columns_are_nan(self, rng):
