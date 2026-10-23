@@ -62,8 +62,11 @@ def panMP(
             f"MinMotifLen={MinMotifLen}"
         )
 
+    # MATLAB grows pan on assignment, so its width ends at the last motif
+    # length the loop actually visits, not at MaxMotifLen.
+    last_len = MinMotifLen + ((MaxMotifLen - MinMotifLen) // StepSize) * StepSize
     n_rows = len(TS) - MinMotifLen + 1
-    n_cols = MaxMotifLen + StepSize - 1
+    n_cols = last_len + StepSize - 1
     pan = np.zeros((n_rows, n_cols))
 
     for i in range(MinMotifLen, MaxMotifLen + 1, StepSize):
@@ -101,7 +104,7 @@ def panMP(
         rows, cols = pan.shape
         X, Y = np.meshgrid(np.arange(cols), np.arange(rows))
         surf = ax.plot_surface(
-            X, Y, np.nan_to_num(pan, nan=0.0),
+            X, Y, np.ma.masked_invalid(pan),
             cmap="jet",
             linewidth=0,
             antialiased=True,
