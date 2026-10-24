@@ -1,35 +1,34 @@
 ---
 name: Whale song pipeline
-overview: "A three-stage pipeline, written in analysis/README.md: learn a motif dictionary with Matching Pursuit and Matrix Profile, fit a hierarchical HMM of themes, phrases, and units with Baum–Welch, then decode a sequence with Viterbi. Each stage has an explicit quality measure. Algorithmic detail is deferred."
+overview: "Stage 2 is the Baum–Welch fit in analysis/HMM. Stage 1 (Matching Pursuit combined with panMP) is still a sketch. Decoding a new recording is not in this repository."
 todos:
   - id: stage1-motifs
     content: Combine pan-MP and Matching Pursuit into a motif dictionary, and score it by coverage and half-length specificity.
     status: pending
   - id: stage2-hmm
-    content: Define and train a Baum–Welch HMM of 6 cyclic themes, repeating phrases, and motif-emitting units; score posterior-weighted likelihood and single-parameter sensitivity.
-    status: pending
-  - id: stage3-viterbi
-    content: Decode a sequence with Viterbi and score sequence likelihood plus sensitivity to theme-boundary shifts.
+    content: Baum–Welch fit of the six-theme song graph on panMP motif scores, in analysis/HMM.
+    status: completed
+  - id: stage3-decode
+    content: A later decoder loads analysis/HMM/song_soft_hmm_t6.npz. Not in this repository.
     status: pending
 isProject: false
 ---
 
 # Whale song analysis pipeline
 
-Barebones plan. The writeup lives in [analysis/README.md](analysis/README.md) under **Song analysis pipeline**. Each stage has an input, a method, an output, and a quality measure. How the methods are combined, and the exact HMM topology, stay open until a later pass.
+Barebones plan. The writeup lives in [analysis/README.md](analysis/README.md) under **Song analysis pipeline**. Stage 2 is the fit in [analysis/HMM/](analysis/HMM/). Stage 1, combining panMP with Matching Pursuit, is still a sketch.
 
 Dictionary learning stays in [analysis/dict_learning/](analysis/dict_learning/). The copies that had been placed on the `analysis/` root are already gone.
 
-Payne and McVay (1971) supply the hierarchy this model is meant to recover: **subunit < unit < phrase < theme < song**. A song of type A is six themes in a fixed cycle. Phrase-repeat count varies; theme order does not, and no theme is dropped. See [papers/payne_mcvay_1971_song_structure.md](papers/payne_mcvay_1971_song_structure.md).
+Payne and McVay (1971) supply the hierarchy this model is meant to recover: **subunit < unit < phrase < theme < song**. A song of type A is six themes in a fixed cycle. Phrase-repeat count varies; theme order does not, and no theme is dropped. See [papers/payne_mcvay_1971_song_structure.md](papers/payne_mcvay_1971_song_structure.md). The fitted graph follows that order and does not add an edge from theme 6 back to theme 1. Each training song is its own sequence.
 
-In this pipeline a **motif** is a convolution kernel (acoustic atom). A **unit** is a latent state that emits a distribution over those motifs. That is finer than the labeled `motif` column (`U1`…`U11`) in [backend/data/song_structure/](backend/data/song_structure/), which is a reference annotation, not the model.
+In the fitted model a **motif** is one of 12 panMP prototypes, and the observation at each second is the 12-dimensional score against them. The labeled `motif` column (`U1`…`U11`) in [backend/data/song_structure/](backend/data/song_structure/) names the slots on the drawing. It is not an emitted symbol, and slots that share a name do not share a Gaussian.
 
 ```mermaid
 flowchart LR
   seq[Whitened sequence] --> motifs[Stage1 Motif dictionary]
   motifs --> hmm[Stage2 Train HMM]
-  hmm --> decode[Stage3 Viterbi]
-  motifs --> decode
+  hmm --> saved[Parameter file]
 ```
 
 ## Stage 1 — Motif dictionary
@@ -54,41 +53,34 @@ These two measures are not in the repo today. Current dictionary gates (repeat c
 
 ## Stage 2 — Train the HMM
 
-**Input.** The motif dictionary and its score sequence from stage 1.
+Implemented in [analysis/HMM/](analysis/HMM/). The training recording is the 10 kHz, 10-hour file. GPL at 10–1000 Hz is collapsed to 10 Hz, then scored with 12 panMP prototypes. The motif CSV cuts 53 songs and initializes the Gaussians. It is not the observation.
 
-**States.** One hierarchical HMM, trained with Baum–Welch:
+**States.** The graph in [analysis/HMM/song_soft_hmm_t6.dot](analysis/HMM/song_soft_hmm_t6.dot), fit with Baum–Welch:
 
-- **6 themes** in a cycle (1→2→3→4→5→6→1). Each theme is present; only the number of repeats changes.
-- **Phrases** repeat inside a theme. A phrase is a short chain of units.
-- **Units** are the emitting states. Each unit has a distribution over motifs.
+- **6 themes**, 28 phrase slots. A song may open on the first slot of any theme. Theme 6 repeats until the song ends and does not return to theme 1.
+- **140 states.** Each slot has five duration states, 1–5 seconds, sharing one diagonal Gaussian over the 12 motif scores. Slots that share a unit name do not share a Gaussian.
+- Only the last slot of a theme chooses repeat versus next.
 
-No HMM code exists. [backend/app/services/song_structure.py](backend/app/services/song_structure.py) only loads a hand-labeled CSV (theme, phrase id, phrase count, motif label) for display.
+**Output.** [analysis/HMM/song_soft_hmm_t6.npz](analysis/HMM/song_soft_hmm_t6.npz) and the report [analysis/HMM/song_soft_hmm_t6_report.pdf](analysis/HMM/song_soft_hmm_t6_report.pdf).
 
-**Output.** Fitted transition and emission parameters, and the posterior over states on the training sequence.
+**Quality.** In [analysis/HMM/work/train_report.json](analysis/HMM/work/train_report.json):
 
-**Quality.**
-
-- **Posterior-weighted likelihood** of the sequence.
-- **Parameter sensitivity:** how much that likelihood moves when any single parameter is perturbed.
+- Sequence log-likelihood, in total and in nats per second, against a 12-dimensional standard normal.
+- Posterior-weighted complete-data log-likelihood, split into emission, transition, and start.
+- Per-song log-likelihood per second.
+- Forward–backward probability on the CSV theme, and expected versus labeled seconds in each theme.
+- Likelihood drop when one theme-end probability or one slot mean is nudged.
 
 ## Stage 3 — Inference
 
-**Input.** A trained HMM and a new sequence scored with the same motif dictionary.
-
-**Method.** Viterbi: the most likely state path (theme, phrase, unit).
-
-**Output.** That path, aligned to the sequence.
-
-**Quality.**
-
-- **Likelihood** of the sequence.
-- **Boundary sensitivity:** how much that likelihood moves when the boundaries between themes are shifted.
+Not in this repository. A later decoder loads `analysis/HMM/song_soft_hmm_t6.npz` and scores a new recording with the prototypes stored there. This repository does not choose a state path.
 
 ## What is reused vs new
 
-- Reuse: GPL whitened windows, `panMP` / `mpxForPan`, the Mallat dictionary loop in [analysis/dict_learning/](analysis/dict_learning/), Payne’s six-theme cycle, and the motif-segment CSV as a later reference.
-- New: the MP–Matrix-Profile combination, the three quality measures, and the HMM (Baum–Welch and Viterbi).
+- Reuse: GPL whitened windows, `panMP` / `mpxForPan`, the Mallat dictionary loop in [analysis/dict_learning/](analysis/dict_learning/), and the motif-segment CSV as the song cuts and the Gaussian initialization.
+- Done in [analysis/HMM/](analysis/HMM/): panMP prototype scores and the Baum–Welch fit. Matching Pursuit is not part of that fit.
+- Not in this repository: a decoder for a new recording.
 
 ## Deferred
 
-Left for a later pass: how pan-MP candidates enter Matching Pursuit; whether observations are continuous kernel scores or discrete motif hits; the exact phrase/unit topology inside a theme; where the new code lives under `analysis/`; and any comparison against the labeled CSV.
+Left for a later pass: how pan-MP candidates enter Matching Pursuit, and a decoder that loads the saved parameter file for a new recording.

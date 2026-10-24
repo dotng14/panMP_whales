@@ -1,0 +1,109 @@
+// Six-theme soft HMM for LeiData 193500.
+// A node is a phrase slot. Advance edges are taken when the slot ends.
+// Repeat and next are the fitted branch at the last slot of each theme.
+// Each slot stands for five duration states (1–5 s) that share one emission.
+digraph hmm {
+  rankdir=TB;
+  splines=true;
+  nodesep=0.32;
+  ranksep=0.85;
+  fontname="Helvetica";
+  node [shape=box, style="rounded,filled", fillcolor="#f6f6f6",
+        fontname="Helvetica", fontsize=11, margin="0.08,0.06"];
+  edge [fontname="Helvetica", fontsize=10, color="#444444"];
+
+  start [shape=circle, label="", width=0.22, height=0.22,
+         style=filled, fillcolor="#222222"];
+
+  subgraph cluster_t1 {
+    label="Theme 1    repeat 0.008";
+    fontsize=13;
+    fontname="Helvetica";
+    color="#bbbbbb";
+    { rank=same; T1_1 -> T1_2 -> T1_3 [color="#444444"]; }
+  }
+  subgraph cluster_t2 {
+    label="Theme 2    repeat 0.984";
+    fontsize=13;
+    fontname="Helvetica";
+    color="#bbbbbb";
+    { rank=same; T2_1 -> T2_2 -> T2_3 [color="#444444"]; }
+  }
+  subgraph cluster_t3 {
+    label="Theme 3    repeat 0.943";
+    fontsize=13;
+    fontname="Helvetica";
+    color="#bbbbbb";
+    { rank=same; T3_1 -> T3_2 -> T3_3 -> T3_4 -> T3_5 -> T3_6 [color="#444444"]; }
+  }
+  subgraph cluster_t4 {
+    label="Theme 4    repeat 0.585";
+    fontsize=13;
+    fontname="Helvetica";
+    color="#bbbbbb";
+    { rank=same; T4_1 -> T4_2 -> T4_3 [color="#444444"]; }
+  }
+  subgraph cluster_t5 {
+    label="Theme 5    repeat 0.922";
+    fontsize=13;
+    fontname="Helvetica";
+    color="#bbbbbb";
+    { rank=same; T5_1 -> T5_2 -> T5_3 -> T5_4 -> T5_5 [color="#444444"]; }
+  }
+  subgraph cluster_t6 {
+    label="Theme 6    repeat 1 until the song ends";
+    fontsize=13;
+    fontname="Helvetica";
+    color="#bbbbbb";
+    { rank=same; T6_1 -> T6_2 -> T6_3 -> T6_4 -> T6_5 -> T6_6 -> T6_7 -> T6_8 [color="#444444"]; }
+  }
+
+  T1_1 [label="T1.1\nU7 · 2.0 s"];
+  T1_2 [label="T1.2\nU2 · 1.7 s"];
+  T1_3 [label="T1.3\nU9 · 1.2 s"];
+  T2_1 [label="T2.1\nU1 · 1.0 s"];
+  T2_2 [label="T2.2\nU8 · 1.0 s"];
+  T2_3 [label="T2.3\nU7 · 1.6 s"];
+  T3_1 [label="T3.1\nU9 · 1.3 s"];
+  T3_2 [label="T3.2\nU11 · 1.2 s"];
+  T3_3 [label="T3.3\nU9 · 1.0 s"];
+  T3_4 [label="T3.4\nU6 · 1.0 s"];
+  T3_5 [label="T3.5\nU8 · 1.0 s"];
+  T3_6 [label="T3.6\nU7 · 1.1 s"];
+  T4_1 [label="T4.1\nU2 · 1.2 s"];
+  T4_2 [label="T4.2\nU9 · 1.0 s"];
+  T4_3 [label="T4.3\nU6 · 1.0 s"];
+  T5_1 [label="T5.1\nU8 · 1.2 s"];
+  T5_2 [label="T5.2\nU9 · 1.1 s"];
+  T5_3 [label="T5.3\nU3 · 1.0 s"];
+  T5_4 [label="T5.4\nU8 · 1.0 s"];
+  T5_5 [label="T5.5\nU7 · 1.1 s"];
+  T6_1 [label="T6.1\nU9 · 1.1 s"];
+  T6_2 [label="T6.2\nU3 · 1.0 s"];
+  T6_3 [label="T6.3\nU8 · 1.6 s"];
+  T6_4 [label="T6.4\nU2 · 2.0 s"];
+  T6_5 [label="T6.5\nU7 · 1.1 s"];
+  T6_6 [label="T6.6\nU9 · 2.0 s"];
+  T6_7 [label="T6.7\nU11 · 1.0 s"];
+  T6_8 [label="T6.8\nU2 · 1.3 s"];
+
+  start -> T1_1;
+  /* Stack themes. The visible next-theme edges do not set rank. */
+  T1_1 -> T2_1 [style=invis, weight=10];
+  T2_1 -> T3_1 [style=invis, weight=10];
+  T3_1 -> T4_1 [style=invis, weight=10];
+  T4_1 -> T5_1 [style=invis, weight=10];
+  T5_1 -> T6_1 [style=invis, weight=10];
+
+  T1_3 -> T1_1 [style=dashed, constraint=false, color="#666666"];
+  T1_3 -> T2_1 [label="next 0.992", constraint=false];
+  T2_3 -> T2_1 [style=dashed, constraint=false, color="#666666"];
+  T2_3 -> T3_1 [label="next 0.016", constraint=false];
+  T3_6 -> T3_1 [style=dashed, constraint=false, color="#666666"];
+  T3_6 -> T4_1 [label="next 0.057", constraint=false];
+  T4_3 -> T4_1 [style=dashed, constraint=false, color="#666666"];
+  T4_3 -> T5_1 [label="next 0.415", constraint=false];
+  T5_5 -> T5_1 [style=dashed, constraint=false, color="#666666"];
+  T5_5 -> T6_1 [label="next 0.078", constraint=false];
+  T6_8 -> T6_1 [style=dashed, constraint=false, color="#666666"];
+}

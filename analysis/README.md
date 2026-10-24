@@ -8,11 +8,13 @@ The product’s **offline** path is **preprocessing**: [`backend/preprocess.py`]
 
 Three stages. Payne and McVay (1971) supply the hierarchy the model is meant to recover: **subunit < unit < phrase < theme < song**. A song of type A is six themes in a fixed cycle. Phrase-repeat count varies; theme order does not, and no theme is dropped. See [`../papers/payne_mcvay_1971_song_structure.md`](../papers/payne_mcvay_1971_song_structure.md).
 
-A **motif** here is a convolution kernel. A **unit** is a latent state that emits a distribution over those motifs. The labeled `motif` column (`U1`…`U11`) in [`../backend/data/song_structure/`](../backend/data/song_structure/) is a reference annotation, loaded by [`../backend/app/services/song_structure.py`](../backend/app/services/song_structure.py) for display. How the two motif methods are combined, and the exact HMM topology, stay open.
+A **motif** in the dictionary sketch below is a convolution kernel. In the fitted song model, a motif is one of 12 panMP prototypes, and each second is a 12-dimensional score against those prototypes. The labeled `motif` column (`U1`…`U11`) in [`../backend/data/song_structure/`](../backend/data/song_structure/) is a reference annotation, loaded by [`../backend/app/services/song_structure.py`](../backend/app/services/song_structure.py) for display. Slots that share one of those names do not share an emission.
 
 ```
-whitened sequence → motif dictionary → trained HMM → Viterbi path
+whitened sequence → 10 Hz energy → panMP scores → Baum–Welch HMM
 ```
+
+The fit lives in [`HMM/`](HMM/). Decoding a new recording is not in this tree. The handoff is `HMM/song_soft_hmm_t6.npz`.
 
 ### Stage 1 — Motif dictionary
 
@@ -36,41 +38,34 @@ Repeat count, residual energy, and time-bin coverage stay internal stopping rule
 
 ### Stage 2 — Train the HMM
 
-**Input.** The motif dictionary and its score sequence from stage 1.
+Implemented in [`HMM/`](HMM/). The training recording is the 10 kHz, 10-hour file `SOCAL_H_76_230426_193500_df100.x.x`. GPL at 10–1000 Hz, collapsed to 10 Hz, then 12 panMP prototype scores per second. The motif CSV cuts 53 songs and initializes the Gaussians. It is not the observation. Matching Pursuit is not in this fit.
 
-**States.** One hierarchical HMM, trained with Baum–Welch:
+**States.** Baum–Welch on the graph in [`HMM/song_soft_hmm_t6.dot`](HMM/song_soft_hmm_t6.dot):
 
-- **6 themes** in a cycle (1→2→3→4→5→6→1). Each theme is present; only the number of repeats changes.
-- **Phrases** repeat inside a theme. A phrase is a short chain of units.
-- **Units** are the emitting states. Each unit has a distribution over motifs.
+- **6 themes**, 28 phrase slots (3+3+6+3+5+8). A song may open on the first slot of any theme. Theme 6 repeats until the song ends and does not return to theme 1.
+- **140 states.** Each slot has five duration states, 1–5 seconds, sharing one diagonal Gaussian over the 12 scores.
+- Only the last slot of a theme chooses repeat versus next. Other edges are fixed by the drawing.
 
-HMM training is still to be written.
+**Output.** [`HMM/song_soft_hmm_t6.npz`](HMM/song_soft_hmm_t6.npz): slot means and variances, duration exits, theme-repeat probabilities, the start distribution, the 12 prototypes, and the score normalization. The write-up is [`HMM/song_soft_hmm_t6_report.pdf`](HMM/song_soft_hmm_t6_report.pdf).
 
-**Output.** Fitted transition and emission parameters, and the posterior over states on the training sequence.
+**Quality.** Reported in [`HMM/work/train_report.json`](HMM/work/train_report.json):
 
-**Quality.**
-
-- **Posterior-weighted likelihood** of the sequence.
-- **Parameter sensitivity:** how much that likelihood moves when any single parameter is perturbed.
+- Sequence log-likelihood, including nats per second against a 12-dimensional standard normal.
+- Posterior-weighted complete-data log-likelihood, split into emission, transition, and start.
+- Per-song log-likelihood per second.
+- Forward–backward probability on the CSV theme, and expected versus labeled seconds in each theme.
+- Likelihood drop when one theme-end probability or one slot mean is nudged. No refit.
 
 ### Stage 3 — Inference
 
-**Input.** A trained HMM and a new sequence scored with the same motif dictionary.
-
-**Method.** Viterbi: the most likely state path (theme, phrase, unit).
-
-**Output.** That path, aligned to the sequence.
-
-**Quality.**
-
-- **Likelihood** of the sequence.
-- **Boundary sensitivity:** how much that likelihood moves when the boundaries between themes are shifted.
+Not in this tree. A later decoder loads `HMM/song_soft_hmm_t6.npz` and scores a new recording with the saved prototypes. This folder does not choose a state path.
 
 ## Layout
 
 ```
 analysis/
 ├── GPL_Python/         # CPU-only Python reference detector (parity baseline)
+├── HMM/                # six-theme song model, Baum–Welch fit
 ├── panMP.py            # pan matrix profile over motif length
 ├── mpxForPan.py        # matrix profile used by panMP
 ├── test/               # panMP tests
@@ -86,6 +81,7 @@ analysis/
 | ---------------------------------- | -------- | ---------------------------------------------------------------------------------------------------------------------- |
 | [`GPL_Python/`](GPL_Python/)       | Python   | Reference detector (STFT, whitening, detect, exports); CLI + tests                                                     |
 | [`panMP.py`](panMP.py)             | Python   | Length sweep of the matrix profile; motif peaks are candidate kernels                                                 |
+| [`HMM/`](HMM/)                     | Python   | Six-theme song HMM: panMP motif scores, Baum–Welch, saved parameters                                 |
 | [`dict_learning/`](dict_learning/) | Python   | Dictionary tools: `Seed`, Mallat MP, `build_dictionary` / `extend_dictionary` (design: [`../documentation/Docs/analysis.md`](../documentation/Docs/analysis.md)) |
 
 ## Responsibilities
@@ -93,6 +89,7 @@ analysis/
 | Subtree          | Owns                                                                 | Does not own                          |
 | ---------------- | -------------------------------------------------------------------- | ------------------------------------- |
 | `GPL_Python/`    | Reference numerical detector + exports (`CSV_*`, `spectrogram_npy/`) | Web API, CUDA, cron preprocess caches |
+| `HMM/`           | Baum–Welch fit of the six-theme song graph on panMP scores | Decoding a recording into a state path |
 | `dict_learning/` | Template seeding, MP, and catalog dictionary builds on those exports | Writing library `result/*.gpl` caches |
 
 ## Relationship to the web stack
