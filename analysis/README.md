@@ -42,7 +42,7 @@ Implemented in [`HMM/`](HMM/). The training recording is the 10 kHz, 10-hour fil
 
 **States.** Baum–Welch on the graph in [`HMM/song_soft_hmm_t6.dot`](HMM/song_soft_hmm_t6.dot):
 
-- **6 themes**, 28 phrase slots (3+3+6+3+5+8). A song may open on the first slot of any theme. Theme 6 repeats until the song ends and does not return to theme 1.
+- **6 themes**, 28 phrase slots (3+3+6+3+5+8). A song may open on the first slot of any theme, and it may end in any theme. After theme 6, the next theme is theme 1.
 - **140 states.** Each slot has five duration states, 1–5 seconds, sharing one diagonal Gaussian over the 12 scores.
 - Only the last slot of a theme chooses repeat versus next. Other edges are fixed by the drawing.
 

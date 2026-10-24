@@ -256,12 +256,11 @@ def _m_step(
             exit_prob[slot, dur] = float(np.clip(adv[slot, dur] / denom, PROB_CLIP, 1.0 - PROB_CLIP))
 
     repeat_prob = model.repeat_prob.copy()
-    for theme in range(N_THEMES - 1):
+    for theme in range(N_THEMES):
         denom = rep[theme] + nxt[theme]
         if denom < 1e-8:
             continue
         repeat_prob[theme] = float(np.clip(rep[theme] / denom, PROB_CLIP, 1.0 - PROB_CLIP))
-    repeat_prob[N_THEMES - 1] = 1.0
     # One pseudocount per theme, so a theme the training songs never open can still start a new song.
     start_prob = np.asarray(start_count, dtype=np.float64) + 1.0
     start_prob = start_prob / start_prob.sum()
@@ -431,7 +430,7 @@ def parameter_sensitivity(
     """One-at-a-time nudges. No refit. Reports the drop in sequence log-likelihood."""
     base = total_loglik(sequences, model)
     branch_drop = []
-    for theme in range(N_THEMES - 1):
+    for theme in range(N_THEMES):
         for sign in (1.0, -1.0):
             nudged = model.copy()
             nudged.repeat_prob = model.repeat_prob.copy()

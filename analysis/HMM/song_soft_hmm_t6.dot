@@ -51,7 +51,7 @@ digraph hmm {
     { rank=same; T5_1 -> T5_2 -> T5_3 -> T5_4 -> T5_5 [color="#444444"]; }
   }
   subgraph cluster_t6 {
-    label="Theme 6    repeat 1 until the song ends";
+    label="Theme 6    repeat 0.950";
     fontsize=13;
     fontname="Helvetica";
     color="#bbbbbb";
@@ -106,4 +106,5 @@ digraph hmm {
   T5_5 -> T5_1 [style=dashed, constraint=false, color="#666666"];
   T5_5 -> T6_1 [label="next 0.078", constraint=false];
   T6_8 -> T6_1 [style=dashed, constraint=false, color="#666666"];
+  T6_8 -> T1_1 [label="next 0.050", constraint=false];
 }

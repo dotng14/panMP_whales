@@ -20,7 +20,7 @@ Barebones plan. The writeup lives in [analysis/README.md](analysis/README.md) un
 
 Dictionary learning stays in [analysis/dict_learning/](analysis/dict_learning/). The copies that had been placed on the `analysis/` root are already gone.
 
-Payne and McVay (1971) supply the hierarchy this model is meant to recover: **subunit < unit < phrase < theme < song**. A song of type A is six themes in a fixed cycle. Phrase-repeat count varies; theme order does not, and no theme is dropped. See [papers/payne_mcvay_1971_song_structure.md](papers/payne_mcvay_1971_song_structure.md). The fitted graph follows that order and does not add an edge from theme 6 back to theme 1. Each training song is its own sequence.
+Payne and McVay (1971) supply the hierarchy this model is meant to recover: **subunit < unit < phrase < theme < song**. A song of type A is six themes in a fixed cycle. Phrase-repeat count varies; theme order does not, and no theme is dropped. See [papers/payne_mcvay_1971_song_structure.md](papers/payne_mcvay_1971_song_structure.md). The fitted graph follows that order, and the last slot of theme 6 can return to theme 1. A sequence may end in any theme. Each training song is its own sequence.
 
 In the fitted model a **motif** is one of 12 panMP prototypes, and the observation at each second is the 12-dimensional score against them. The labeled `motif` column (`U1`…`U11`) in [backend/data/song_structure/](backend/data/song_structure/) names the slots on the drawing. It is not an emitted symbol, and slots that share a name do not share a Gaussian.
 
@@ -57,7 +57,7 @@ Implemented in [analysis/HMM/](analysis/HMM/). The training recording is the 10 
 
 **States.** The graph in [analysis/HMM/song_soft_hmm_t6.dot](analysis/HMM/song_soft_hmm_t6.dot), fit with Baum–Welch:
 
-- **6 themes**, 28 phrase slots. A song may open on the first slot of any theme. Theme 6 repeats until the song ends and does not return to theme 1.
+- **6 themes**, 28 phrase slots. A song may open on the first slot of any theme, and it may end in any theme. After theme 6, the next theme is theme 1.
 - **140 states.** Each slot has five duration states, 1–5 seconds, sharing one diagonal Gaussian over the 12 motif scores. Slots that share a unit name do not share a Gaussian.
 - Only the last slot of a theme chooses repeat versus next.
 

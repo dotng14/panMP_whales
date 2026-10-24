@@ -25,7 +25,7 @@ flowchart LR
 Run the existing orchestrator, [analysis/GPL_Python/process_v4.py](../GPL_Python/process_v4.py):
 
 ```bash
-python -m analysis.GPL_Python.process_v4 "C:\Users\hoang\Downloads\SOCAL_H_76_230426_193500_df100.x.x_10kHz.wav" --output-dir analysis/HMM/work/gpl_193500 --freq-lo 10 --freq-hi 1000
+python -m analysis.GPL_Python.process_v4 "SOCAL_H_76_230426_193500_df100.x.x_10kHz.wav" --output-dir analysis/HMM/work/gpl_193500 --freq-lo 10 --freq-hi 1000
 ```
 
 `--freq-hi 1000` keeps the band that actually has energy. The default 10 kHz would be capped at the 5 kHz Nyquist and would whiten an empty upper band. Windows are the GPL default of 75 s, so this file is 480 windows. Each window writes a whitened spectrogram under `analysis/HMM/work/gpl_193500/spectrogram_npy/`. Those arrays stay on disk as a working product; they are not the model.
@@ -47,16 +47,16 @@ Save the prototypes, the 1 s score matrix, and the score mean and standard devia
 
 A node is a phrase slot (28 slots: 3+3+6+3+5+8). Each slot expands to five duration states, one per second from 1 s through 5 s. Those five states share one diagonal Gaussian over the K motif scores. The unit name on a node identifies the slot; it does not tie emissions across slots that share a unit.
 
-Inside a theme the advance is certain: the slot ends, then the next slot starts at its 1 s state. Only the last slot of a theme branches. Initial branch weights are the numbers on the drawing. Theme 6 repeats with probability 1 and has no edge back to theme 1. The 10 hours are therefore 53 sequences, cut at the song spans in the motif CSV.
+Inside a theme the advance is certain: the slot ends, then the next slot starts at its 1 s state. Only the last slot of a theme branches. Initial branch weights are the numbers on the drawing, including theme 6. Theme 6's next edge returns to theme 1. A song may end in any theme. The 10 hours are 53 sequences, cut at the song spans in the motif CSV.
 
 ## Baum–Welch
 
 Code under [analysis/HMM/](./), called from [train_song_soft_hmm_t6.ipynb](train_song_soft_hmm_t6.ipynb):
 
-- **Topology.** 140 states. From duration k of a slot, k < 5, the chain may continue to k+1 or take the slot’s advance edge. Duration 5 must advance. An advance enters the next slot at duration 1. Non-final slots have one advance target. Final slots split that advance into repeat versus next. Theme 6’s next weight stays 0.
+- **Topology.** 140 states. From duration k of a slot, k < 5, the chain may continue to k+1 or take the slot’s advance edge. Duration 5 must advance. An advance enters the next slot at duration 1. Non-final slots have one advance target. Final slots split that advance into repeat versus next. Theme 6’s next target is theme 1.
 - **Tied emissions.** One mean and one diagonal variance per slot, shared by its five duration states, in the K-dimensional motif-score space. Variances floored so a score cannot collapse.
 - **Initialization.** Pool the 1 s score vectors that the CSV assigns to each slot to set the Gaussian. Set each slot’s exit probabilities so the implied length distribution matches that slot’s labeled lengths, clipped to 1–5 s. A song may enter at the 1 s state of the first slot of any theme; that start distribution begins uniform. Seed the five theme-end branches from the DOT labels.
-- **E-step / M-step.** Scaled forward–backward on the sparse graph, one pass per song, parameters shared across the 53 songs. The M-step updates slot Gaussians, per-slot exit probabilities, the five free theme-end branches, and the start distribution. Structural zeros stay zero. Theme 6’s repeat stays 1. Run until the total log-likelihood gain is small (cap around 20 iterations).
+- **E-step / M-step.** Scaled forward–backward on the sparse graph, one pass per song, parameters shared across the 53 songs. The M-step updates slot Gaussians, per-slot exit probabilities, all six theme-end branches, and the start distribution. Structural zeros stay zero. Run until the total log-likelihood gain is small (cap around 20 iterations).
 
 ## What the notebook shows
 

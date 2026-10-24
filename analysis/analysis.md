@@ -1,15 +1,17 @@
 # Analysis
 
-Two stages, from a recording to repeated calls.
+Three stages. The first two build a dictionary of repeated calls. The third fits a six-theme song model. The song model does not use that dictionary.
 
 1. **Find motifs.** `matrix_profile` finds repeated stretches without a template. The search runs on the whitened spectrogram from `GPL_Python`, not on the raw samples.
 2. **Learn templates.** `dict_learning` turns those motif rectangles into seed atoms, then matching pursuit places each atom and removes it from the residual.
+3. **Fit the song HMM.** `HMM` sums the whitened spectrogram to a 10 Hz energy series, keeps 12 panMP prototypes, and runs Baum–Welch. Each second is a 12-dimensional score against those prototypes. The labeled unit names in the motif CSV cut the songs and initialize the slots. They are not the observation.
 
 ```
 WAV → GPL whitened spectrogram → matrix profile → motif rectangles → seed atoms → dictionary
+WAV → GPL whitened spectrogram → 10 Hz energy → panMP scores → Baum–Welch HMM
 ```
 
-Both stages use the same rectangle: the spectrogram's frequency rows by the motif's time span.
+The dictionary stages use the same rectangle: the spectrogram's frequency rows by the motif's time span.
 
 ## Layout
 
@@ -25,6 +27,7 @@ analysis/
 │   ├── gpl_parity.py
 │   ├── decimate_wav.py
 │   └── preprocess.py
+├── HMM/                     six-theme song model, Baum–Welch fit
 ├── dict_learning/
 │   ├── code/
 │   │   ├── core.py          windows, atoms, patch distance
@@ -79,6 +82,17 @@ Inside `dict_learning/code`, `learn` and `cli` use `tools`, `tools` uses `mp`, a
 - `code/learn/split_template.py` — split one atom's patches into two atoms.
 - `code/learn/similarity.py` — compare atoms by the patches they explain.
 
+### `HMM/`
+
+- `song_soft_hmm_t6.dot` — six themes, 28 phrase slots (3+3+6+3+5+8). Only the last slot of a theme repeats or moves on. After theme 6, that move returns to theme 1. A song may begin at the first slot of any theme and may end in any theme.
+- `topology.py` — 140 states: each slot has five duration states of 1–5 seconds. All six theme-end branches are free parameters.
+- `observations.py` — 10 Hz energy, 12 panMP prototypes, and one score vector per second. The motif CSV supplies the 53 song cuts and the initial slot Gaussians.
+- `hmm.py` — Baum–Welch. The five duration states of a slot share one diagonal Gaussian. `fit_metrics` reports sequence likelihood, the emission/transition/start split, and forward–backward mass on the labeled theme.
+- `run_train.py` — `python -m analysis.HMM.run_train`. The recording name is `SOCAL_H_76_230426_193500_df100.x.x_10kHz.wav`. The fit is written to `HMM/song_soft_hmm_t6.npz`.
+- `write_report.py` — rebuilds `HMM/song_soft_hmm_t6_report.pdf`.
+
+This folder does not choose a state path. A later decoder loads the parameter file. File-by-file notes are in `HMM/README.md`. How to read the metrics is in `HMM/instructions.md`.
+
 ## Motif signal
 
 `GPL_Python` writes one whitened spectrogram per 75 s window (`spectrogram_npy/spwhiten_*.npy`). `stitch_whitened_spectrogram` joins those windows in time. A column is one STFT hop (`overlap` samples).
@@ -94,6 +108,7 @@ From the repo root, with this directory on `PYTHONPATH`:
 ```bash
 python -m pytest analysis/test/test_mpxForPan.py analysis/test/test_motifs.py -q
 python -m analysis.dict_learning.code.learn.build_dictionary --help
+python -m analysis.HMM.run_train
 ```
 
-Dictionary commands and knobs: `dict_learning/README.md`.
+Dictionary commands and knobs: `dict_learning/README.md`. The song-model fit reuses `HMM/work/motif_scores.npz` when that file is already on disk, then overwrites `HMM/song_soft_hmm_t6.npz`.

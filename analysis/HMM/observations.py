@@ -1,7 +1,9 @@
 """GPL windows to a 10 Hz series, panMP prototypes, and 1-second motif scores.
 
 Labels from the motif CSV cut the recording into songs and name the slot
-that each second belongs to. They are not the observation.
+that each second belongs to. They are not the observation. A labeled song
+may end in any theme. The return from theme 6 to theme 1 is an edge in
+``topology``, not a cut made here.
 """
 
 from __future__ import annotations
@@ -276,7 +278,12 @@ def apply_zscore(scores: np.ndarray, mean: np.ndarray, std: np.ndarray) -> np.nd
 
 
 def song_slices(labels: dict[str, np.ndarray], n_seconds: int) -> list[tuple[int, int, int]]:
-    """(song id, start second inclusive, end second exclusive) in time order."""
+    """(song id, start second inclusive, end second exclusive) in time order.
+
+    The CSV span is the whole sequence. It may stop in any theme. Theme 6
+    returning to theme 1 is handled by the transition graph, not by extending
+    the slice.
+    """
     slices = []
     for song, (start, end) in zip(labels["song_id"], labels["song_bounds"], strict=True):
         i0 = max(0, int(np.floor(start)))

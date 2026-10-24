@@ -1,6 +1,8 @@
 # Use the fitted song HMM
 
-The fitted model is [song_soft_hmm_t6.npz](song_soft_hmm_t6.npz). It contains the phrase-slot Gaussians, the duration and theme-repeat probabilities, the start distribution, the 12 motif prototypes, and the score mean and standard deviation from training.
+The current fit is [song_soft_hmm_t6.npz](song_soft_hmm_t6.npz), written by `python -m analysis.HMM.run_train` from the repository root. That command reads `SOCAL_H_76_230426_193500_df100.x.x_10kHz.wav`, reuses `analysis/HMM/work/motif_scores.npz` when it is already on disk, and overwrites the parameter file in `analysis/HMM/`. The file contains the phrase-slot Gaussians, the duration and theme-repeat probabilities, the start distribution, the 12 motif prototypes, and the score mean and standard deviation.
+
+After the last slot of theme 6, the next theme is theme 1. A song may end in any theme. All six theme-end branches are learned.
 
 Run the commands below from the repository root (`panMP_whales`), so Python imports this `analysis` package.
 
@@ -17,7 +19,7 @@ The numbers are in [work/train_report.json](work/train_report.json) and in [song
 | Posterior mass on the labeled theme | Average forward–backward probability on the theme the CSV wrote at that second. This is not a decoded path. |
 | Theme occupancy | Expected seconds in each theme under the posterior, next to the labeled seconds. |
 | Labeled phrases per song | How many times the CSV repeats each theme’s slot chain, divided by 53. Set next to the fitted repeat probability. |
-| Theme-end and mean sensitivity | How far the sequence log-likelihood falls when one repeat probability or one slot mean is nudged. No refit. |
+| Theme-end and mean sensitivity | How far the sequence log-likelihood falls when one of the six repeat probabilities, or one slot mean, is nudged. No refit. |
 
 ## Train again
 
