@@ -1,13 +1,256 @@
-"""Shared helpers for dictionary learning (coverage, residual crops, copies)."""
+"""Windows, templates, matchings, and how much of a patch an atom leaves unexplained."""
 
 from __future__ import annotations
+
+import os
+
+
+def _env_int(name: str, default: int) -> int:
+    """Positive int from the environment, falling back to ``default``."""
+    raw = os.environ.get(name, "").strip()
+    if not raw:
+        return default
+    try:
+        value = int(raw)
+    except ValueError:
+        return default
+    return value if value > 0 else default
+
+
+# Matches analysis/dict_learning/notebooks/seed_from_gpl_LeiData_setup.py (on-disk knobs)
+# and the README worked example / repeat_builder tuning.
+EPS_STEP_FRACTION = 0.01
+MAX_ATOMS_PER_ROUND = 10  # legacy catalog/CLI alias; MP stops via eps_step_fraction
+# Scope of a learning run, overridable via env (see backend/env.example).
+# One outer round yields one template, so N_ROUNDS is the dictionary size.
+# 30 windows / 10 templates: widened from the original 10/1 so later
+# (residual-deflation) templates have enough underlying data to find more than
+# one or two repeats each.
+N_WINDOWS = _env_int("GPL_REPEATS_N_WINDOWS", 30)
+N_ROUNDS = _env_int("GPL_REPEATS_N_ROUNDS", 10)
+NORMALIZE = True
+# Candidate GPL patch width (time bins); None = no filter.
+MIN_TEMPLATE_WIDTH: int | None = None
+MAX_TEMPLATE_WIDTH: int | None = 24
+WINDOW_OFFSET = 0
+# How each atom is rebuilt from its matched patches: "pca" (leading principal
+# component / largest eigenvector) or "average" (element-wise mean).
+TEMPLATE_METHOD = "pca"
+# Number of PCA modes per atom. ``1`` is rank-1 MP (catalog-compatible).
+# ``k>1`` uses subspace MP; builds persist to a manifest only (no catalog schema).
+N_COMPONENTS = 1
+# Closeness gate shared by MP acceptance and template rebuilds: reject a patch
+# when more than this fraction of its energy is left unexplained by the atom
+# (0 = exact match only, 1 = accept everything, None = gate off).
+MAX_RELATIVE_DISTANCE: float | None = None
+# Optional multi-atom refine after outer seed→average rounds (build_dictionary).
+REFINE_ITERS = 0
+# Extend-dictionary stage: stop adding atoms once time-bin coverage reaches this.
+MIN_COVERAGE = 0.9
+# Minimum matchings required in both the seed trial and the averaged re-MP.
+MIN_REPEATS = 3
+# Optional Mallat cap: stop after this many accepted matchings (None = no cap).
+# In per_window mode the cap applies per window.
+MAX_REPEATS: int | None = None
+# Seed candidate window policy for learn_averaged_templates_from_gpl:
+#   "global" — trial every residual GPL candidate (legacy)
+#   "low_coverage" — seed from least-covered window (+ neighborhood); match on full stack
+SEED_WINDOW_POLICY = "global"
+SEED_WINDOW_NEIGHBORHOOD = 0
+# Incremental builder: initial span; max span is caller-required (None = use pool size).
+INITIAL_N_WINDOWS = N_WINDOWS
+MAX_N_WINDOWS: int | None = None
+# Incremental builder candidate width band (time bins).
+INCREMENTAL_MIN_TEMPLATE_WIDTH: int | None = 12
+INCREMENTAL_MAX_TEMPLATE_WIDTH: int | None = 24
+
+# Matching Pursuit parallelism / mode / compute.
+# Override with DICT_LEARNING_MP_WORKERS / DICT_LEARNING_MP_MODE /
+# DICT_LEARNING_MP_COMPUTE (or GPL_COMPUTE=cuda), or CLI flags.
+def _default_mp_workers() -> int:
+    try:
+        return max(1, len(os.sched_getaffinity(0)))
+    except (AttributeError, OSError):
+        return max(1, int(os.cpu_count() or 1))
+
+
+MP_WORKERS = _default_mp_workers()
+# per_window: independent Mallat per window (default). global: classic stack Mallat.
+MP_MODE = "per_window"
+# auto: CUDA when CuPy works and problem is large enough; else CPU (Numba/NumPy).
+MP_COMPUTE = "auto"
+
+from dataclasses import dataclass, field
+from pathlib import Path
+from typing import Any
+
+import numpy as np
+
+
+@dataclass
+class Window:
+    """One spectrogram tile (GPL process window) with metadata."""
+
+    window_id: str
+    data: np.ndarray  # shape (F, T)
+    start_sample: int  # file-global 1-based
+    end_sample: int
+    overlap: int  # STFT hop samples
+    fftl: int = 0
+    sample_freq: float = 0.0
+    start_freq: float = 0.0
+    end_freq: float = 0.0
+    npy_path: Path | None = None
+    meta: dict[str, Any] = field(default_factory=dict)
+
+    @property
+    def n_freq(self) -> int:
+        return int(self.data.shape[0])
+
+    @property
+    def n_time(self) -> int:
+        return int(self.data.shape[1])
+
+
+@dataclass
+class Segment:
+    """Spectrogram patch cropped from a window (one GPL detection overlap)."""
+
+    segment_id: str
+    data: np.ndarray  # (F, W)
+    window_id: str
+    t_start: int
+    t_end: int  # exclusive
+    global_start_sample: int
+    global_end_sample: int
+    detection_index: int = -1
+    boundary_cross_flag: int = 0
+
+    @property
+    def energy(self) -> float:
+        """Frobenius energy ‖U‖²_F of the patch."""
+        return float(np.sum(np.asarray(self.data, dtype=np.float64) ** 2))
+
+
+@dataclass
+class Template:
+    """Dictionary atom: rank-1 ``(F, W)`` or subspace ``(k, F, W)`` basis."""
+
+    template_id: int
+    data: np.ndarray  # (F, W) or (k, F, W)
+    source_segment_id: str | None = None
+    variances: np.ndarray | None = None
+
+    def __post_init__(self) -> None:
+        self.data = np.asarray(self.data, dtype=np.float64)
+        if self.data.ndim not in (2, 3):
+            raise ValueError(
+                f"Template.data must be (F, W) or (k, F, W), got shape {self.data.shape}"
+            )
+        if self.variances is not None:
+            self.variances = np.asarray(self.variances, dtype=np.float64)
+
+    @property
+    def n_components(self) -> int:
+        return 1 if self.data.ndim == 2 else int(self.data.shape[0])
+
+    @property
+    def basis(self) -> np.ndarray:
+        """Orthonormal modes as ``(k, F, W)`` (view/copy-safe contiguous)."""
+        if self.data.ndim == 2:
+            return np.ascontiguousarray(self.data[np.newaxis, ...])
+        return np.ascontiguousarray(self.data)
+
+    @property
+    def as_rank1(self) -> np.ndarray:
+        """``(F, W)`` slice; requires ``n_components == 1``."""
+        if self.n_components != 1:
+            raise ValueError(
+                f"as_rank1 requires n_components=1, got {self.n_components}"
+            )
+        return self.basis[0]
+
+    @property
+    def width(self) -> int:
+        return int(self.data.shape[-1])
+
+    @property
+    def n_freq(self) -> int:
+        return int(self.data.shape[-2])
+
+
+@dataclass
+class Matching:
+    """One activation of a template in a window.
+
+    Construct with ``amplitude=`` (rank-1) and/or ``coeffs=`` (length ``k``).
+    """
+
+    template_id: int
+    window_id: str
+    t_start: int
+    amplitude: float | None = None
+    coeffs: np.ndarray | None = None
+
+    def __post_init__(self) -> None:
+        if self.coeffs is not None:
+            c = np.asarray(self.coeffs, dtype=np.float64).reshape(-1)
+        elif self.amplitude is not None:
+            c = np.asarray([float(self.amplitude)], dtype=np.float64)
+        else:
+            raise ValueError("Matching requires amplitude= or coeffs=")
+        object.__setattr__(self, "coeffs", c)
+        if c.size == 1:
+            object.__setattr__(self, "amplitude", float(c[0]))
+        else:
+            object.__setattr__(self, "amplitude", float(np.linalg.norm(c)))
+
+    @property
+    def energy(self) -> float:
+        c = np.asarray(self.coeffs, dtype=np.float64)
+        return float(np.dot(c, c))
+
+    @property
+    def n_components(self) -> int:
+        return int(np.asarray(self.coeffs).size)
+
+
+@dataclass
+class Dictionary:
+    """Active set of templates keyed by template_id."""
+
+    templates: dict[int, Template] = field(default_factory=dict)
+    order: list[int] = field(default_factory=list)
+
+    def add(self, template: Template) -> None:
+        tid = template.template_id
+        if tid not in self.templates:
+            self.order.append(tid)
+        self.templates[tid] = template
+
+    def __iter__(self):
+        for tid in self.order:
+            yield self.templates[tid]
+
+    def __len__(self) -> int:
+        return len(self.order)
+
+    @property
+    def max_n_components(self) -> int:
+        if not self.order:
+            return 1
+        return max(t.n_components for t in self)
+
+def mean_center(arr: np.ndarray) -> np.ndarray:
+    """Subtract the global mean so ``arr`` has zero mean (float64 copy)."""
+    a = np.asarray(arr, dtype=np.float64)
+    return a - float(np.mean(a))
+
 
 from typing import Sequence
 
 import numpy as np
 
-from .objects import Dictionary, Matching, Segment, Template, Window
-from ..learn.seed_from_gpl import mean_center
 
 
 def as_stack(
@@ -385,3 +628,11 @@ def filter_matchings_by_relative_distance(
     n_take = min(int(min_keep), len(scored))
     return [scored[int(i)][1] for i in order[:n_take]]
 
+class defaults:
+    """Knobs accessed as ``defaults.NAME``."""
+
+
+for _name, _value in list(globals().items()):
+    if _name.isupper():
+        setattr(defaults, _name, _value)
+del _name, _value

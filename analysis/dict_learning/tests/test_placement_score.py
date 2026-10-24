@@ -21,8 +21,8 @@ REPO_ROOT = Path(__file__).resolve().parents[3]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
-from analysis.dict_learning.code.core.objects import Dictionary, Template  # noqa: E402
-from analysis.dict_learning.code.mp.mp_step import (  # noqa: E402
+from analysis.dict_learning.code.core import Dictionary, Template  # noqa: E402
+from analysis.dict_learning.code.mp import (  # noqa: E402
     _best_placement_on_window,
     _mp_step_one_window_inplace,
     _placement_beats,

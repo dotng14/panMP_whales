@@ -12,12 +12,12 @@ REPO_ROOT = Path(__file__).resolve().parents[3]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
-from analysis.dict_learning.code.core.objects import (  # noqa: E402
+from analysis.dict_learning.code.core import (  # noqa: E402
     Dictionary,
     Matching,
     Template,
 )
-from analysis.dict_learning.code.learn.calc_template_similarity import (  # noqa: E402
+from analysis.dict_learning.code.learn.similarity import (  # noqa: E402
     calc_template_similarity,
 )
 

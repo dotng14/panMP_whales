@@ -146,7 +146,7 @@ def learn_and_register(
         return None
     if opts.refine_iters > 0:
         from analysis.dict_learning.code.learn.build_dictionary import apply_refine_iters
-        from analysis.dict_learning.code.io.io_gpl import load_gpl_inputs
+        from analysis.dict_learning.code.io import load_gpl_inputs
 
         windows, _ = load_gpl_inputs(
             npy_dir=output_dir / "spectrogram_npy",

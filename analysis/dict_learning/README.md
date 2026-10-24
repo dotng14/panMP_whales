@@ -46,11 +46,11 @@ Dictionary-learning tools on GPL whitened spectrogram windows. Design: [`../../d
 ```
 dict_learning/
 ├── code/                # library implementation
-│   ├── core/            # objects, utils, defaults
-│   ├── mp/              # score_shifts, mp_step, mp_dp, workers, subspace_mp, …
-│   ├── learn/           # seed_from_gpl, learn_dictionary, build, extend, match_to_dictionary, split_template, calc_divergences, calc_template_similarity, calc_template_group_similarity
-│   ├── io/              # GPL window / CSV loaders
-│   ├── catalog/         # repeats payload for the frontend
+│   ├── core.py          # windows, atoms, distance, defaults
+│   ├── io.py            # GPL window / CSV loaders and spectrogram stitch
+│   ├── mp.py            # matching pursuit
+│   ├── learn/           # seed, build, extend, motifs, similarity, split
+│   ├── catalog.py       # repeats payload for the frontend
 │   ├── tools.py         # elementary tools A–E
 │   └── cli.py
 ├── experiments/         # LeiData harnesses (compare grow, subspace, match-to-dict, split, bench_mp)
@@ -65,27 +65,21 @@ dict_learning/
 
 | File | Role |
 |---|---|
-| `code/core/objects.py` | Core dataclasses: `Window`, `Segment`, `Template` (`(F,W)` or `(k,F,W)`), `Matching` (`amplitude` / `coeffs`), `Dictionary`. |
-| `code/core/utils.py` | Coverage, residual crops, relative-distance (unexplained-energy) filters. |
-| `code/io/io_gpl.py` | Load GPL windows (`.npy` + `.json`) and detection CSVs; `Detection`, overlap helpers. |
-| `code/mp/score_shifts.py` | Correlate a template against a residual at every admissible time shift (Numba-accelerated when available). |
-| `code/mp/mp_step.py` | Unified Mallat `mp_step` / `run_mp_loop`: rank-1 or subspace (`k>1` → global projection-energy MP); optional relative-distance gate. |
-| `code/mp/subspace_mp.py` | Thin wrappers (`SubspaceAtom` / `run_subspace_mp_loop`) over unified MP for notebooks/harness. |
-| `code/mp/mp_parallel.py` / `code/mp/mp_workers.py` | Worker resolution (`DICT_LEARNING_MP_WORKERS` / `DICT_LEARNING_MP_MODE`) and picklable candidate-trial workers. |
+| `code/core.py` | `Window`, `Segment`, `Template`, `Matching`, `Dictionary`, coverage, patch distance, and shared knobs (`defaults`). |
+| `code/io.py` | Load GPL windows (`.npy` + `.json`) and detection CSVs; stitch the whitened spectrogram. |
+| `code/mp.py` | Matching pursuit: score every shift, greedy or exact placement, subtract the atom. |
 | `code/tools.py` | Elementary tools **A–E**: `matching_pursuit`, `average_templates` / `pca_templates` / `pca_basis`, grow/edit (+ catalog persist for `k=1`). |
 | `code/learn/seed_from_gpl.py` | Repeat-qualified single-template selection (`Seed.from_gpl` / `Seed.from_paths`). |
 | `code/learn/learn_dictionary.py` | Orchestrator: seed→average→MP rounds; optional `n_components>1` subspace rebuild. |
 | `code/learn/extend_dictionary.py` | Single stage: peel parent → while coverage < 0.9: +1 atom → refine; optional pinned matchings. |
 | `code/learn/match_to_dictionary.py` | Build dictionary from labeled matchings + explicit widths, then optional average→MP refine. |
 | `code/learn/split_template.py` | Randomized 1→2 rank-1 split of one atom’s patches. |
-| `code/learn/calc_divergences.py` | Asymmetric residual-energy divergences between atoms (joint MP + inflate + re-MP). |
-| `code/learn/calc_template_similarity.py` | Symmetric Pearson correlation of unit-L2 template responses on a fixed matching (no MP). |
-| `code/learn/calc_template_group_similarity.py` | Asymmetric group-mean similarity $S_{AB}=\mu(A,B)/\mu(A,A)$ from labeled matchings (no MP). |
-| `code/mp/mp_dp.py` | Exact non-overlapping matching pursuit by dynamic programming (`run_mp_dp_loop`), selectable anywhere via `algorithm="dp"`. |
-| `code/core/defaults.py` | Shared learner knobs (`EPS_STEP_FRACTION`, `MIN_REPEATS`, `N_COMPONENTS=1`, `MAX_RELATIVE_DISTANCE`, …). |
+| `code/learn/similarity.py` | Compare atoms: residual-energy divergence, response correlation, and group-mean similarity. |
 | `code/learn/build_dictionary.py` | Catalog WAV → one-shot build → register (`k=1`) or manifest-only (`k>1`). |
+| `code/learn/learn_from_motifs.py` | Grow a dictionary from matrix-profile motifs until half the frames are covered. |
+| `code/learn/randomized_dictionary.py` | Sample unexplained patches as atoms and refine until coverage. |
 | `run_build_dictionary.sh` | Generic efficient wrapper (threads + CPU Numba defaults). LeiData: `scripts/run_build_dictionary_leidata_wav1.sh`. |
-| `code/catalog/repeats_from_catalog.py` | Frontend repeats JSON from catalog + panel.bin. |
+| `code/catalog.py` | Frontend repeats JSON from catalog + panel.bin. |
 | `code/cli.py` / package `__main__.py` | CLI: `matching-pursuit`, `average-templates`, `match-to-dictionary`, `build-from-detections`, `remove-template`, `merge-templates`. |
 | `tests/` | Unit tests for seeding, MP stopping rules, tools, subspace, extend, split, relative-distance. |
 
@@ -190,7 +184,7 @@ python3 -m analysis.dict_learning.code.learn.seed_from_gpl \
 
 ```python
 from analysis.dict_learning import Seed
-from analysis.dict_learning.code.io.io_gpl import load_window, load_detections_csv
+from analysis.dict_learning.code.io import load_window, load_detections_csv
 
 window = load_window("…/spwhiten_….npy")  # sibling .json required
 detections = load_detections_csv("…/CSV_….csv")

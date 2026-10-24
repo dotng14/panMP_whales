@@ -21,8 +21,8 @@ import numpy as np
 
 from database import catalog
 
-from .io.io_gpl import Detection, load_gpl_inputs
-from .mp.mp_step import (
+from .io import Detection, load_gpl_inputs
+from .mp import (
     IntervalMap,
     MpLoopResult,
     copy_residual_stack,
@@ -30,7 +30,7 @@ from .mp.mp_step import (
     run_mp_loop,
     single_template_dictionary,
 )
-from .core.objects import Dictionary, Matching, Segment, Template, Window
+from .core import Dictionary, Matching, Segment, Template, Window
 from .learn.seed_from_gpl import Seed, detections_to_segments, mean_center
 
 
@@ -64,9 +64,9 @@ class EditDictionaryResult(ToolResult):
     merged_template_pk: int | None = None
 
 
-from .core.utils import as_stack as _as_stack
-from .core.utils import copy_dictionary as _copy_dictionary
-from .core.utils import filter_matchings_by_relative_distance
+from .core import as_stack as _as_stack
+from .core import copy_dictionary as _copy_dictionary
+from .core import filter_matchings_by_relative_distance
 
 
 def _matching_rows(matchings: Sequence[Matching]) -> list[dict[str, Any]]:
@@ -653,7 +653,7 @@ def pca_templates(
     return average_templates(signal, dictionary, matchings, method="pca", **kwargs)
 
 
-from .core.utils import crop_candidates_from_residual as _crop_candidates_from_residual
+from .core import crop_candidates_from_residual as _crop_candidates_from_residual
 
 
 def build_dictionary_from_detections(
@@ -687,7 +687,7 @@ def build_dictionary_from_detections(
     (imported lazily to avoid cycles).
     """
     from .learn.learn_dictionary import LearnedDictionary
-    from .mp.progress import range_progress
+    from .mp import range_progress
 
     rounds_cap = n_rounds if n_rounds is not None else max_templates
     if rounds_cap is not None and rounds_cap < 1:
@@ -737,8 +737,8 @@ def build_dictionary_from_detections(
             out_dir=out_dir,
         )
 
-    from .mp.mp_parallel import allocate_nested_workers, map_parallel, resolve_mp_mode, resolve_mp_workers
-    from .mp.mp_workers import (
+    from .mp import allocate_nested_workers, map_parallel, resolve_mp_mode, resolve_mp_workers
+    from .mp import (
         CandidateTrialPayload,
         init_trial_worker_shared,
         payload_by_segment_id,

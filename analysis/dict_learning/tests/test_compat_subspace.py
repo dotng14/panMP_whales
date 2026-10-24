@@ -5,8 +5,8 @@ from __future__ import annotations
 import numpy as np
 
 from analysis.dict_learning.code.learn.learn_dictionary import learn_averaged_templates_from_gpl
-from analysis.dict_learning.code.mp.mp_step import run_mp_loop, single_template_dictionary
-from analysis.dict_learning.code.core.objects import Matching, Segment, Template, Window
+from analysis.dict_learning.code.mp import run_mp_loop, single_template_dictionary
+from analysis.dict_learning.code.core import Matching, Segment, Template, Window
 from analysis.dict_learning.code.learn.seed_from_gpl import mean_center
 from analysis.dict_learning.code.tools import pca_basis, rebuild_template_from_matchings
 

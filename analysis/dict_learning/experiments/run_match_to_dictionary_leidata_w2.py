@@ -19,8 +19,8 @@ if str(REPO) not in sys.path:
     sys.path.insert(0, str(REPO))
 
 from database import catalog  # noqa: E402
-from analysis.dict_learning.code.core.objects import Matching  # noqa: E402
-from analysis.dict_learning.code.io.io_gpl import load_windows_from_paths  # noqa: E402
+from analysis.dict_learning.code.core import Matching  # noqa: E402
+from analysis.dict_learning.code.io import load_windows_from_paths  # noqa: E402
 from analysis.dict_learning.code.learn.match_to_dictionary import (  # noqa: E402
     match_to_dictionary,
     write_match_to_dictionary_result,

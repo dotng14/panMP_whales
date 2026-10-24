@@ -1,4 +1,4 @@
-"""Load GPL_Python window spectrograms and detection CSVs; map samples ↔ time bins."""
+"""Load GPL windows and stitch the whitened spectrogram into one array."""
 
 from __future__ import annotations
 
@@ -10,7 +10,7 @@ from typing import Any, Iterable, Sequence
 
 import numpy as np
 
-from ..core.objects import Window
+from .core import Window
 
 
 @dataclass(frozen=True)
@@ -133,6 +133,56 @@ def load_detections_from_paths(paths: Iterable[Path | str]) -> list[Detection]:
     for p in paths:
         out.extend(load_detections_csv(Path(p)))
     return out
+
+
+@dataclass(frozen=True)
+class WhitenedSpectrogram:
+    """GPL whitened spectrogram windows joined along time."""
+
+    data: np.ndarray
+    sec_per_bin: float
+    start_freq: float
+    end_freq: float
+    sample_freq: float
+    hop_samples: int
+
+
+def stitch_whitened_spectrogram(gpl_dir: Path | str) -> WhitenedSpectrogram:
+    """Load ``spwhiten_*.npy`` windows and join them in time order.
+
+    ``gpl_dir`` is a GPL output directory or its ``spectrogram_npy`` folder.
+    Each window is the whitened spectrogram ``GPL_Python`` writes. Columns are
+    concatenated, so a motif can match across windows. The hop is the sidecar
+    ``overlap`` (samples between STFT columns).
+    """
+    gpl_dir = Path(gpl_dir)
+    npy_dir = gpl_dir / "spectrogram_npy" if (gpl_dir / "spectrogram_npy").is_dir() else gpl_dir
+    windows = discover_windows(npy_dir)
+    if not windows:
+        raise FileNotFoundError(f"no whitened spectrogram windows in {npy_dir}")
+    windows.sort(key=lambda window: (window.start_sample, window.window_id))
+    first = windows[0]
+    hop = int(first.overlap)
+    if hop < 1 or first.sample_freq <= 0:
+        raise ValueError(f"invalid hop or sample rate in {first.npy_path}")
+    n_freq = first.data.shape[0]
+    for window in windows[1:]:
+        if window.data.shape[0] != n_freq:
+            raise ValueError(
+                f"frequency rows differ: {first.npy_path} has {n_freq}, "
+                f"{window.npy_path} has {window.data.shape[0]}"
+            )
+        if int(window.overlap) != hop or window.sample_freq != first.sample_freq:
+            raise ValueError(f"hop or sample rate differs in {window.npy_path}")
+    data = np.concatenate([window.data for window in windows], axis=1)
+    return WhitenedSpectrogram(
+        data=np.asarray(data, dtype=np.float64),
+        sec_per_bin=hop / float(first.sample_freq),
+        start_freq=float(first.start_freq),
+        end_freq=float(first.end_freq),
+        sample_freq=float(first.sample_freq),
+        hop_samples=hop,
+    )
 
 
 def load_gpl_inputs(

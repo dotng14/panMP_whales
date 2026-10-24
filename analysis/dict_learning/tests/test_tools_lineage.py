@@ -7,7 +7,7 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-from analysis.dict_learning.code.core.objects import Dictionary, Matching, Template, Window
+from analysis.dict_learning.code.core import Dictionary, Matching, Template, Window
 from analysis.dict_learning.code.tools import (
     average_patches,
     average_templates,

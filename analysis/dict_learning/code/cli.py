@@ -12,9 +12,9 @@ import numpy as np
 
 from database import catalog
 
-from .io.io_gpl import discover_windows, load_gpl_inputs, load_window
-from .mp.mp_step import residual_energy, single_template_dictionary
-from .core.objects import Dictionary, Matching, Template
+from .io import discover_windows, load_gpl_inputs, load_window
+from .mp import residual_energy, single_template_dictionary
+from .core import Dictionary, Matching, Template
 from .learn.seed_from_gpl import Seed, seed_from_gpl_paths, write_seed_result
 from .learn.match_to_dictionary import match_to_dictionary, write_match_to_dictionary_result
 from .tools import (

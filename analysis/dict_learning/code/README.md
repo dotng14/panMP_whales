@@ -21,7 +21,7 @@ code/
 Import from these paths directly, e.g.:
 
 ```python
-from analysis.dict_learning.code.core.objects import Template, Matching
+from analysis.dict_learning.code.core import Template, Matching
 from analysis.dict_learning.code.core import defaults
 from analysis.dict_learning.code.learn.build_dictionary import build_dictionary_for_wav
 ```
@@ -50,42 +50,17 @@ catalog, cli, learn
 
 | Layer | Package / file | Responsibility |
 |---|---|---|
-| **core** | `core/` | Domain types (`Window`, `Segment`, `Template`, `Matching`, `Dictionary`), shared knobs (`defaults`), coverage / residual / distance helpers (`utils`). |
-| **io** | `io/` | Read whitened `.npy` windows + GPL detection CSVs (`Detection`, path discovery). |
-| **mp** | `mp/` | Shift scoring, one Mallat step / full loop, process/thread pools, optional subspace wrappers, progress + loop timing. |
+| **core** | `core.py` | Domain types (`Window`, `Segment`, `Template`, `Matching`, `Dictionary`), shared knobs (`defaults`), coverage / residual / distance helpers. |
+| **io** | `io.py` | Read whitened `.npy` windows + GPL detection CSVs, and stitch the whitened spectrogram. |
+| **mp** | `mp.py` | Shift scoring, greedy and exact pursuit, worker pools, subspace wrappers, progress and loop timing. |
 | **tools** | `tools.py` | Elementary operators **A–E** used by learning and the CLI (see below). |
-| **learn** | `learn/` | How dictionaries are grown and curated: seed selection, outer seed→average→MP rounds, catalog build, coverage-gated extend, labeled match-to-dictionary, 1→2 template split, atom divergences. |
-| **catalog** | `catalog/` | Build the web “repeats” JSON from catalog templates + `panel.bin` (used by the backend). |
+| **learn** | `learn/` | How dictionaries are grown and curated: seed selection, outer seed→average→MP rounds, catalog build, coverage-gated extend, labeled match-to-dictionary, 1→2 template split, atom comparison. |
+| **catalog** | `catalog.py` | Build the web “repeats” JSON from catalog templates + `panel.bin` (used by the backend). |
 | **cli** | `cli.py` | Thin argparse front-end over seed + tools A–E + `match-to-dictionary`. |
 
-## Modules by subdirectory
+## Modules
 
-### `core/`
-
-| File | Role |
-|---|---|
-| `objects.py` | Dataclasses: spectrogram `Window`, GPL `Segment`, dictionary `Template` / `Matching` / `Dictionary`. Rank-1 and subspace (`k>1`) share these types. |
-| `defaults.py` | Learner knobs (`EPS_STEP_FRACTION`, `MIN_REPEATS`, `N_COMPONENTS`, seed-window policy, `MAX_RELATIVE_DISTANCE`, …). |
-| `utils.py` | Stack copies, occupancy / coverage, residual crops, patch↔template residual-energy distance, relative-distance (unexplained-energy-fraction) filtering. |
-
-### `io/`
-
-| File | Role |
-|---|---|
-| `io_gpl.py` | Load windows from `.npy`(+`.json`), parse detection CSVs, overlap helpers, `load_gpl_inputs`. |
-
-### `mp/`
-
-| File | Role |
-|---|---|
-| `score_shifts.py` | Correlate a template against a residual at every admissible time shift (CuPy / Numba / NumPy). |
-| `mp_step.py` | `mp_step` / `run_mp_loop`: unified Mallat for rank-1 and subspace atoms, including the `max_relative_distance` acceptance gate. `algorithm="dp"` delegates to `mp_dp`. |
-| `mp_dp.py` | `run_mp_dp_loop`: exact non-overlapping peel. Disjoint spans make the per-placement energy drops additive, so the window reduces to maximum-weight interval scheduling, solved by DP in `O(T·K)` (`O(T·K·R)` under `max_repeats`). `lambda_fraction` replaces `eps_step_fraction` for sparsity: each placement pays a fraction of the window's best drop. |
-| `mp_parallel.py` | Resolve `mp_mode` / `mp_workers`; `map_parallel` for candidate trials. |
-| `mp_workers.py` | Picklable workers for seed / seed→average trials (process pool). |
-| `subspace_mp.py` | Thin `SubspaceAtom` / `run_subspace_mp_loop` wrappers over `mp_step` (notebooks / harnesses). |
-| `progress.py` | Optional tqdm wrappers. |
-| `loop_stats.py` | Optional per-loop timing counters (`DICT_LEARNING_LOOP_STATS`). |
+`core.py` holds the dataclasses, the shared knobs, and the patch-distance helpers. `io.py` loads GPL windows and stitches the whitened spectrogram. `mp.py` places atoms and subtracts them: shift scores, the greedy loop, the exact non-overlapping loop, worker pools, and the older subspace names.
 
 ### `tools.py` (elementary A–E)
 
@@ -109,15 +84,13 @@ Also: `rebuild_template_from_matchings`, optional catalog persistence for `n_com
 | `extend_dictionary.py` | Single stage: peel parent (optional) → while time coverage < 0.9: add one atom → end refine. Cross-WAV windows; optional pinned matchings. |
 | `match_to_dictionary.py` | Build dictionary from labeled matchings + explicit widths; optional pinned average→MP refine. |
 | `split_template.py` | Randomized 1→2 rank-1 bipartition of one atom’s patches (`split_one_template`, `split_template_matchings`). |
-| `calc_divergences.py` | Asymmetric residual-energy divergences \(D(A,B)\) between atoms (joint MP → inflate \(A\) → re-MP \(B\)). `respect_occupancy=True` keeps \(B\) off spans other atoms still hold. |
-| `calc_template_similarity.py` | Symmetric Pearson \(S_{ij}=\mathrm{corr}(\alpha_i,\alpha_j)\) for unit-\(L^2\) rank-1 atoms on a **supplied** matching's patches (no MP). |
-| `calc_template_group_similarity.py` | Asymmetric \(S_{AB}=\mu(A,B)/\mu(A,A)\) from patches grouped by matching `template_id` (no MP). |
+| `similarity.py` | Compare atoms by residual-energy divergence, response correlation, and group-mean similarity. |
+| `learn_from_motifs.py` | Grow a dictionary from matrix-profile motifs until half the frames are covered. Also builds seeds from the 5-band energy grid. |
+| `randomized_dictionary.py` | Sample unexplained patches as atoms and refine until coverage. |
 
-### `catalog/`
+### `catalog.py`
 
-| File | Role |
-|---|---|
-| `repeats_from_catalog.py` | `build_repeats_payload_from_catalog` for the frontend overlay API. |
+`build_repeats_payload_from_catalog` for the frontend overlay API.
 
 ### `cli.py`
 

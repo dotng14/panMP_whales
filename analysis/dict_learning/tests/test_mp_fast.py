@@ -11,9 +11,9 @@ REPO_ROOT = Path(__file__).resolve().parents[3]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
-from analysis.dict_learning.code.mp.mp_step import run_mp_loop, single_template_dictionary  # noqa: E402
-from analysis.dict_learning.code.core.objects import Dictionary, Segment, Template  # noqa: E402
-from analysis.dict_learning.code.mp.score_shifts import numba_available, score_shifts  # noqa: E402
+from analysis.dict_learning.code.mp import run_mp_loop, single_template_dictionary  # noqa: E402
+from analysis.dict_learning.code.core import Dictionary, Segment, Template  # noqa: E402
+from analysis.dict_learning.code.mp import numba_available, score_shifts  # noqa: E402
 from analysis.dict_learning.code.learn.seed_from_gpl import Seed  # noqa: E402
 
 EPS_PEEL = 1e-12
@@ -33,7 +33,7 @@ def test_score_shifts_numba_matches_numpy():
 
 
 def test_allocate_nested_workers_saturates_cpus():
-    from analysis.dict_learning.code.mp.mp_parallel import allocate_nested_workers, available_cpu_count
+    from analysis.dict_learning.code.mp import allocate_nested_workers, available_cpu_count
 
     cpus = available_cpu_count()
     assert cpus >= 1
@@ -47,7 +47,7 @@ def test_allocate_nested_workers_saturates_cpus():
 
 
 def test_gpu_auto_falls_back_to_cpu_when_unusable():
-    from analysis.dict_learning.code.mp.score_shifts import cupy_available, gpu_beneficial
+    from analysis.dict_learning.code.mp import cupy_available, gpu_beneficial
 
     rng = np.random.default_rng(0)
     # Large enough to prefer GPU when usable.
@@ -104,7 +104,7 @@ def test_parallel_candidates_same_winner():
         residual[:, t0 : t0 + w] += pattern
     spike = np.ones((f, 3), dtype=np.float64) * 3.0
     residual[:, 50:53] += spike
-    from analysis.dict_learning.code.core.objects import Window
+    from analysis.dict_learning.code.core import Window
 
     window = Window(
         window_id="w0",
@@ -157,7 +157,7 @@ def test_parallel_candidates_same_winner():
 
 
 def test_candidate_trial_omits_residual_by_default():
-    from analysis.dict_learning.code.mp.mp_workers import (
+    from analysis.dict_learning.code.mp import (
         CandidateTrialPayload,
         rematerialize_candidate_trial,
         run_candidate_trial,
@@ -189,7 +189,7 @@ def test_candidate_trial_omits_residual_by_default():
 
 
 def test_numba_score_shifts_releases_gil():
-    from analysis.dict_learning.code.mp.score_shifts import _score_shifts_numba, numba_available
+    from analysis.dict_learning.code.mp import _score_shifts_numba, numba_available
 
     if not numba_available():
         return
@@ -206,8 +206,8 @@ def test_numba_score_shifts_releases_gil():
 
 
 def test_process_pool_shared_residual_matches_serial():
-    from analysis.dict_learning.code.mp.mp_parallel import map_parallel
-    from analysis.dict_learning.code.mp.mp_workers import (
+    from analysis.dict_learning.code.mp import map_parallel
+    from analysis.dict_learning.code.mp import (
         CandidateTrialPayload,
         init_trial_worker_shared,
         run_candidate_trial,
@@ -257,7 +257,7 @@ def test_per_window_inplace_matches_manual_copy_loop():
     every step. Manually drive the old, always-copies public API by hand and
     assert the hot loop's output is bit-identical.
     """
-    from analysis.dict_learning.code.mp.mp_step import mp_step_one_window
+    from analysis.dict_learning.code.mp import mp_step_one_window
 
     rng = np.random.default_rng(7)
     f, t = 6, 120
@@ -356,8 +356,8 @@ def test_occupied_intervals_bind_even_without_disallow_overlap():
 
 
 def test_refit_and_deflate_refits_amplitude_and_reports_spans():
-    from analysis.dict_learning.code.core.objects import Matching
-    from analysis.dict_learning.code.mp.mp_step import refit_and_deflate, residual_energy
+    from analysis.dict_learning.code.core import Matching
+    from analysis.dict_learning.code.mp import refit_and_deflate, residual_energy
 
     stack, dictionary = _single_pattern_stack()
     stack = {k: v * 3.0 for k, v in stack.items()}
@@ -388,7 +388,7 @@ def test_thread_pool_candidate_trials_match_serial():
     import os
 
     from analysis.dict_learning.code.learn.learn_dictionary import learn_averaged_templates_from_gpl
-    from analysis.dict_learning.code.core.objects import Window
+    from analysis.dict_learning.code.core import Window
 
     f, t = 4, 120
     pattern_a = np.zeros((f, 5), dtype=np.float64)

@@ -19,7 +19,7 @@ import numpy as np
 from database import catalog
 from database.migrate_flat_dict_dirs import utc_run_stamp
 
-from ..core.defaults import (
+from ..core import (
     EPS_STEP_FRACTION,
     INCREMENTAL_MAX_TEMPLATE_WIDTH,
     INCREMENTAL_MIN_TEMPLATE_WIDTH,
@@ -33,10 +33,10 @@ from ..core.defaults import (
     SEED_WINDOW_POLICY,
     TEMPLATE_METHOD,
 )
-from ..core.objects import Dictionary, Matching, Segment, Template, Window
-from ..core.utils import coverage_from_matchings, mean_center
-from ..io.io_gpl import Detection, load_detections_csv, load_windows_from_paths
-from ..mp.mp_step import refit_and_deflate, residual_energy
+from ..core import Dictionary, Matching, Segment, Template, Window
+from ..core import coverage_from_matchings, mean_center
+from ..io import Detection, load_detections_csv, load_windows_from_paths
+from ..mp import refit_and_deflate, residual_energy
 from .build_dictionary import register_averaged_result
 from .learn_dictionary import (
     LearnedDictionary,

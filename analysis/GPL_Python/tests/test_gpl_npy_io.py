@@ -6,8 +6,8 @@ from pathlib import Path
 import numpy as np
 from scipy.io import wavfile
 
-from analysis.GPL_Python.gpl_models import DetectorParams
-from analysis.GPL_Python.gpl_npy_io import (
+from analysis.GPL_Python.gpl_signal import DetectorParams
+from analysis.GPL_Python.gpl_outputs import (
     analysis_band_slice,
     freq_axis_hz,
     imshow_extent,

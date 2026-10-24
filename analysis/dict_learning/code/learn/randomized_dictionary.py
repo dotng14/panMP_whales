@@ -37,15 +37,15 @@ from typing import Callable, Sequence
 import numpy as np
 
 from ..core import defaults
-from ..core.objects import Dictionary, Matching, Segment, Template, Window
-from ..core.utils import (
+from ..core import Dictionary, Matching, Segment, Template, Window
+from ..core import (
     as_stack,
     copy_dictionary,
     coverage_from_matchings,
     patch_template_relative_distance,
 )
-from ..io.io_gpl import Detection
-from ..mp.mp_step import refit_and_deflate, residual_energy
+from ..io import Detection
+from ..mp import refit_and_deflate, residual_energy
 from ..tools import matching_pursuit, rebuild_template_from_matchings
 from .seed_from_gpl import detections_to_segments
 
@@ -162,7 +162,7 @@ def filter_matchings_by_atom_distance(
 ) -> tuple[list[Matching], int]:
     """Keep placements with ``dnorm(x, A) <= max_relative_distance`` (strict).
 
-    Unlike :func:`~..core.utils.filter_matchings_by_relative_distance`, this
+    Unlike :func:`~..core.filter_matchings_by_relative_distance`, this
     never rescues far patches to satisfy a ``min_keep`` quota.
     Returns ``(kept_matchings, n_filtered)``.
     """

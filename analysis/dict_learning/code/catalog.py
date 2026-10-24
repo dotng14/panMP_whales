@@ -1,4 +1,4 @@
-"""Build the frontend RepeatMatches payload from catalog rows + panel.bin."""
+"""Build the repeat-match payload the viewer reads from the catalog."""
 
 from __future__ import annotations
 
@@ -11,8 +11,8 @@ from typing import Any
 import numpy as np
 
 from analysis.GPL_Python.gpl_outputs import clip_intensity_percentile, display_from_spwhiten
-from analysis.GPL_Python.panel_bin import read_panel_header
-from analysis.dict_learning.code.core.utils import patch_template_distance
+from analysis.GPL_Python.gpl_outputs import read_panel_header
+from analysis.dict_learning.code.core import patch_template_distance
 from database import catalog
 
 REPEATS_PAYLOAD_VERSION = 7

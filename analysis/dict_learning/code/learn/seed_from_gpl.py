@@ -30,7 +30,7 @@ from typing import Sequence
 
 import numpy as np
 
-from ..io.io_gpl import (
+from ..io import (
     Detection,
     detection_overlaps_window,
     discover_windows,
@@ -39,17 +39,11 @@ from ..io.io_gpl import (
     load_detections_from_paths,
     load_windows_from_paths,
 )
-from ..mp.mp_step import residual_energy
-from ..core.objects import Matching, Segment, Template, Window
+from ..mp import residual_energy
+from ..core import Matching, Segment, Template, Window, mean_center
 
 
 # ── helpers ──────────────────────────────────────────────────────────────────
-
-def mean_center(arr: np.ndarray) -> np.ndarray:
-    """Subtract the global mean so ``arr`` has zero mean (float64 copy)."""
-    a = np.asarray(arr, dtype=np.float64)
-    return a - float(np.mean(a))
-
 
 def _clone_window(window: Window, data: np.ndarray) -> Window:
     """Copy ``window`` metadata with a replacement spectrogram array."""
@@ -218,13 +212,13 @@ class Seed:
             Reject placements leaving more than this fraction of the patch
             energy unexplained by the candidate (``None`` = no gate).
         """
-        from ..mp.mp_parallel import (
+        from ..mp import (
             allocate_nested_workers,
             map_parallel,
             resolve_mp_mode,
             resolve_mp_workers,
         )
-        from ..mp.mp_workers import (
+        from ..mp import (
             CandidateTrialPayload,
             init_trial_worker_shared,
             payload_by_segment_id,
@@ -233,7 +227,7 @@ class Seed:
             slim_payloads_for_process_pool,
             trial_sort_key_energy_then_segment,
         )
-        from ..mp.progress import iter_progress
+        from ..mp import iter_progress
 
         if eps_step_fraction <= 0.0:
             raise ValueError(f"eps_step_fraction must be > 0, got {eps_step_fraction}")

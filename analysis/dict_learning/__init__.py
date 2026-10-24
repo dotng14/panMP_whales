@@ -4,11 +4,16 @@ from __future__ import annotations
 
 from typing import Any
 
-from .code.core.objects import Dictionary, Matching, Segment, Template, Window
-from .code.mp.mp_dp import run_mp_dp_loop
-from .code.mp.mp_step import MpStepResult, mp_step, residual_energy, run_mp_loop
-from .code.mp.score_shifts import score_shifts
+from .code.core import Dictionary, Matching, Segment, Template, Window
+from .code.mp import run_mp_dp_loop
+from .code.mp import MpStepResult, mp_step, residual_energy, run_mp_loop
+from .code.mp import score_shifts
 from .code.learn.seed_from_gpl import Seed, detections_to_segments, mean_center, seed_from_gpl
+from .code.learn.learn_from_motifs import (
+    MotifSeeds,
+    seeds_from_motif_pairs,
+    window_from_band_profile,
+)
 from .code.learn.learn_dictionary import (
     DictionaryLearningError,
     DictionaryRefinementResult,
@@ -75,23 +80,31 @@ _LAZY_EXPORTS = {
         ".code.learn.split_template",
         "split_template_matchings",
     ),
-    "DivergenceResult": (".code.learn.calc_divergences", "DivergenceResult"),
-    "calc_divergences": (".code.learn.calc_divergences", "calc_divergences"),
+    "DivergenceResult": (".code.learn.similarity", "DivergenceResult"),
+    "calc_divergences": (".code.learn.similarity", "calc_divergences"),
     "TemplateSimilarityResult": (
-        ".code.learn.calc_template_similarity",
+        ".code.learn.similarity",
         "TemplateSimilarityResult",
     ),
     "calc_template_similarity": (
-        ".code.learn.calc_template_similarity",
+        ".code.learn.similarity",
         "calc_template_similarity",
     ),
     "TemplateGroupSimilarityResult": (
-        ".code.learn.calc_template_group_similarity",
+        ".code.learn.similarity",
         "TemplateGroupSimilarityResult",
     ),
     "calc_template_group_similarity": (
-        ".code.learn.calc_template_group_similarity",
+        ".code.learn.similarity",
         "calc_template_group_similarity",
+    ),
+    "learn_dictionary_from_motifs": (
+        ".code.learn.learn_from_motifs",
+        "learn_dictionary_from_motifs",
+    ),
+    "MotifLearnResult": (
+        ".code.learn.learn_from_motifs",
+        "MotifLearnResult",
     ),
 }
 
@@ -128,6 +141,9 @@ __all__ = [
     "run_mp_loop",
     "score_shifts",
     "seed_from_gpl",
+    "MotifSeeds",
+    "seeds_from_motif_pairs",
+    "window_from_band_profile",
     "DictionaryLearningError",
     "DictionaryRefinementResult",
     "NoMatchingPatchesError",
@@ -165,6 +181,8 @@ __all__ = [
     "calc_template_similarity",
     "TemplateGroupSimilarityResult",
     "calc_template_group_similarity",
+    "learn_dictionary_from_motifs",
+    "MotifLearnResult",
     "matching_pursuit",
     "average_templates",
     "average_patches",

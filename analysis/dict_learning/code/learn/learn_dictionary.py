@@ -10,12 +10,12 @@ from typing import Any, Sequence
 
 import numpy as np
 
-from ..io.io_gpl import Detection, load_gpl_inputs
-from ..mp.mp_step import residual_energy, single_template_dictionary
-from ..core.defaults import TEMPLATE_METHOD
-from ..core.objects import Dictionary, Matching, Segment, Template, Window
+from ..io import Detection, load_gpl_inputs
+from ..mp import residual_energy, single_template_dictionary
+from ..core import TEMPLATE_METHOD
+from ..core import Dictionary, Matching, Segment, Template, Window
 from .seed_from_gpl import Seed, detections_to_segments, mean_center
-from ..core.utils import (
+from ..core import (
     coverage_from_matchings as _coverage_from_matchings_util,
     crop_candidates_from_residual,
     filter_candidates_by_windows,
@@ -272,8 +272,8 @@ def refine_dictionary_by_averaging(
     its span withheld from MP, so no other atom can claim that patch and a
     pinned atom can never be left without patches to average.
     """
-    from ..mp.mp_step import refit_and_deflate
-    from ..mp.progress import range_progress
+    from ..mp import refit_and_deflate
+    from ..mp import range_progress
     from ..tools import average_templates, matching_pursuit
 
     if iter < 0:
@@ -697,15 +697,15 @@ def learn_averaged_templates_from_gpl(
     ``on_round_complete`` is called after each successful round with a
     :class:`LearningRoundLog` (seed matches, energy drop, window/time coverage).
     """
-    from ..mp.mp_parallel import (
+    from ..mp import (
         allocate_nested_workers,
         map_parallel,
         prefer_candidate_threads,
         resolve_mp_mode,
         resolve_mp_workers,
     )
-    from ..mp.mp_step import run_mp_loop, single_template_dictionary
-    from ..mp.mp_workers import (
+    from ..mp import run_mp_loop, single_template_dictionary
+    from ..mp import (
         SeedAvgTrialPayload,
         init_trial_worker_shared,
         payload_by_segment_id,
@@ -714,7 +714,7 @@ def learn_averaged_templates_from_gpl(
         slim_payloads_for_process_pool,
         trial_sort_key_energy_then_segment,
     )
-    from ..mp.progress import iter_progress, range_progress
+    from ..mp import iter_progress, range_progress
     from ..tools import rebuild_template_from_matchings
 
     if n_rounds is not None and n_rounds < 1:

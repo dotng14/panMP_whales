@@ -4,7 +4,7 @@ from pathlib import Path
 
 import numpy as np
 
-from analysis.GPL_Python.gpl_models import DetectorParams
+from analysis.GPL_Python.gpl_signal import DetectorParams
 from analysis.GPL_Python.gpl_outputs import (
     OutputWriter,
     clip_intensity_percentile,

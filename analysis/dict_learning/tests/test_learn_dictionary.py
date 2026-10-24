@@ -22,7 +22,7 @@ from analysis.dict_learning.code.learn.learn_dictionary import (  # noqa: E402
     refine_seed_by_averaging,
 )
 from analysis.dict_learning.code.learn.seed_from_gpl import Seed  # noqa: E402
-from analysis.dict_learning.code.core.objects import Dictionary, Matching, Segment, Template, Window  # noqa: E402
+from analysis.dict_learning.code.core import Dictionary, Matching, Segment, Template, Window  # noqa: E402
 
 
 def _make_window(data: np.ndarray, wid: str = "w0", overlap: int = 10) -> Window:

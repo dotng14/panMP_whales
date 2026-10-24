@@ -12,7 +12,7 @@ REPO_ROOT = Path(__file__).resolve().parents[3]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
-from analysis.dict_learning.code.core.objects import (  # noqa: E402
+from analysis.dict_learning.code.core import (  # noqa: E402
     Dictionary,
     Segment,
     Window,
@@ -347,7 +347,7 @@ def test_extend_catalog_lineage_and_cross_wav(tmp_path: Path, monkeypatch) -> No
 
 def test_drop_unmatched_atoms_keeps_only_matched():
     """Atoms with no matchings are removed; ids and order of the rest survive."""
-    from analysis.dict_learning.code.core.objects import Dictionary, Matching, Template
+    from analysis.dict_learning.code.core import Dictionary, Matching, Template
     from analysis.dict_learning.code.learn.extend_dictionary import _drop_unmatched_atoms
 
     dictionary = Dictionary()
@@ -362,7 +362,7 @@ def test_drop_unmatched_atoms_keeps_only_matched():
 
 
 def test_drop_unmatched_atoms_is_a_noop_when_all_matched():
-    from analysis.dict_learning.code.core.objects import Dictionary, Matching, Template
+    from analysis.dict_learning.code.core import Dictionary, Matching, Template
     from analysis.dict_learning.code.learn.extend_dictionary import _drop_unmatched_atoms
 
     dictionary = Dictionary()

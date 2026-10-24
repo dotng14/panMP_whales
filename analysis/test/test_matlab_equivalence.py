@@ -15,10 +15,12 @@ import numpy as np
 import pytest
 
 ROOT = Path(__file__).resolve().parents[1] / "matrix_profile"
-sys.path.insert(0, str(ROOT))
+REPO_ROOT = Path(__file__).resolve().parents[2]
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
 
-from mpxForPan import mpxForPan  # noqa: E402
-from panMP import panMP  # noqa: E402
+from analysis.matrix_profile import mpxForPan  # noqa: E402
+from analysis.matrix_profile import panMP  # noqa: E402
 
 MATLAB = shutil.which("matlab")
 pytestmark = pytest.mark.skipif(MATLAB is None, reason="MATLAB not on PATH")

@@ -14,8 +14,8 @@ if str(REPO_ROOT) not in sys.path:
 from analysis.dict_learning.code.learn.learn_dictionary import (  # noqa: E402
     learn_averaged_templates_from_gpl,
 )
-from analysis.dict_learning.code.core.objects import Segment, Window  # noqa: E402
-from analysis.dict_learning.code.core.utils import (  # noqa: E402
+from analysis.dict_learning.code.core import Segment, Window  # noqa: E402
+from analysis.dict_learning.code.core import (  # noqa: E402
     filter_candidates_by_windows,
     select_low_coverage_seed_windows,
     window_uncovered_fraction,

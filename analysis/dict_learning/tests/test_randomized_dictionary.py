@@ -11,7 +11,7 @@ REPO_ROOT = Path(__file__).resolve().parents[3]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
-from analysis.dict_learning.code.core.objects import (  # noqa: E402
+from analysis.dict_learning.code.core import (  # noqa: E402
     Dictionary,
     Segment,
     Template,
@@ -263,7 +263,7 @@ def test_refine_subspace_k():
 
 def test_post_refine_filters_far_patches():
     """After refine, placements with dnorm > 0.5 are dropped."""
-    from analysis.dict_learning.code.core.objects import Matching
+    from analysis.dict_learning.code.core import Matching
     from analysis.dict_learning.code.learn.randomized_dictionary import (
         filter_matchings_by_atom_distance,
     )
@@ -295,7 +295,7 @@ def test_post_refine_filters_far_patches():
     )
     assert refined.n_distance_filtered >= 0
     # Surviving matchings must be close to their atom.
-    from analysis.dict_learning.code.core.utils import (
+    from analysis.dict_learning.code.core import (
         patch_template_relative_distance,
     )
 

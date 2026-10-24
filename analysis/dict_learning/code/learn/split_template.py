@@ -16,7 +16,7 @@ from dataclasses import dataclass
 
 import numpy as np
 
-from ..core.objects import Matching, Template, Window
+from ..core import Matching, Template, Window
 from ..tools import _extract_patches
 
 

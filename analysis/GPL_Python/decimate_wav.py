@@ -5,6 +5,7 @@ The ratio is an integer 20. ``scipy.signal.resample_poly`` low-passes below
 the new Nyquist (5 kHz) and keeps every 20th sample.
 
 Example:
+    python -m analysis.GPL_Python.decimate_wav
     python -m analysis.GPL_Python.decimate_wav input.wav -o input_10kHz.wav
 """
 
@@ -19,6 +20,12 @@ from scipy.signal import resample_poly
 
 SOURCE_RATE = 200_000
 TARGET_RATE = 10_000
+DEFAULT_WAV = (
+    Path.home() / "whale_processing/LeiData/SOCAL_H_76_230427_014845.x.wav"
+)
+DEFAULT_OUT = (
+    Path.home() / "whale_processing/LeiData/SOCAL_H_76_230427_014845.x_10kHz.wav"
+)
 
 
 def integer_wav_scale(dtype: np.dtype) -> float:
@@ -91,13 +98,22 @@ def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description="Decimate a WAV from 200 kHz to 10 kHz (factor 20).",
     )
-    parser.add_argument("wav", type=Path, help="Input WAV, expected at 200 kHz")
+    parser.add_argument(
+        "wav",
+        nargs="?",
+        type=Path,
+        default=DEFAULT_WAV,
+        help=f"Input WAV, expected at 200 kHz (default: {DEFAULT_WAV})",
+    )
     parser.add_argument(
         "-o",
         "--output",
         type=Path,
         default=None,
-        help="Output WAV (default: <input stem>_10kHz.wav beside the input)",
+        help=(
+            "Output WAV. With no input path, defaults to "
+            f"{DEFAULT_OUT}. Otherwise <input stem>_10kHz.wav beside the input."
+        ),
     )
     parser.add_argument("--source-rate", type=int, default=SOURCE_RATE)
     parser.add_argument("--target-rate", type=int, default=TARGET_RATE)
@@ -107,11 +123,13 @@ def _build_parser() -> argparse.ArgumentParser:
 def main(argv: list[str] | None = None) -> int:
     args = _build_parser().parse_args(argv)
     in_path = args.wav.expanduser().resolve()
-    out_path = args.output
-    if out_path is None:
-        out_path = in_path.with_name(f"{in_path.stem}_10kHz.wav")
+    if args.output is None:
+        if in_path == DEFAULT_WAV.expanduser().resolve():
+            out_path = DEFAULT_OUT.expanduser().resolve()
+        else:
+            out_path = in_path.with_name(f"{in_path.stem}_10kHz.wav")
     else:
-        out_path = out_path.expanduser().resolve()
+        out_path = args.output.expanduser().resolve()
     n_in, n_out, rate = decimate_wav(
         in_path,
         out_path,

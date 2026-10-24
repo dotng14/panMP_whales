@@ -11,10 +11,10 @@ REPO_ROOT = Path(__file__).resolve().parents[3]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
-from analysis.dict_learning.code.io.io_gpl import Detection, global_samples_to_time_bins  # noqa: E402
-from analysis.dict_learning.code.mp.mp_step import mp_step, residual_energy, run_mp_loop  # noqa: E402
-from analysis.dict_learning.code.core.objects import Dictionary, Segment, Template, Window  # noqa: E402
-from analysis.dict_learning.code.mp.score_shifts import score_shifts  # noqa: E402
+from analysis.dict_learning.code.io import Detection, global_samples_to_time_bins  # noqa: E402
+from analysis.dict_learning.code.mp import mp_step, residual_energy, run_mp_loop  # noqa: E402
+from analysis.dict_learning.code.core import Dictionary, Segment, Template, Window  # noqa: E402
+from analysis.dict_learning.code.mp import score_shifts  # noqa: E402
 from analysis.dict_learning.code.learn.seed_from_gpl import (  # noqa: E402
     Seed,
     detections_to_segments,

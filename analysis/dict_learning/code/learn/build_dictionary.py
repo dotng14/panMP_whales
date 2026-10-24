@@ -30,7 +30,7 @@ from database import catalog
 from database.migrate_flat_dict_dirs import utc_run_stamp
 
 from ..core import defaults
-from ..io.io_gpl import load_detections_csv, load_windows_from_paths
+from ..io import load_detections_csv, load_windows_from_paths
 from .learn_dictionary import (
     DictionaryLearningError,
     LearnedDictionary,
@@ -38,7 +38,7 @@ from .learn_dictionary import (
     learn_averaged_templates_from_gpl,
     refine_dictionary_by_averaging,
 )
-from ..core.objects import Dictionary
+from ..core import Dictionary
 from .seed_from_gpl import Seed
 
 

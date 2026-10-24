@@ -21,12 +21,12 @@ from pathlib import Path
 import numpy as np
 
 from .gpl_detector import GPLDetector
-from .gpl_models import DetectorParams
-from .gpl_signal import read_wav_mono
+from .gpl_signal import DetectorParams, read_wav_mono
 from .gpl_outputs import (
     DEFAULT_INTENSITY_CLIP_HI_PERCENTILE,
     OutputWriter,
     matlab_datenum_from_datetime,
+    write_panel_bin,
 )
 
 
@@ -162,8 +162,6 @@ class ProcessingOrchestrator:
         print(f"Saved CSV:  {csv_path}")
         print(f"Saved NPY spectrograms: {self.writer.npy_dir}")
         print(f"Detections: {len(all_detections)}")
-
-        from .panel_bin import write_panel_bin
 
         panel_path = write_panel_bin(self.output_dir, clean_name)
         print(f"Saved panel: {panel_path}")

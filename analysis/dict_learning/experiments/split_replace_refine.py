@@ -28,9 +28,9 @@ REPO_ROOT = Path(__file__).resolve().parents[3]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
-from analysis.dict_learning.code.core.defaults import EPS_STEP_FRACTION  # noqa: E402
-from analysis.dict_learning.code.core.objects import Matching  # noqa: E402
-from analysis.dict_learning.code.io.io_gpl import load_windows_from_paths  # noqa: E402
+from analysis.dict_learning.code.core import EPS_STEP_FRACTION  # noqa: E402
+from analysis.dict_learning.code.core import Matching  # noqa: E402
+from analysis.dict_learning.code.io import load_windows_from_paths  # noqa: E402
 from analysis.dict_learning.code.learn.extend_dictionary import (  # noqa: E402
     load_dictionary_from_catalog,
 )

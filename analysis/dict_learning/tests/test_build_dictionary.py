@@ -21,7 +21,7 @@ from analysis.dict_learning.code.learn.learn_dictionary import (  # noqa: E402
     LearnedDictionary,
     NoMatchingPatchesError,
 )
-from analysis.dict_learning.code.core.objects import Matching, Template, Window  # noqa: E402
+from analysis.dict_learning.code.core import Matching, Template, Window  # noqa: E402
 from analysis.dict_learning.code.learn.seed_from_gpl import Seed  # noqa: E402
 from database import catalog, index_existing  # noqa: E402
 

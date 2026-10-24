@@ -6,7 +6,7 @@ import numpy as np
 from scipy.io import wavfile
 
 from analysis.GPL_Python.process_v4 import ProcessingOrchestrator, normalize_input_path
-from analysis.GPL_Python.gpl_models import DetectorParams
+from analysis.GPL_Python.gpl_signal import DetectorParams
 
 
 class TestSmoke(unittest.TestCase):

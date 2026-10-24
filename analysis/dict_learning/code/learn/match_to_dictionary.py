@@ -28,10 +28,10 @@ import numpy as np
 
 from database.migrate_flat_dict_dirs import utc_run_stamp
 
-from ..core.defaults import EPS_STEP_FRACTION, TEMPLATE_METHOD
-from ..core.objects import Dictionary, Matching, Template, Window
-from ..io.io_gpl import discover_windows, load_window
-from ..mp.mp_step import residual_energy
+from ..core import EPS_STEP_FRACTION, TEMPLATE_METHOD
+from ..core import Dictionary, Matching, Template, Window
+from ..io import discover_windows, load_window
+from ..mp import residual_energy
 from ..tools import average_templates
 from .learn_dictionary import DictionaryRefinementResult, refine_dictionary_by_averaging
 from .seed_from_gpl import mean_center

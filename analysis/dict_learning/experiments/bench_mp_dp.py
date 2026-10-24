@@ -40,16 +40,16 @@ REPO_ROOT = Path(__file__).resolve().parents[3]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
-from analysis.dict_learning.code.core.utils import as_stack  # noqa: E402
-from analysis.dict_learning.code.io.io_gpl import load_windows_from_paths  # noqa: E402
-from analysis.dict_learning.code.learn.calc_divergences import (  # noqa: E402
+from analysis.dict_learning.code.core import as_stack  # noqa: E402
+from analysis.dict_learning.code.io import load_windows_from_paths  # noqa: E402
+from analysis.dict_learning.code.learn.similarity import (  # noqa: E402
     calc_divergences,
 )
 from analysis.dict_learning.code.learn.extend_dictionary import (  # noqa: E402
     load_dictionary_from_catalog,
 )
-from analysis.dict_learning.code.mp.mp_dp import run_mp_dp_loop  # noqa: E402
-from analysis.dict_learning.code.mp.mp_step import (  # noqa: E402
+from analysis.dict_learning.code.mp import run_mp_dp_loop  # noqa: E402
+from analysis.dict_learning.code.mp import (  # noqa: E402
     residual_energy,
     run_mp_loop,
 )

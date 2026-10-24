@@ -4,12 +4,13 @@ from dataclasses import dataclass
 
 import numpy as np
 
-from .gpl_models import DetectorParams, slice_gpl_freq_band
 from .gpl_signal import (
+    DetectorParams,
     QuietEstimator,
     STFTProcessor,
     WhiteningProcessor,
     gpl_spline_after,
+    slice_gpl_freq_band,
     whiten_matrix,
     whiten_vec,
 )

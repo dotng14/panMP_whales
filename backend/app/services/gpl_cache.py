@@ -8,7 +8,7 @@ from pathlib import Path
 
 from app.config import GPL_RESULT_DIRNAME, WAV_LIBRARY_ROOTS
 from app.services.manifest_builder import build_manifest_from_outputs
-from analysis.GPL_Python.panel_bin import PANEL_VERSION, read_panel_header, write_panel_bin
+from analysis.GPL_Python.gpl_outputs import PANEL_VERSION, read_panel_header, write_panel_bin
 
 
 @dataclass(frozen=True)

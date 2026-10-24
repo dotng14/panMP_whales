@@ -1,6 +1,6 @@
 """Setup for seed_from_gpl_LeiData.ipynb: path discovery and plot knobs.
 
-Learner knobs live in :mod:`analysis.dict_learning.code.core.defaults` and are exposed by
+Learner knobs live in :mod:`analysis.dict_learning.code.core` and are exposed by
 ``python -m analysis.dict_learning.code.learn.learn_dictionary``.
 """
 
@@ -37,7 +37,7 @@ if str(REPO) not in sys.path:
     sys.path.insert(0, str(REPO))
 
 from analysis.dict_learning.code.core import defaults
-from analysis.dict_learning.code.io.io_gpl import (
+from analysis.dict_learning.code.io import (
     load_window,
     load_detections_csv,
     detection_overlaps_window,
@@ -75,7 +75,7 @@ LEI_GPL_DIRS = sorted(
 if not LEI_GPL_DIRS:
     raise FileNotFoundError(f"No *.gpl/output dirs with spectrogram_npy under {LEI_DATA_ROOT}")
 
-# Shared learner knobs (see analysis.dict_learning.code.core.defaults)
+# Shared learner knobs (see analysis.dict_learning.code.core)
 EPS_STEP_FRACTION = defaults.EPS_STEP_FRACTION
 MIN_REPEATS = defaults.MIN_REPEATS
 N_WINDOWS = defaults.N_WINDOWS

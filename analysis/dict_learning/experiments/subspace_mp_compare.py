@@ -29,11 +29,11 @@ from typing import Any
 import numpy as np
 
 from ..code.mp import loop_stats
-from ..code.io.io_gpl import load_windows_from_paths
-from ..code.mp.mp_step import residual_energy, run_mp_loop
-from ..code.core.objects import Dictionary, Matching, Template
+from ..code.io import load_windows_from_paths
+from ..code.mp import residual_energy, run_mp_loop
+from ..code.core import Dictionary, Matching, Template
 from ..code.learn.seed_from_gpl import mean_center
-from ..code.mp.subspace_mp import SubspaceAtom, build_subspace_atom, run_subspace_mp_loop
+from ..code.mp import SubspaceAtom, build_subspace_atom, run_subspace_mp_loop
 
 
 def _load_templates_from_dir(dict_dir: Path) -> list[Template]:

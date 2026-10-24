@@ -11,8 +11,8 @@ REPO_ROOT = Path(__file__).resolve().parents[3]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
-from analysis.dict_learning.code.core.objects import Template  # noqa: E402
-from analysis.dict_learning.code.core.utils import patch_template_distance  # noqa: E402
+from analysis.dict_learning.code.core import Template  # noqa: E402
+from analysis.dict_learning.code.core import patch_template_distance  # noqa: E402
 
 
 def test_rank1_distance_exact_fit():

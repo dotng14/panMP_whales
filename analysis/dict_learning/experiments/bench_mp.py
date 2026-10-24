@@ -12,11 +12,11 @@ from typing import Any
 
 import numpy as np
 
-from ..code.mp.mp_step import run_mp_loop, single_template_dictionary
-from ..code.core.objects import Template
-from ..code.mp.score_shifts import numba_available, score_shifts
+from ..code.mp import run_mp_loop, single_template_dictionary
+from ..code.core import Template
+from ..code.mp import numba_available, score_shifts
 from ..code.learn.seed_from_gpl import Seed
-from ..code.core.objects import Segment
+from ..code.core import Segment
 
 
 def _synth_stack(

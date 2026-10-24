@@ -11,16 +11,16 @@ REPO_ROOT = Path(__file__).resolve().parents[3]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
-from analysis.dict_learning.code.core.objects import Dictionary, Template, Window  # noqa: E402
-from analysis.dict_learning.code.learn.calc_divergences import (  # noqa: E402
+from analysis.dict_learning.code.core import Dictionary, Template, Window  # noqa: E402
+from analysis.dict_learning.code.learn.similarity import (  # noqa: E402
     calc_divergences,
 )
-from analysis.dict_learning.code.mp.mp_step import (  # noqa: E402
+from analysis.dict_learning.code.mp import (  # noqa: E402
     inflate_matching,
     residual_energy,
     _deflate_matching,
 )
-from analysis.dict_learning.code.core.objects import Matching  # noqa: E402
+from analysis.dict_learning.code.core import Matching  # noqa: E402
 
 
 def _make_window(data: np.ndarray, wid: str = "w0") -> Window:
