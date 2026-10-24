@@ -2,3 +2,4 @@
 __pycache__/
 *.pyc
 backend/tmp/
+analysis/HMM/work/
