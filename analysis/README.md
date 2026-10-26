@@ -108,6 +108,10 @@ When detector math or exports change for correctness, land and validate them in 
 
 ## Baseline pipelines
 
+Every command with every option and its default is in one place:
+[Command-line tools](../README.md#command-line-tools) in the root README. This
+section explains what the three analysis commands compute.
+
 Three commands, each reading files directly. The two dict_learning commands
 can also register their output in the SQLite catalog with `--catalog DB` (see
 [`../database/README.md`](../database/README.md)), which the web viewer lists
@@ -180,19 +184,7 @@ All runtime deps (science + webserver) live in the root [`pyproject.toml`](../py
 
 ## Quick start
 
-```bash
-# GPL_Python (module invocation: internal imports are relative)
-python3 -m analysis.GPL_Python.process_v4 /path/to/input.wav --output-dir GPL_OUT
-
-# Dictionary, then MP with it
-python3 -m analysis.dict_learning randomized-build --gpl-dir GPL_OUT --out DICT --seed 0
-python3 -m analysis.dict_learning matching-pursuit --gpl-dir GPL_OUT --dictionary DICT --out MP
-
-# Pan matrix profile on the whitened energy at 10 Hz
-python3 -m analysis.matrix_profile pan --gpl-dir GPL_OUT --rate 10 --out PAN
-
-# Tests
-python3 -m pytest analysis
-```
+A whole run, end to end, is at the top of
+[Command-line tools](../README.md#command-line-tools).
 
 MATLAB parity helpers (optional): see [`GPL_Python/README.md`](GPL_Python/README.md).

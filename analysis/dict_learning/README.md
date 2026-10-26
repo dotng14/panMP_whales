@@ -35,6 +35,10 @@ Tests live in [`../test/`](../test/README.md): `unit/dict_learning/` and
 
 ## Command line
 
+Every option and its default:
+[Command-line tools](../../README.md#command-line-tools) in the root README.
+This section covers what the commands read and write.
+
 Both commands read a GPL output folder (`spectrogram_npy/` with whitened
 windows and JSON sidecars, plus `CSV_*.csv` detections). With `--catalog DB`,
 either command also registers its output folder in the SQLite catalog after

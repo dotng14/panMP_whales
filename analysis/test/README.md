@@ -145,10 +145,82 @@ directory. Nothing in the repository is read or written.
   Tests that write to the catalog take a copy (`catalog_runs.copy_db`). The API
   tests point `app.config` at the copy and at a one-WAV library.
 
-Test parameters are kept small for speed: 1–3 outer passes, 1 refine
-iteration, fixed `--seed 0`, `--workers 1` unless the test is about workers,
-and short motif lengths. Use the reference panMP engine (pure Python) only on
-series of a few hundred samples.
+## Test parameters
+
+The CLI tests don't use the commands' defaults, which are sized for real
+recordings. They use one small shared set, sized to the fixtures above, and
+then each test changes one option to make a particular path run. Defaults are
+listed in [Command-line tools](../../README.md#command-line-tools).
+
+### `randomized-build`: the shared set
+
+`FAST` in `integration/test_randomized_build_cli.py` ("small, fast settings
+that still find the planted motifs"):
+
+| Option | Test | Default | Why |
+|---|---|---|---|
+| `--m-per-outer` | 3 | 5 | The fixture plants 3 shapes; sampling more per pass only adds time |
+| `--n-min` | 2 | 10 | Each shape has only 12 copies (4 per window × 3 windows). With 10, no atom survives one short refinement and the build exits 1 |
+| `--refine-iters` | 1 | 3 | Clean planted copies converge in one round, and each round is a full MP run |
+| `--seed` | 0 | random | Same atoms every run, so exact assertions (stop reason, counts) never flake |
+| `--workers` | 1 | all CPUs | No process pool per test; the parallel path has its own test with `--workers 2` |
+
+The catalog fixture (`catalog_setup.BUILD_ARGS`) is `FAST` plus
+`--max-outer 2 --min-coverage 1.0`: exactly two passes, so the catalog tests
+can assert fixed counts.
+
+### `randomized-build`: forcing each stop reason
+
+| Options | Stop reason | Why it happens |
+|---|---|---|
+| `--min-coverage 1.0 --max-outer 2` | `max_outer` | Coverage can't reach 100%, so the pass limit ends the run, after exactly 2 passes |
+| `--min-coverage 0.05` | `coverage` | Reached after the first pass |
+| `--epsilon 0.95 --min-coverage 1.0 --max-outer 20` | `empty_pool` | Every patch must keep over 95% of its energy unexplained, so the pool empties once the first pass explains the planted copies |
+| `--max-outer 1` | `max_outer` | Used by tests that only need one pass to check one behaviour |
+
+### `randomized-build`: values that make one path run
+
+| Options | Path |
+|---|---|
+| `--n-min 1000` | No atom has enough patches: exit code 1 |
+| `--post-refine-max-relative-distance 0` | Every placement is dropped after refining: exit code 1 |
+| `--post-refine-max-relative-distance none` | The post-refine filter is off |
+| `--max-relative-distance 0.5 --n-min 1` | The rebuild gate, with atoms kept even when one patch supports them |
+| `--max-relative-distance 1` | A gate that keeps every patch |
+| `--n-components 2` | Subspace atoms, shape `(k, F, W)` |
+| `--mp-mode global` vs `per_window --workers 2` | Both MP modes, and the worker pool |
+| `--n-windows 2 --window-offset 1` | A slice of the windows |
+| `--compute cpu` / `cuda` | Each backend (the CUDA test skips without a GPU) |
+| `--verbose --loop-stats` | The per-pass log and `loop_stats.json` |
+| Invalid values (`--n-windows 0`, `--max-relative-distance 1.5`, `--m-per-outer 0`, …) | Each input check and its message: exit code 2 |
+
+### `matching-pursuit`
+
+Every run gets `--workers 1` (a test about the pool passes `--workers 2`). The
+dictionaries come from `BUILD` in `integration/test_matching_pursuit_cli.py`:
+`FAST` plus `--max-outer 2 --min-coverage 1.0`, built once per module, and
+again with `--n-components 2` for the subspace tests.
+
+| Options | What it checks |
+|---|---|
+| `--max-relative-distance 0` | A gate that rejects every placement: 0 matchings, stop reason `no_improvement`, in both MP modes; with `--catalog`, the run still registers |
+| `--max-repeats 3` (global) | Stops at exactly 3 placements (`max_repeats`) |
+| `--max-repeats 2 --disallow-overlap --workers 2` (per window) | The limits inside the worker pool: at most 2 placements per window |
+| `--max-relative-distance 0.5 --eps-step-fraction 1e-12` | The step-size stop is effectively off, so per-window MP runs until no placement passes the gate (`completed`); global MP stops on `no_improvement` |
+| `--eps-step-fraction 0.001` on the subspace dictionary | Subspace placements carry 2 coefficients each |
+
+### `pan`
+
+`LENGTHS` in `integration/test_pan_cli.py` is `--min-len 16 --max-len 32
+--step 8` (defaults 32 / 128 / 32):
+
+| Option | Test | Why |
+|---|---|---|
+| `--min-len` / `--max-len` / `--step` | 16 / 32 / 8 | The series is 600 samples with a length-24 shape at 40, 220 and 420; 16, 24 and 32 bracket it. The defaults start at 32, above the shape: they still find two of the pairs, but with weaker matches, and their third pair is noise |
+| `--top-k` | 3 | The 3 planted copies |
+| `--threads` | 2 | With the 3-row series: the multi-row, multithreaded path |
+
+Use `--engine reference` (pure Python) only on series of a few hundred samples.
 
 ## The coverage gate
 
@@ -230,5 +302,5 @@ python -m analysis.matrix_profile pan --gpl-dir GPL_OUT --rate 10 --signal bands
   --min-len 10 --max-len 50 --step 10 --threads 8 --out PAN --plot
 ```
 
-Each command has `--help`. Full flag tables: `dict_learning/README.md` and the
-`pan` section of `analysis/README.md`.
+Each command has `--help`. Every option and its default:
+[Command-line tools](../../README.md#command-line-tools) in the root README.

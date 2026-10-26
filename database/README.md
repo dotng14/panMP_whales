@@ -61,6 +61,9 @@ are replaced.
 
 ## Writing to it
 
+`index` and `register` options are also listed with the other commands in
+[Command-line tools](../README.md#command-line-tools).
+
 ```bash
 # While running: --catalog on either dict_learning command
 python -m analysis.dict_learning randomized-build --gpl-dir GPL_OUT --out runs/build_a --catalog catalog.sqlite
