@@ -13,6 +13,8 @@ import os
 # import time. These tests never compute a spectrogram; an exported value wins.
 os.environ.setdefault("GPL_COMPUTE", "cpu")
 
+import asyncio
+import shutil
 import sqlite3
 import uuid
 from contextlib import closing
@@ -24,7 +26,10 @@ from analysis.test.catalog_setup import CATALOG_STEM
 from analysis.test.synthetic import write_wav
 from app import config
 from app.main import app
-from app.services import job_store
+from app.routes import jobs as jobs_route
+from app.routes import library as library_route
+from app.services import job_store, pipeline_service
+from app.services.gpl_cache import cache_dir_for
 from app.services.library_service import encode_file_id
 
 
@@ -60,7 +65,7 @@ def ids(client):
 
 def test_picker_lists_dictionaries_and_csvs(client, file_id):
     body = client.get("/api/library/analyses", params={"fileId": file_id}).json()
-    assert body["stem"] == CATALOG_STEM
+    assert body["stem"] == CATALOG_STEM and body["gplCached"] is False
     kinds = [(i["kind"], i.get("source")) for i in body["items"]]
     assert kinds == [("dictionary", "matching"), ("dictionary", "seed"), ("csv", None)]
     mp, built, csv = body["items"]
@@ -205,3 +210,98 @@ def test_song_structure_from_a_catalog_csv(client, catalog_runs, tmp_path):
         conn.execute("UPDATE annotation_csvs SET csv_path = '/nonexistent.motif_segments.csv'")
     res = client.get(f"/api/jobs/{job_id}/song-structure", params={"csvId": csv_id})
     assert res.status_code == 404 and "CSV file missing" in res.json()["detail"]
+
+
+# ── GPL runs register themselves in the catalog ──────────────────────────────
+
+
+def _segmentations(client) -> list[dict]:
+    wavs = client.get("/api/catalog/wavs").json()["wavs"]
+    assert [w["stem"] for w in wavs] == [CATALOG_STEM]
+    return client.get(f"/api/catalog/wavs/{wavs[0]['wav_id']}/segmentations").json()["segmentations"]
+
+
+def _library_wav(tmp_path):
+    return tmp_path / "library" / f"{CATALOG_STEM}.wav"
+
+
+def test_picker_says_whether_gpl_exists(client, file_id, monkeypatch):
+    monkeypatch.setattr(library_route, "is_gpl_cached", lambda wav: True)
+    assert client.get("/api/library/analyses", params={"fileId": file_id}).json()["gplCached"] is True
+
+
+def test_gpl_run_registers_in_a_new_catalog(client, catalog_runs, tmp_path, monkeypatch):
+    """The slow path: GPL runs into the cache, then the WAV and its output enter the catalog."""
+    monkeypatch.setattr(config, "CATALOG_DB", tmp_path / "fresh" / "catalog.sqlite")
+    wav = _library_wav(tmp_path)
+    output = cache_dir_for(wav) / "output"
+    output.mkdir(parents=True)
+    job_dir = tmp_path / "job"
+    job_dir.mkdir()
+    (job_dir / "output").symlink_to(output, target_is_directory=True)
+    (job_dir / "input.wav").symlink_to(wav)
+
+    class FakeOrchestrator:
+        def __init__(self, out_dir):
+            self.out_dir = out_dir
+
+        def process(self, _wav):
+            shutil.copytree(catalog_runs.gpl, self.out_dir, dirs_exist_ok=True)
+
+    import analysis.GPL_Python.process_v4 as process_v4
+
+    monkeypatch.setattr(process_v4, "ProcessingOrchestrator", FakeOrchestrator)
+    monkeypatch.setattr(pipeline_service, "build_manifest_from_outputs", lambda out, job_id: {"jobId": job_id})
+    monkeypatch.setattr(pipeline_service, "finalize_gpl_cache", lambda *a, **k: None)
+    job = job_store.create_job(str(uuid.uuid4()), wav.name, job_dir)
+    job.library_wav_path = wav
+
+    async def run():
+        loop = asyncio.get_running_loop()
+        await loop.run_in_executor(None, pipeline_service._run_job_sync, job, loop)
+
+    asyncio.run(run())
+    assert job.status == "complete"
+    [seg] = _segmentations(client)
+    assert seg["output_dir"] == str(output.resolve()) and seg["n_windows"] == 3
+    # Running again updates the same row.
+    asyncio.run(run())
+    assert len(_segmentations(client)) == 1
+
+
+def test_registration_failure_does_not_fail_the_job(client, tmp_path, monkeypatch):
+    def boom(_wav):
+        raise RuntimeError("locked")
+
+    monkeypatch.setattr(pipeline_service, "register_gpl_in_catalog", boom)
+    monkeypatch.setattr(pipeline_service, "build_manifest_from_outputs", lambda out, job_id: {"jobId": job_id})
+    monkeypatch.setattr(pipeline_service, "finalize_gpl_cache", lambda *a, **k: None)
+
+    import analysis.GPL_Python.process_v4 as process_v4
+
+    monkeypatch.setattr(process_v4, "ProcessingOrchestrator", lambda out: type("P", (), {"process": lambda self, w: None})())
+    job = job_store.create_job(str(uuid.uuid4()), "x.wav", tmp_path)
+    job.library_wav_path = _library_wav(tmp_path)
+
+    async def run():
+        loop = asyncio.get_running_loop()
+        await loop.run_in_executor(None, pipeline_service._run_job_sync, job, loop)
+
+    asyncio.run(run())
+    assert job.status == "complete"
+
+
+def test_viewing_a_cached_file_registers_it(client, file_id, catalog_runs, tmp_path, monkeypatch):
+    """The fast path backfills caches made before jobs registered themselves."""
+    cache = cache_dir_for(_library_wav(tmp_path))
+    shutil.copytree(catalog_runs.gpl, cache / "output")
+    (cache / "manifest.json").write_text("{}")
+    monkeypatch.setattr(jobs_route, "is_gpl_cached", lambda wav: True)
+    assert client.get("/api/catalog/wavs").json()["wavs"] == []
+    assert client.post("/api/jobs/from-library", json={"fileId": file_id}).status_code == 200
+    [seg] = _segmentations(client)
+    assert seg["n_windows"] == 3
+
+    # A catalog failure is logged; the file still opens.
+    monkeypatch.setattr(jobs_route, "register_gpl_in_catalog", lambda wav: 1 / 0)
+    assert client.post("/api/jobs/from-library", json={"fileId": file_id}).status_code == 200
