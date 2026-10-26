@@ -21,7 +21,7 @@ FIG = HMM / "work" / "figures"
 JSON = HMM / "work" / "train_report.json"
 OUT = HMM / "song_soft_hmm_t6_report.pdf"
 
-REPEAT_INIT_PRINT = (0.008, 0.984, 0.943, 0.585, 0.922, 1.0)
+REPEAT_INIT_PRINT = (0.008, 0.984, 0.943, 0.585, 0.922, 0.950)
 
 
 def _wrap(text: str, width: int = 92) -> str:
@@ -75,7 +75,7 @@ class Report:
 
 
 def _largest_branch_sentence(branch: np.ndarray) -> str:
-    increases = [(theme + 1, float(branch[2 * theme])) for theme in range(5)]
+    increases = [(theme + 1, float(branch[2 * theme])) for theme in range(len(branch) // 2)]
     first, second = sorted(increases, key=lambda item: item[1], reverse=True)[:2]
     return (
         f"The two largest drops are the +0.05 nudges on theme {first[0]} ({first[1]:.1f}) "
@@ -172,7 +172,8 @@ def main() -> None:
             "The drawing has 28 phrase slots: 3, 3, 6, 3, 5, and 8 across themes 1 through 6. "
             "Each slot expands to five duration states, for 140 states, sharing one diagonal Gaussian over the 12 motif scores. "
             "A slot may end after 1–4 seconds and must end at 5. Only the last slot of a theme chooses repeat versus next. "
-            "Theme 6 stays at repeat 1. A song may open on the first slot of any theme. "
+            "After theme 6, next returns to theme 1. A sequence may end in any theme. "
+            "A song may also open on the first slot of any theme. "
             "Slots that share a unit name do not share a Gaussian."
         )
         report.heading("Theme-end probabilities")
@@ -199,14 +200,13 @@ def main() -> None:
             "Each free theme-end probability was nudged by 0.05, and each slot mean was shifted by a tenth of its scale on the first motif score. "
             "Nothing was refit. The drop is how far the sequence log-likelihood of all 53 songs fell."
         )
-        report.text(
-            "Theme 1: +0.05 drop "
-            f"{branch[0]:.1f}, −0.05 drop {branch[1]:.1f}.\n"
-            f"Theme 2: +0.05 drop {branch[2]:.1f}, −0.05 drop {branch[3]:.1f}.\n"
-            f"Theme 3: +0.05 drop {branch[4]:.1f}, −0.05 drop {branch[5]:.1f}.\n"
-            f"Theme 4: +0.05 drop {branch[6]:.1f}, −0.05 drop {branch[7]:.1f}.\n"
-            f"Theme 5: +0.05 drop {branch[8]:.1f}, −0.05 drop {branch[9]:.1f}."
-        )
+        sens_lines = []
+        for theme in range(len(branch) // 2):
+            sens_lines.append(
+                f"Theme {theme + 1}: +0.05 drop {branch[2 * theme]:.1f}, "
+                f"−0.05 drop {branch[2 * theme + 1]:.1f}."
+            )
+        report.text("\n".join(sens_lines))
         report.text(
             f"The median branch drop is {float(np.median(branch)):.1f}. "
             + _largest_branch_sentence(branch)

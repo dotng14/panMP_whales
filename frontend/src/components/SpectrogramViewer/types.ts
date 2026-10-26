@@ -1,3 +1,5 @@
+import type { AnalysisChoice } from '../../api/catalog';
+
 export interface SpectrogramViewerProps {
   /** Row-major magnitude; uint8 (v2 panel) or float32 (legacy). */
   magnitude: Float32Array | Uint8Array;
@@ -22,4 +24,7 @@ export interface SpectrogramViewerProps {
   /** Frequency axis bounds in Hz (from panel header) */
   freqLo?: number;
   freqHi?: number;
+  /** Overlays picked in the catalog: a dictionary's atom lane and/or a CSV's
+   *  song structure (neither: none). Omitted: the CSV named after the WAV, if any. */
+  analysis?: AnalysisChoice;
 }

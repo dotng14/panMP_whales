@@ -1,7 +1,9 @@
 """Fit song_soft_hmm_t6 on the 193500 motif scores.
 
 GPL is a separate long job. This module reads its whitened windows, builds
-the panMP motifs, runs Baum–Welch, and writes the parameter file.
+the panMP motifs, runs Baum–Welch, and writes ``analysis/HMM/song_soft_hmm_t6.npz``.
+The graph comes from ``topology``: after theme 6 the next theme is theme 1,
+and a training song may end in any theme.
 """
 
 from __future__ import annotations
@@ -37,7 +39,7 @@ from .topology import (
     exit_probs_from_duration_hist,
 )
 
-WAV_PATH = Path(r"C:\Users\hoang\Downloads\SOCAL_H_76_230426_193500_df100.x.x_10kHz.wav")
+WAV_PATH = Path("SOCAL_H_76_230426_193500_df100.x.x_10kHz.wav")
 REPO = Path(__file__).resolve().parents[2]
 HMM_DIR = REPO / "analysis" / "HMM"
 WORK = HMM_DIR / "work"

@@ -3,6 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from starlette.middleware.gzip import GZipMiddleware
 
 from app.config import CORS_ORIGINS
+from app.routes.catalog import router as catalog_router
 from app.routes.health import router as health_router
 from app.routes.jobs import router as jobs_router
 from app.routes.library import router as library_router
@@ -22,3 +23,4 @@ app.add_middleware(
 app.include_router(health_router)
 app.include_router(jobs_router)
 app.include_router(library_router)
+app.include_router(catalog_router)

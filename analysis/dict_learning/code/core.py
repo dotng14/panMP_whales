@@ -5,7 +5,7 @@ from __future__ import annotations
 import os
 
 
-def _env_int(name: str, default: int) -> int:
+def _env_int(name: str, default: int) -> int:  # no-pipeline-cover: reads GPL_REPEATS_* knobs, used only by GPL_Python/preprocess.py
     """Positive int from the environment, falling back to ``default``."""
     raw = os.environ.get(name, "").strip()
     if not raw:
@@ -70,7 +70,7 @@ INCREMENTAL_MAX_TEMPLATE_WIDTH: int | None = 24
 def _default_mp_workers() -> int:
     try:
         return max(1, len(os.sched_getaffinity(0)))
-    except (AttributeError, OSError):
+    except (AttributeError, OSError):  # no-pipeline-cover: platforms without sched_getaffinity
         return max(1, int(os.cpu_count() or 1))
 
 
@@ -127,7 +127,7 @@ class Segment:
     boundary_cross_flag: int = 0
 
     @property
-    def energy(self) -> float:
+    def energy(self) -> float:  # no-pipeline-cover: kept for notebooks; the CLIs never read it
         """Frobenius energy ‖U‖²_F of the patch."""
         return float(np.sum(np.asarray(self.data, dtype=np.float64) ** 2))
 
@@ -143,7 +143,7 @@ class Template:
 
     def __post_init__(self) -> None:
         self.data = np.asarray(self.data, dtype=np.float64)
-        if self.data.ndim not in (2, 3):
+        if self.data.ndim not in (2, 3):  # no-pipeline-cover: library input check
             raise ValueError(
                 f"Template.data must be (F, W) or (k, F, W), got shape {self.data.shape}"
             )
@@ -162,7 +162,7 @@ class Template:
         return np.ascontiguousarray(self.data)
 
     @property
-    def as_rank1(self) -> np.ndarray:
+    def as_rank1(self) -> np.ndarray:  # no-pipeline-cover: library helper; the CLIs never call it
         """``(F, W)`` slice; requires ``n_components == 1``."""
         if self.n_components != 1:
             raise ValueError(
@@ -198,7 +198,7 @@ class Matching:
         elif self.amplitude is not None:
             c = np.asarray([float(self.amplitude)], dtype=np.float64)
         else:
-            raise ValueError("Matching requires amplitude= or coeffs=")
+            raise ValueError("Matching requires amplitude= or coeffs=")  # no-pipeline-cover: library input check
         object.__setattr__(self, "coeffs", c)
         if c.size == 1:
             object.__setattr__(self, "amplitude", float(c[0]))
@@ -224,7 +224,7 @@ class Dictionary:
 
     def add(self, template: Template) -> None:
         tid = template.template_id
-        if tid not in self.templates:
+        if tid not in self.templates:  # no-pipeline-branch: the CLIs never re-add a template id
             self.order.append(tid)
         self.templates[tid] = template
 
@@ -237,7 +237,7 @@ class Dictionary:
 
     @property
     def max_n_components(self) -> int:
-        if not self.order:
+        if not self.order:  # no-pipeline-cover: the CLIs never ask an empty dictionary
             return 1
         return max(t.n_components for t in self)
 
@@ -250,7 +250,6 @@ def mean_center(arr: np.ndarray) -> np.ndarray:
 from typing import Sequence
 
 import numpy as np
-
 
 
 def as_stack(
@@ -281,10 +280,10 @@ def copy_dictionary(dictionary: Dictionary) -> Dictionary:
 
 def union_interval_length(intervals: list[tuple[int, int]]) -> int:
     """Length of the union of half-open ``[start, end)`` integer intervals."""
-    if not intervals:
+    if not intervals:  # no-pipeline-cover: only called with at least one interval
         return 0
     ordered = sorted((int(a), int(b)) for a, b in intervals if b > a)
-    if not ordered:
+    if not ordered:  # no-pipeline-cover: callers pass only non-empty intervals
         return 0
     total = 0
     cur_start, cur_end = ordered[0]
@@ -314,133 +313,20 @@ def coverage_from_matchings(
     by_window: dict[str, list[tuple[int, int]]] = {}
     for matching in matchings:
         wid = matching.window_id
-        if wid not in stack:
+        if wid not in stack:  # no-pipeline-cover: matchings come from the same stack
             continue
         if template_widths is not None:
             width = int(template_widths.get(matching.template_id, template_width or 1))
         else:
-            width = int(template_width if template_width is not None else 1)
+            width = int(template_width if template_width is not None else 1)  # no-pipeline-cover: the CLIs always pass template_widths
         t_width = stack[wid].shape[1]
         start = max(0, int(matching.t_start))
         end = min(t_width, start + width)
-        if end > start:
+        if end > start:  # no-pipeline-branch: placements always lie inside their window
             by_window.setdefault(wid, []).append((start, end))
     n_windows_matched = len(by_window)
     n_bins_covered = sum(union_interval_length(ivs) for ivs in by_window.values())
     return n_windows_matched, n_windows_total, n_bins_covered, n_bins_total
-
-
-def crop_candidates_from_residual(
-    base_segments: Sequence[Segment],
-    residual: dict[str, np.ndarray],
-) -> list[Segment]:
-    """Re-crop each candidate patch from the current residual at its fixed location."""
-    candidates: list[Segment] = []
-    for seg in base_segments:
-        window = residual.get(seg.window_id)
-        if window is None:
-            continue
-        patch = np.array(window[:, seg.t_start : seg.t_end], copy=True)
-        if patch.size == 0 or patch.shape[1] == 0:
-            continue
-        if float(np.sum(patch**2)) <= 0.0:
-            continue
-        # tools.py historically also required matching width; keep that guard.
-        if patch.shape[1] != seg.data.shape[1]:
-            continue
-        candidates.append(
-            Segment(
-                segment_id=seg.segment_id,
-                data=patch,
-                window_id=seg.window_id,
-                t_start=seg.t_start,
-                t_end=seg.t_end,
-                global_start_sample=seg.global_start_sample,
-                global_end_sample=seg.global_end_sample,
-                detection_index=seg.detection_index,
-                boundary_cross_flag=seg.boundary_cross_flag,
-            )
-        )
-    return candidates
-
-
-def window_uncovered_fraction(
-    window_id: str,
-    residual: dict[str, np.ndarray],
-    covered_intervals: dict[str, list[tuple[int, int]]] | None,
-) -> float:
-    """Fraction of time bins in ``window_id`` not covered by ``covered_intervals``."""
-    arr = residual.get(window_id)
-    if arr is None:
-        return 0.0
-    total = int(arr.shape[1])
-    if total <= 0:
-        return 0.0
-    covered = union_interval_length(list((covered_intervals or {}).get(window_id, [])))
-    covered = min(max(covered, 0), total)
-    return 1.0 - (covered / float(total))
-
-
-def select_low_coverage_seed_windows(
-    residual: dict[str, np.ndarray],
-    candidates: Sequence[Segment],
-    covered_intervals: dict[str, list[tuple[int, int]]] | None,
-    *,
-    window_order: Sequence[str] | None = None,
-    neighborhood: int = 0,
-) -> tuple[str | None, set[str]]:
-    """Pick the least-covered window that still has candidates (+ optional neighbors).
-
-    Returns ``(anchor_window_id, seed_window_ids)``. When no candidate windows
-    exist, returns ``(None, set())``.
-
-    Tie-break among equal uncovered fractions: highest max candidate energy in
-    that window (prefers a strong local motif when coverage is tied, e.g. round 0).
-
-    ``neighborhood`` includes ±N windows in ``window_order`` (residual key order
-    by default) around the anchor.
-    """
-    if neighborhood < 0:
-        raise ValueError(f"neighborhood must be >= 0, got {neighborhood}")
-
-    by_window: dict[str, list[Segment]] = {}
-    for seg in candidates:
-        by_window.setdefault(seg.window_id, []).append(seg)
-    if not by_window:
-        return None, set()
-
-    order = list(window_order) if window_order is not None else list(residual.keys())
-    index = {wid: i for i, wid in enumerate(order)}
-
-    def _score(wid: str) -> tuple[float, float]:
-        energies = [float(s.energy) for s in by_window[wid]]
-        return (
-            window_uncovered_fraction(wid, residual, covered_intervals),
-            max(energies) if energies else 0.0,
-        )
-
-    anchor = max(by_window.keys(), key=_score)
-    seed_ids: set[str] = {anchor}
-    if neighborhood > 0 and anchor in index:
-        i0 = index[anchor]
-        for j in range(i0 - neighborhood, i0 + neighborhood + 1):
-            if 0 <= j < len(order):
-                wid = order[j]
-                if wid in by_window:
-                    seed_ids.add(wid)
-    # Include neighbor windows even if they currently have no candidates only
-    # when they appear in by_window — seed pool is candidate-driven.
-    return anchor, seed_ids
-
-
-def filter_candidates_by_windows(
-    candidates: Sequence[Segment],
-    window_ids: set[str],
-) -> list[Segment]:
-    """Keep candidates whose ``window_id`` is in ``window_ids``."""
-    if not window_ids:
-        return []
-    return [s for s in candidates if s.window_id in window_ids]
 
 
 def patch_template_distance(
@@ -476,11 +362,11 @@ def patch_template_distance(
     """
     x = np.asarray(patch, dtype=np.float64)
     if x.ndim != 2:
-        raise ValueError(f"patch must be 2-D (F, W), got shape {x.shape}")
+        raise ValueError(f"patch must be 2-D (F, W), got shape {x.shape}")  # no-pipeline-cover: library input check
 
     if isinstance(template, Template):
         basis = np.asarray(template.basis, dtype=np.float64)
-    else:
+    else:  # no-pipeline-cover: library input: array template; the CLIs pass Template atoms
         arr = np.asarray(template, dtype=np.float64)
         if arr.ndim == 2:
             basis = arr[np.newaxis, ...]
@@ -491,7 +377,7 @@ def patch_template_distance(
                 f"template must be (F, W) or (k, F, W), got shape {arr.shape}"
             )
 
-    if basis.shape[1:] != x.shape:
+    if basis.shape[1:] != x.shape:  # no-pipeline-cover: library input check
         raise ValueError(
             f"patch shape {x.shape} does not match template spatial shape "
             f"{basis.shape[1:]}"
@@ -503,7 +389,7 @@ def patch_template_distance(
         v = basis[0]
         v_energy = float(np.sum(v * v))
         if v_energy <= 0.0:
-            explained = 0.0
+            explained = 0.0  # no-pipeline-cover: atoms always have energy
         else:
             inner = float(np.sum(x * v))
             explained = (inner * inner) / v_energy
@@ -518,14 +404,14 @@ def patch_template_distance(
     distance = patch_energy - explained
     if return_parts:
         return distance, patch_energy, explained
-    return distance
+    return distance  # no-pipeline-cover: the CLIs only ask for the parts
 
 
 def template_energy(template: Template | np.ndarray) -> float:
     """Frobenius energy of a template / subspace basis."""
     if isinstance(template, Template):
         arr = np.asarray(template.basis, dtype=np.float64)
-    else:
+    else:  # no-pipeline-cover: library input: array template
         arr = np.asarray(template, dtype=np.float64)
     return float(np.sum(arr * arr))
 
@@ -547,7 +433,7 @@ def patch_template_relative_distance(
         patch, template, return_parts=True
     )
     if patch_energy <= 0.0:
-        return 1.0
+        return 1.0  # no-pipeline-cover: placed patches always have energy
     return float(distance / patch_energy)
 
 
@@ -574,20 +460,20 @@ def filter_matchings_by_relative_distance(
     """
     tau = float(max_relative_distance)
     if not (0.0 <= tau <= 1.0):
-        raise ValueError(f"max_relative_distance must be in [0, 1], got {tau}")
+        raise ValueError(f"max_relative_distance must be in [0, 1], got {tau}")  # no-pipeline-cover: the CLIs check the range first
     if min_keep < 1:
-        raise ValueError(f"min_keep must be >= 1, got {min_keep}")
+        raise ValueError(f"min_keep must be >= 1, got {min_keep}")  # no-pipeline-cover: callers pass min_keep >= 1
     items = list(matchings)
     if not items or tau >= 1.0:
         return items
-    if template_energy(template) <= 0.0:
+    if template_energy(template) <= 0.0:  # no-pipeline-cover: atoms always have energy
         return items
 
     if isinstance(template, Template):
         w = int(width) if width is not None else int(template.width)
         freq = int(n_freq) if n_freq is not None else int(template.n_freq)
         ref = template
-    else:
+    else:  # no-pipeline-cover: library input: array template; the CLIs pass Template atoms
         arr = np.asarray(template, dtype=np.float64)
         if arr.ndim == 2:
             freq, w = (int(n_freq) if n_freq is not None else int(arr.shape[0])), (
@@ -605,28 +491,28 @@ def filter_matchings_by_relative_distance(
     scored: list[tuple[float, Matching]] = []
     for matching in items:
         arr = stack.get(matching.window_id)
-        if arr is None:
+        if arr is None:  # no-pipeline-cover: matchings come from the same stack
             continue
         patch = np.asarray(
             arr[:freq, int(matching.t_start) : int(matching.t_start) + w],
             dtype=np.float64,
         )
-        if patch.shape != (freq, w):
+        if patch.shape != (freq, w):  # no-pipeline-cover: MP places whole atoms
             # Skip incomplete edge crops rather than inventing padding here.
             continue
         r = patch_template_relative_distance(patch, ref)
         scored.append((r, matching))
 
-    if not scored:
+    if not scored:  # no-pipeline-cover: follows from the two checks above
         return items[: max(min_keep, 1)] if items else []
 
     kept = [m for r, m in scored if r <= tau]
     if len(kept) >= min_keep:
         return kept
     # Too few after the cut: keep the closest min_keep.
-    order = np.argsort(np.asarray([r for r, _ in scored], dtype=np.float64))
-    n_take = min(int(min_keep), len(scored))
-    return [scored[int(i)][1] for i in order[:n_take]]
+    order = np.argsort(np.asarray([r for r, _ in scored], dtype=np.float64))  # no-pipeline-cover: MP placed these patches under the same gate and atom
+    n_take = min(int(min_keep), len(scored))  # no-pipeline-cover: MP placed these patches under the same gate and atom
+    return [scored[int(i)][1] for i in order[:n_take]]  # no-pipeline-cover: MP placed these patches under the same gate and atom
 
 class defaults:
     """Knobs accessed as ``defaults.NAME``."""

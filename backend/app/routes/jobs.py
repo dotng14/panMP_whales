@@ -1,15 +1,17 @@
 from __future__ import annotations
 
+import asyncio
 import json
+import logging
 import uuid
 from pathlib import Path
 
-from fastapi import APIRouter, HTTPException, UploadFile, WebSocket, WebSocketDisconnect
+from fastapi import APIRouter, HTTPException, Query, UploadFile, WebSocket, WebSocketDisconnect
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
 
 from app.config import MAX_UPLOAD_MB, TMP_DIR
-from app.services.gpl_cache import cache_dir_for, is_gpl_cached
+from app.services.gpl_cache import cache_dir_for, is_gpl_cached, register_gpl_in_catalog
 from app.services.job_store import (
     JobState,
     create_job,
@@ -21,6 +23,7 @@ from app.services.library_service import resolve_file_id
 from app.services.pipeline_service import start_job, start_job_fast
 
 router = APIRouter()
+logger = logging.getLogger(__name__)
 
 
 def _require_job(job_id: str) -> JobState:
@@ -48,7 +51,7 @@ async def create_job_endpoint(file: UploadFile) -> dict:
     job_dir.mkdir(parents=True, exist_ok=True)
 
     wav_path = job_dir / "input.wav"
-    wav_path.write_bytes(content)
+    await asyncio.to_thread(wav_path.write_bytes, content)
 
     job = create_job(job_id, file.filename, job_dir)
     await start_job(job)
@@ -59,6 +62,10 @@ async def create_job_endpoint(file: UploadFile) -> dict:
 @router.post("/api/jobs/from-library")
 async def create_job_from_library(body: LibraryJobRequest) -> dict:
     wav_path = resolve_file_id(body.fileId)  # raises 400/403/404 on bad input
+    # Off the event loop (it can rebuild panel.bin), and before the in-flight
+    # check: nothing below may await until set_in_flight_library_job, or two
+    # requests for the same file could both start a pipeline run.
+    cached = await asyncio.to_thread(is_gpl_cached, wav_path)
 
     # Attach to an already-running job for this file instead of starting a
     # second concurrent pipeline run that would race the first over the same
@@ -79,12 +86,17 @@ async def create_job_from_library(body: LibraryJobRequest) -> dict:
     # Fast path: if a pre-processed .gpl cache exists, skip the pipeline entirely.
     cache_dir = cache_dir_for(wav_path)
     manifest_path = cache_dir / "manifest.json"
-    if is_gpl_cached(wav_path):
+    if cached:
         manifest = json.loads(manifest_path.read_text())
         manifest["jobId"] = job_id
         # Symlink the cache's output dir into the job dir (no copy) so the panel
         # endpoint serves panel.bin straight from the cache.
         (job_dir / "output").symlink_to(cache_dir / "output", target_is_directory=True)
+        # Caches made before jobs registered themselves reach the catalog here.
+        try:
+            await asyncio.to_thread(register_gpl_in_catalog, wav_path)
+        except Exception:
+            logger.exception("Catalog registration failed for %s", wav_path)
         await start_job_fast(job, manifest)
     else:
         # Slow path: process into the .gpl cache dir so results persist for next time.
@@ -134,14 +146,22 @@ async def get_job_audio(job_id: str) -> FileResponse:
 
 
 @router.get("/api/jobs/{job_id}/song-structure")
-async def get_song_structure(job_id: str) -> dict:
-    """Motif / song / theme / phrase units for the job's WAV stem, if a CSV exists."""
-    from app.services.song_structure import load_song_structure  # noqa: PLC0415
+def get_song_structure(job_id: str, csvId: int | None = Query(None)) -> dict:
+    """Motif / song / theme / phrase units: from catalog CSV ``csvId``, else the CSV named after the WAV."""
+    from app.services import catalog_service  # noqa: PLC0415
+    from app.services.song_structure import load_song_structure, load_song_structure_csv  # noqa: PLC0415
 
     job = _require_job(job_id)
     stem = Path(job.filename).stem
     try:
-        payload = load_song_structure(stem)
+        if csvId is None:
+            payload = load_song_structure(stem)
+        else:
+            row = catalog_service.get_csv(csvId)
+            path = Path(row["csv_path"])
+            if not path.is_file():
+                raise HTTPException(status_code=404, detail=f"CSV file missing: {path}")
+            payload = load_song_structure_csv(path, row["wav_stem"])
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     if payload is None:

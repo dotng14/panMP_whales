@@ -32,3 +32,18 @@ logger = logging.getLogger(__name__)
 for root in WAV_LIBRARY_ROOTS:
     if not root.exists():
         logger.warning("WAV_LIBRARY_ROOTS entry does not exist: %s", root)
+
+
+def _paths(raw: str) -> list[Path]:
+    return [Path(p.strip()) for p in raw.split(",") if p.strip()]
+
+
+# SQLite catalog of dictionaries, MP runs and song-structure CSVs (database/).
+# This repo's own file; never point it at gplrev3's catalog.
+CATALOG_DB = Path(os.environ.get("CATALOG_DB", "").strip() or BACKEND_DIR / "data" / "catalog.sqlite")
+# Folders scanned by POST /api/catalog/reindex for randomized-build / matching-pursuit output.
+CATALOG_RUNS_ROOTS: list[Path] = _paths(os.environ.get("CATALOG_RUNS_ROOTS", ""))
+# Folders scanned for *.motif_segments.csv.
+CATALOG_CSV_ROOTS: list[Path] = _paths(
+    os.environ.get("CATALOG_CSV_ROOTS", "") or str(BACKEND_DIR / "data" / "song_structure")
+)

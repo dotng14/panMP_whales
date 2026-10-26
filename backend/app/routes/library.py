@@ -1,7 +1,9 @@
 from fastapi import APIRouter, Query
 
 from app.config import WAV_LIBRARY_ROOTS
-from app.services.library_service import list_entries
+from app.services import catalog_service
+from app.services.gpl_cache import is_gpl_cached
+from app.services.library_service import list_entries, resolve_file_id
 
 router = APIRouter()
 
@@ -16,8 +18,18 @@ async def get_roots() -> dict:
     }
 
 
+@router.get("/api/library/analyses")
+def get_file_analyses(fileId: str = Query(...)) -> dict:
+    """Dictionaries and song-structure CSVs in the catalog for one library WAV (the picker).
+
+    ``gplCached`` says whether its GPL spectrogram already exists (view) or must be run.
+    """
+    wav_path = resolve_file_id(fileId)
+    return {**catalog_service.list_analyses_for_wav(wav_path), "gplCached": is_gpl_cached(wav_path)}
+
+
 @router.get("/api/library/browse")
-async def browse(
+def browse(
     root: int = Query(0),
     path: str = Query(""),
     q: str = Query(""),

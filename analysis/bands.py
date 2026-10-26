@@ -13,7 +13,7 @@ N_BANDS = 5
 FREQ_MAX_HZ = BAND_WIDTH_HZ * N_BANDS
 
 
-def band_edges() -> list[tuple[int, int]]:
+def band_edges() -> list[tuple[int, int]]:  # no-pipeline-cover: used by tests and notebooks
     """Half-open edges ``[lo, hi)`` in Hz, low band first."""
     return [
         (i * BAND_WIDTH_HZ, (i + 1) * BAND_WIDTH_HZ) for i in range(N_BANDS)
@@ -35,7 +35,7 @@ def band_energy(
         raise ValueError("frame_rate must divide sample_rate")
     audio = np.asarray(samples)
     if audio.ndim == 2 and 1 in audio.shape:
-        audio = audio.reshape(-1)
+        audio = audio.reshape(-1)  # no-pipeline-cover: WAV readers return 1-D mono
     if audio.ndim != 1:
         raise ValueError("expected a mono recording")
     frame = sample_rate // frame_rate

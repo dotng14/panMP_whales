@@ -3,7 +3,8 @@
 A slot is one node on the drawing. It expands to five duration states
 (1 s through 5 s) that share an emission. Advance edges fire when the
 slot ends. Only the last slot of a theme branches, into repeat versus next.
-Theme 6 repeats until the song ends and has no edge back to theme 1.
+The last slot of theme 6 can return to the first slot of theme 1.
+A sequence may end in any theme.
 """
 
 from __future__ import annotations
@@ -15,8 +16,8 @@ import numpy as np
 N_THEMES = 6
 N_DUR = 5
 THEME_N_SLOTS = (3, 3, 6, 3, 5, 8)
-# Repeat weights printed on the drawing. Next is 1 - repeat, except theme 6.
-REPEAT_INIT = np.array([0.008, 0.984, 0.943, 0.585, 0.922, 1.0], dtype=np.float64)
+# Starting repeat weights. Next is 1 - repeat. Theme 6's next theme is theme 1.
+REPEAT_INIT = np.array([0.008, 0.984, 0.943, 0.585, 0.922, 0.950], dtype=np.float64)
 
 # Unit name and nominal duration (seconds) printed on each node, theme by theme.
 SLOT_UNITS: tuple[str, ...] = (
@@ -154,14 +155,14 @@ def transition_tables(exit_prob: np.ndarray, repeat_prob: np.ndarray) -> Transit
                 continue
             p_rep = float(repeat_prob[theme])
             add(src, state_index(int(FIRST_SLOT[theme]), 0), leave * p_rep, int(KIND_REPEAT))
-            if theme < N_THEMES - 1:
-                p_next = 1.0 - p_rep
-                add(
-                    src,
-                    state_index(int(FIRST_SLOT[theme + 1]), 0),
-                    leave * p_next,
-                    int(KIND_NEXT),
-                )
+            p_next = 1.0 - p_rep
+            next_theme = (theme + 1) % N_THEMES
+            add(
+                src,
+                state_index(int(FIRST_SLOT[next_theme]), 0),
+                leave * p_next,
+                int(KIND_NEXT),
+            )
     return TransitionTables(to, logp, n_out, kind, edge_id, n_edges)
 
 

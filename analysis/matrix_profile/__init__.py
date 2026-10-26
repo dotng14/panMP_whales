@@ -6,6 +6,8 @@ Euclidean distance. Across rows those distances add.
 
 from __future__ import annotations
 
+from dataclasses import dataclass
+
 import numpy as np
 
 
@@ -30,10 +32,10 @@ def mpxForPan(a, minlag, w):
     """
     a = np.asarray(a, dtype=float)
     if a.ndim != 1:
-        raise ValueError("non vector input")
+        raise ValueError("non vector input")  # no-pipeline-cover: length_profile passes one row
 
     if w < 4 or minlag < 4:
-        raise ValueError("bad parameters")
+        raise ValueError("bad parameters")  # no-pipeline-cover: pan_lengths keeps lengths >= 4
 
     n = len(a)
     mu, sig = muinvn(a, w)
@@ -129,7 +131,7 @@ import numpy as np
 from numba import njit, prange
 
 
-@njit(cache=True)
+@njit(cache=True)  # no-pipeline-cover: numba-compiled, coverage cannot trace it; unit tests compare it with mpxForPan
 def _sliding_mean_invnorm(a, w):
     n = len(a)
     nprof = n - w + 1
@@ -161,7 +163,7 @@ def _sliding_mean_invnorm(a, w):
     return mu, sig
 
 
-@njit(parallel=True, cache=True)
+@njit(parallel=True, cache=True)  # no-pipeline-cover: numba-compiled, coverage cannot trace it; unit tests compare it with mpxForPan
 def _mpx_parallel(a, mu, sig, df, dg, minlag, w, nthreads):
     """One contiguous band of diagonals per worker, so workers never share a row."""
     n = len(a)
@@ -231,16 +233,16 @@ def mpx_fast(a, minlag, w, nthreads=1):
     """Same contract as ``mpxForPan``: distance profile and 0-based indices."""
     a = np.ascontiguousarray(a, dtype=np.float64)
     if a.ndim != 1:
-        raise ValueError("non vector input")
+        raise ValueError("non vector input")  # no-pipeline-cover: length_profile passes one row
     if w < 4 or minlag < 4:
-        raise ValueError("bad parameters")
+        raise ValueError("bad parameters")  # no-pipeline-cover: pan_lengths keeps lengths >= 4
     n = len(a)
     mu, sig = _sliding_mean_invnorm(a, w)
     df = np.empty(n - w + 1, dtype=np.float64)
     dg = np.empty(n - w + 1, dtype=np.float64)
     df[0] = 0.0
     dg[0] = 0.0
-    if n - w > 0:
+    if n - w > 0:  # no-pipeline-branch: pan_profile rejects signals shorter than a pair of windows
         df[1:] = 0.5 * (a[w:n] - a[0 : n - w])
         dg[1:] = (a[w:n] - mu[1 : n - w + 1]) + (a[0 : n - w] - mu[0 : n - w])
     mp, mpi = _mpx_parallel(a, mu, sig, df, dg, int(minlag), int(w), int(nthreads))
@@ -262,7 +264,7 @@ def _channel_stats(series: np.ndarray, window: int):
     dg = np.zeros((n_bands, nprof), dtype=np.float64)
     for band in range(n_bands):
         mu[band], sig[band] = _sliding_mean_invnorm(series[band], window)
-        if n > window:
+        if n > window:  # no-pipeline-branch: pan_profile rejects signals shorter than a pair of windows
             df[band, 1:] = 0.5 * (series[band, window:n] - series[band, 0 : n - window])
             dg[band, 1:] = (series[band, window:n] - mu[band, 1:nprof]) + (
                 series[band, 0 : n - window] - mu[band, 0 : nprof - 1]
@@ -271,7 +273,7 @@ def _channel_stats(series: np.ndarray, window: int):
     return mu, sig, df, dg
 
 
-@njit(parallel=True, cache=True)
+@njit(parallel=True, cache=True)  # no-pipeline-cover: numba-compiled, coverage cannot trace it; unit tests compare it with mpxForPan
 def _mpx_channels_parallel(series, mu, sig, df, dg, minlag, w, nthreads):
     """Nearest neighbor under the sum of per-band z-normalized distances."""
     n_bands = series.shape[0]
@@ -365,31 +367,15 @@ def mpx_channels(series, minlag, w, nthreads=1):
     """
     series = np.ascontiguousarray(series, dtype=np.float64)
     if series.ndim != 2:
-        raise ValueError("expected shape (bands, time)")
+        raise ValueError("expected shape (bands, time)")  # no-pipeline-cover: length_profile passes (rows, T)
     if w < 4 or minlag < 4:
-        raise ValueError("bad parameters")
+        raise ValueError("bad parameters")  # no-pipeline-cover: pan_lengths keeps lengths >= 4
     if series.shape[1] < w + minlag:
-        raise ValueError("series is shorter than one pair of windows")
+        raise ValueError("series is shorter than one pair of windows")  # no-pipeline-cover: pan_profile checks the length first
     mu, sig, df, dg = _channel_stats(series, int(w))
     return _mpx_channels_parallel(
         series, mu, sig, df, dg, int(minlag), int(w), int(nthreads)
     )
-
-
-def assert_matches_reference(n=800, w=32, minlag=32, seed=0, atol=1e-8):
-    rng = np.random.default_rng(seed)
-    a = rng.standard_normal(n)
-    ref_mp, ref_mpi = mpxForPan(a, minlag, w)
-    mp, mpi = mpx_fast(a, minlag, w)
-    if not np.allclose(mp, ref_mp, rtol=0.0, atol=atol, equal_nan=True):
-        err = np.nanmax(np.abs(mp - ref_mp))
-        raise AssertionError(f"distance profile mismatch, max abs {err}")
-    # Indices can differ only where the two profiles tie. Compare where unique.
-    disagree = mpi != ref_mpi
-    if np.any(disagree):
-        # A tie is acceptable when both neighbors have the same distance.
-        raise AssertionError(f"index mismatch at {int(np.sum(disagree))} positions")
-    return True
 
 
 def _zscore(x):
@@ -397,37 +383,94 @@ def _zscore(x):
     x = np.asarray(x, dtype=float)
     std = np.std(x, ddof=1)
     if std == 0:
-        return np.zeros_like(x)
+        return np.zeros_like(x)  # no-pipeline-cover: a constant distance profile
     return (x - np.mean(x)) / std
 
 
-def panMP(
+ENGINES = ("fast", "reference")
+
+
+def pan_minlag(length: int) -> int:
+    """Exclusion zone used by panMP: ``length - 2``, at least 4."""
+    return max(int(length) - 2, 4)
+
+
+def length_profile(signal, length: int, *, engine: str = "fast", nthreads: int = 1):
+    """Matrix profile ``(distance, neighbor)`` of a ``(rows, T)`` signal at one length.
+
+    One row uses ``mpx_fast`` (``engine="fast"``) or the MATLAB-parity
+    ``mpxForPan`` (``engine="reference"``, slow). Several rows use
+    ``mpx_channels``, the sum of per-row z-normalized distances; the reference
+    engine is one row only. The exclusion zone is :func:`pan_minlag`.
+    """
+    rows = np.atleast_2d(np.asarray(signal, dtype=np.float64))
+    if engine not in ENGINES:
+        raise ValueError(f"engine must be one of {ENGINES}, got {engine!r}")  # no-pipeline-cover: argparse limits --engine
+    minlag = pan_minlag(length)
+    if rows.shape[0] > 1:
+        if engine == "reference":
+            raise ValueError("the reference engine takes a single row")
+        return mpx_channels(rows, minlag, int(length), nthreads=nthreads)
+    if engine == "reference":
+        return mpxForPan(rows[0], minlag, int(length))
+    return mpx_fast(rows[0], minlag, int(length), nthreads=nthreads)
+
+
+def pan_lengths(min_len: int, max_len: int, step: int) -> list[int]:
+    """Motif lengths ``min_len, min_len + step, …`` up to ``max_len``."""
+    if min_len < 4:
+        raise ValueError("MinMotifLen must be >= 4")
+    if max_len < min_len:
+        raise ValueError("MaxMotifLen must be >= MinMotifLen")
+    if step < 1:
+        raise ValueError("StepSize must be >= 1")
+    return list(range(int(min_len), int(max_len) + 1, int(step)))
+
+
+def panMP(  # no-pipeline-cover: MATLAB-shaped surface for notebooks and the parity tests; the CLI uses pan_profile
     TS,
     plot=True,
     MinMotifLen=32,
     MaxMotifLen=512,
     StepSize=64,
     MotifPlotMode=True,
+    *,
+    engine="reference",
+    nthreads=1,
+    plot_path=None,
+    verbose=True,
 ):
     """Compute a pan matrix profile surface for time series TS.
 
     Parameters
     ----------
     TS : array-like
-        Input time series (1-D).
+        Input time series (1-D, or a row or column vector).
     plot : bool, optional
-        If True (default), display a jet colormap surface plot.
+        If True (default), draw a jet colormap surface plot.
     MinMotifLen, MaxMotifLen, StepSize : int, optional
         Motif-length sweep (MATLAB defaults: 32, 512, 64).
     MotifPlotMode : bool, optional
         If True, flip the surface so motifs are peaks.
+    engine : {"reference", "fast"}, optional
+        ``reference`` is the MATLAB port ``mpxForPan``; ``fast`` is the numba
+        ``mpx_fast`` (same distances to ~1e-8).
+    nthreads : int, optional
+        Threads for the fast engine.
+    plot_path : path, optional
+        Save the plot here instead of showing it in a window.
+    verbose : bool, optional
+        Print each motif length as it runs.
 
     Returns
     -------
     pan : ndarray
         Pan matrix profile surface (rows = time, cols = motif length).
     """
-    TS = np.asarray(TS, dtype=float).ravel()
+    TS = np.asarray(TS, dtype=float)
+    if TS.ndim > 2 or (TS.ndim == 2 and min(TS.shape) > 1):
+        raise ValueError(f"panMP takes one series, got shape {TS.shape}; use pan_profile")
+    TS = TS.ravel()
 
     if MinMotifLen < 4:
         raise ValueError("MinMotifLen must be >= 4")
@@ -449,9 +492,11 @@ def panMP(
     pan = np.zeros((n_rows, n_cols))
 
     for i in range(MinMotifLen, MaxMotifLen + 1, StepSize):
-        print(f"Motif length {i} of {MaxMotifLen}")
-        # minlag must be >= 4 for mpxForPan; i-2 is fine for i >= 6
-        matrixProfile, _matrixProfileIdx = mpxForPan(TS, max(i - 2, 4), i)
+        if verbose:
+            print(f"Motif length {i} of {MaxMotifLen}")
+        matrixProfile, _matrixProfileIdx = length_profile(
+            TS, i, engine=engine, nthreads=nthreads
+        )
 
         # Correct for length (sqrt(i)) and normalize
         LengthNormalizedMP = _zscore(matrixProfile / np.sqrt(i))
@@ -478,6 +523,10 @@ def panMP(
     pan = pan / np.nanmax(pan)
 
     if plot:
+        import matplotlib
+
+        if plot_path is not None:
+            matplotlib.use("Agg")
         import matplotlib.pyplot as plt
         from mpl_toolkits.mplot3d import Axes3D  # noqa: F401
 
@@ -494,9 +543,81 @@ def panMP(
             ccount=min(cols, 200),
         )
         fig.colorbar(surf, ax=ax, shrink=0.5)
-        plt.show()
+        if plot_path is not None:
+            fig.savefig(plot_path, dpi=100)
+            plt.close(fig)
+        else:  # no-pipeline-cover: interactive window for notebooks
+            plt.show()
 
     return pan
+
+
+@dataclass
+class PanProfile:
+    """Matrix profiles of one signal over a sweep of motif lengths.
+
+    ``surface`` is ``(n_lengths, T)``: per length, the distance divided by
+    ``sqrt(length)``, z-scored, then flipped and scaled so the strongest motif
+    in the sweep is 1 and the weakest 0 (panMP's ``MotifPlotMode``). Positions
+    past the last window of a length are NaN.
+    """
+
+    lengths: list[int]
+    distances: list[np.ndarray]
+    neighbors: list[np.ndarray]
+    surface: np.ndarray
+
+
+def pan_profile(signal, lengths, *, engine: str = "fast", nthreads: int = 1) -> PanProfile:
+    """Pan matrix profile of a 1-D or ``(rows, T)`` signal."""
+    rows = np.atleast_2d(np.asarray(signal, dtype=np.float64))
+    if rows.ndim != 2:
+        raise ValueError(f"signal must be 1-D or (rows, T), got shape {rows.shape}")  # no-pipeline-cover: load_series rejects other shapes first
+    lengths = [int(length) for length in lengths]
+    if not lengths:  # no-pipeline-cover: pan_lengths returns at least one length
+        raise ValueError("need at least one motif length")
+    n = rows.shape[1]
+    if n < max(lengths) + pan_minlag(max(lengths)):
+        raise ValueError(
+            f"signal has {n} samples, too short for motif length {max(lengths)}"
+        )
+    distances = []
+    neighbors = []
+    surface = np.full((len(lengths), n), np.nan)
+    for k, length in enumerate(lengths):
+        distance, neighbor = length_profile(rows, length, engine=engine, nthreads=nthreads)
+        distances.append(np.asarray(distance, dtype=np.float64))
+        neighbors.append(np.asarray(neighbor, dtype=np.float64))
+        surface[k, : len(distance)] = _zscore(np.asarray(distance) / np.sqrt(length))
+    surface = np.nanmax(surface) - surface
+    peak = np.nanmax(surface)
+    if peak > 0:  # no-pipeline-branch: a perfectly flat surface
+        surface = surface / peak
+    return PanProfile(lengths=lengths, distances=distances, neighbors=neighbors, surface=surface)
+
+
+def pan_top_pairs(profile: PanProfile, k: int) -> list[dict]:
+    """Most unusual pairs across lengths (``top_pairs_by_zscore``).
+
+    Each new pair starts outside every copy already chosen, at every length.
+    Its nearest neighbour is not checked, so it can repeat an earlier copy.
+    """
+    scored = {
+        length: (-distance, np.nan_to_num(neighbor, nan=-1.0), length)
+        for length, distance, neighbor in zip(
+            profile.lengths, profile.distances, profile.neighbors, strict=True
+        )
+    }
+    return [
+        {
+            "length": int(length),
+            "start_a": int(i),
+            "start_b": int(j),
+            "distance": float(-score),
+            "zscore": float(unusual),
+        }
+        for length, i, j, score, unusual in top_pairs_by_zscore(scored, k)
+    ]
 
 
 def rms_envelope(samples: np.ndarray, sample_rate: int, envelope_rate: int) -> np.ndarray:
@@ -505,7 +626,7 @@ def rms_envelope(samples: np.ndarray, sample_rate: int, envelope_rate: int) -> n
         raise ValueError("envelope_rate must divide sample_rate")
     audio = np.asarray(samples)
     if audio.ndim == 2 and 1 in audio.shape:
-        audio = audio.reshape(-1)
+        audio = audio.reshape(-1)  # no-pipeline-cover: WAV readers return 1-D mono
     if audio.ndim != 1:
         raise ValueError("expected a mono recording")
     frame = sample_rate // envelope_rate
@@ -514,19 +635,19 @@ def rms_envelope(samples: np.ndarray, sample_rate: int, envelope_rate: int) -> n
     return np.sqrt(np.mean(blocks * blocks, axis=1))
 
 
-def distance_to_correlation(distance: np.ndarray, window: int) -> np.ndarray:
+def distance_to_correlation(distance: np.ndarray, window: int) -> np.ndarray:  # no-pipeline-cover: used by learn_from_motifs and the notebooks, not the pan CLI
     """Invert the matrix-profile distance ``sqrt(2 * w * (1 - corr))``."""
     return 1.0 - np.asarray(distance, dtype=np.float64) ** 2 / (2.0 * window)
 
 
-def motif_profile(series: np.ndarray, window: int, nthreads: int = 1):
+def motif_profile(series: np.ndarray, window: int, nthreads: int = 1):  # no-pipeline-cover: used by learn_from_motifs and the notebooks, not the pan CLI
     """Correlation profile and neighbor index. The two starts are at least ``window`` apart."""
 
     distance, neighbor = mpx_fast(series, window, window, nthreads=nthreads)
     return distance_to_correlation(distance, window), np.asarray(neighbor)
 
 
-def motif_rectangle(bands: np.ndarray, start: int, width: int) -> np.ndarray:
+def motif_rectangle(bands: np.ndarray, start: int, width: int) -> np.ndarray:  # no-pipeline-cover: used by learn_from_motifs and the notebooks, not the pan CLI
     """One motif as a ``(bands, width)`` rectangle."""
     start = int(start)
     width = int(width)
@@ -535,14 +656,14 @@ def motif_rectangle(bands: np.ndarray, start: int, width: int) -> np.ndarray:
     return np.array(bands[:, start : start + width], dtype=np.float64, copy=True)
 
 
-def band_motif_profile(bands: np.ndarray, window: int, nthreads: int = 1):
+def band_motif_profile(bands: np.ndarray, window: int, nthreads: int = 1):  # no-pipeline-cover: used by learn_from_motifs and the notebooks, not the pan CLI
     """Summed band-distance profile. The two starts are at least ``window`` apart."""
 
     distance, neighbor = mpx_channels(bands, window, window, nthreads=nthreads)
     return distance, np.asarray(neighbor)
 
 
-def closest_pairs(distance: np.ndarray, neighbor: np.ndarray, window: int, k: int):
+def closest_pairs(distance: np.ndarray, neighbor: np.ndarray, window: int, k: int):  # no-pipeline-cover: used by learn_from_motifs and the notebooks, not the pan CLI
     """Smallest-distance pairs whose copies do not overlap a pair already chosen.
 
     Each item is ``(start_a, start_b, distance)``.
@@ -555,7 +676,7 @@ def order_pair(i: int, j: int) -> tuple[int, int]:
     return (i, j) if i <= j else (j, i)
 
 
-def top_pairs(correlation: np.ndarray, neighbor: np.ndarray, window: int, k: int):
+def top_pairs(correlation: np.ndarray, neighbor: np.ndarray, window: int, k: int):  # no-pipeline-cover: used by learn_from_motifs and the notebooks, not the pan CLI
     """Highest-correlation pairs whose copies do not overlap a pair already chosen."""
     remaining = np.array(correlation, dtype=np.float64, copy=True)
     chosen = []
@@ -638,7 +759,7 @@ def top_pairs_by_zscore(profiles: dict, k: int):
     return chosen
 
 
-def format_clock(seconds: float) -> str:
+def format_clock(seconds: float) -> str:  # no-pipeline-cover: used by learn_from_motifs and the notebooks, not the pan CLI
     """``m:ss.s`` from seconds on the recording clock."""
     minutes, secs = divmod(float(seconds), 60.0)
     return f"{int(minutes)}:{secs:04.1f}"

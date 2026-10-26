@@ -7,12 +7,16 @@ import {
   type MouseEvent as ReactMouseEvent,
   type RefObject,
 } from 'react';
-import type { SongStructure, SongStructureSong, SongStructureUnit } from '../../api/songStructure';
-import { motifColor, phraseColor, songColor, themeColor } from './songStructureColors';
+import type { Placement } from '../../api/catalog';
+import type { SongStructureSong, SongStructureUnit } from '../../api/songStructure';
+import { atomColor, motifColor, phraseColor, songColor, themeColor } from './songStructureColors';
 
 export const LANE_H = 18;
+/** Lanes of a song-structure CSV. */
 export const LANE_ORDER = ['motif', 'phrase', 'theme', 'song'] as const;
-export type LaneName = (typeof LANE_ORDER)[number];
+/** The one lane of a dictionary's MP placements. */
+export const ATOM_LANES = ['atom'] as const;
+export type LaneName = (typeof LANE_ORDER)[number] | (typeof ATOM_LANES)[number];
 
 const LABEL_MIN_PX = 28;
 /** Browsers reject canvases near ~16k–32k px; stay well under that. */
@@ -36,7 +40,7 @@ export function buildLanes(
   songs: SongStructureSong[],
   audioDurationSec: number,
   timeCols: number,
-): Record<LaneName, LaneSeg[]> {
+): Record<(typeof LANE_ORDER)[number], LaneSeg[]> {
   const motif: LaneSeg[] = [];
   const theme: LaneSeg[] = [];
   const phrase: LaneSeg[] = [];
@@ -84,6 +88,28 @@ export function buildLanes(
   }
 
   return { motif, theme, phrase, song };
+}
+
+/** One segment per MP placement, labelled by atom (its user label when set). */
+export function buildAtomLane(
+  placements: Placement[],
+  audioDurationSec: number,
+  timeCols: number,
+): LaneSeg[] {
+  const atom: LaneSeg[] = [];
+  for (const p of placements) {
+    const startCol = secToCol(p.startSec, audioDurationSec, timeCols);
+    const endCol = Math.max(startCol + 1, secToCol(p.endSec, audioDurationSec, timeCols));
+    const name = p.label ?? `A${p.templateId}`;
+    atom.push({
+      startCol,
+      endCol,
+      color: atomColor(p.templateId),
+      label: name,
+      title: `atom ${p.templateId}${p.label ? ` (${p.label})` : ''} · ${p.startSec.toFixed(2)}–${p.endSec.toFixed(2)} s · amplitude ${p.amplitude.toFixed(3)}`,
+    });
+  }
+  return atom;
 }
 
 /** Merge adjacent same-label segments so we draw fewer rects at full zoom. */
@@ -194,10 +220,12 @@ function LaneCanvas({
  *  lines are drawn on the spectrogram (the lane row itself always stays visible). */
 export function SongStructureLaneLabels({
   yAxisWidth,
+  laneOrder,
   visibility,
   onToggle,
 }: {
   yAxisWidth?: number;
+  laneOrder: readonly LaneName[];
   visibility: Record<LaneName, boolean>;
   onToggle: (name: LaneName) => void;
 }) {
@@ -220,7 +248,7 @@ export function SongStructureLaneLabels({
   return (
     <div style={{ marginTop: 4 }}>
       <div style={{ height: 14 }} />
-      {LANE_ORDER.map(name => (
+      {laneOrder.map(name => (
         <div key={name} style={rowStyle}>
           <input
             type="checkbox"
@@ -237,10 +265,13 @@ export function SongStructureLaneLabels({
 }
 
 interface Props {
-  structure: SongStructure;
-  /** Pre-built, merged segments per lane — shared with the spectrogram's
+  /** Which lanes to draw, top to bottom. */
+  laneOrder: readonly LaneName[];
+  /** Songs, for the boundary lines across every lane; empty for an atom lane. */
+  songs: SongStructureSong[];
+  /** Pre-built segments per lane — shared with the spectrogram's
    *  boundary-line overlay so the (expensive, full-file) build only runs once. */
-  lanes: Record<LaneName, LaneSeg[]>;
+  lanes: Partial<Record<LaneName, LaneSeg[]>>;
   timeCols: number;
   audioDurationSec: number;
   displayWidth: number;
@@ -252,7 +283,8 @@ interface Props {
 }
 
 export function SongStructureLanes({
-  structure,
+  laneOrder,
+  songs,
   lanes,
   timeCols,
   audioDurationSec,
@@ -263,10 +295,10 @@ export function SongStructureLanes({
 }: Props) {
   const songBoundaries = useMemo(
     () =>
-      structure.songs
+      songs
         .slice(1)
         .map(s => secToCol(s.startSec, audioDurationSec, timeCols)),
-    [structure.songs, audioDurationSec, timeCols],
+    [songs, audioDurationSec, timeCols],
   );
 
   const [scrollLeft, setScrollLeft] = useState(0);
@@ -299,31 +331,24 @@ export function SongStructureLanes({
     return (x / displayWidth) * timeCols;
   };
 
+  // Placements may overlap; the last one drawn (on top) wins.
   const segAtCol = (name: LaneName, col: number): LaneSeg | undefined =>
-    lanes[name].find(s => col >= s.startCol && col < s.endCol);
+    (lanes[name] ?? []).findLast(s => col >= s.startCol && col < s.endCol);
+
+  const segAtEvent = (event: ReactMouseEvent<HTMLDivElement>): LaneSeg | undefined => {
+    const col = colAtClientX(event.clientX, event.currentTarget);
+    const y = event.clientY - event.currentTarget.getBoundingClientRect().top;
+    const laneIdx = Math.min(laneOrder.length - 1, Math.max(0, Math.floor(y / LANE_H)));
+    return segAtCol(laneOrder[laneIdx], col);
+  };
 
   const onMove = (event: ReactMouseEvent<HTMLDivElement>) => {
-    const col = colAtClientX(event.clientX, event.currentTarget);
-    const unit = structure.units.find(u => {
-      const a = secToCol(u.startSec, audioDurationSec, timeCols);
-      const b = secToCol(u.endSec, audioDurationSec, timeCols);
-      return col >= a && col < b;
-    });
-    setHover(
-      unit
-        ? `motif ${unit.motif} · song ${unit.song} · theme ${unit.theme} · phrase ${unit.phraseId}×${unit.phraseCount}`
-        : null,
-    );
+    setHover(segAtEvent(event)?.title ?? null);
   };
 
   const onClick = (event: ReactMouseEvent<HTMLDivElement>) => {
     if (!onSelectRange) return;
-    const col = colAtClientX(event.clientX, event.currentTarget);
-    // Which lane was clicked (top motif, mid phrase, bottom theme).
-    const y = event.clientY - event.currentTarget.getBoundingClientRect().top;
-    const laneIdx = Math.min(LANE_ORDER.length - 1, Math.max(0, Math.floor(y / LANE_H)));
-    const name = LANE_ORDER[laneIdx];
-    const seg = segAtCol(name, col);
+    const seg = segAtEvent(event);
     if (!seg) {
       onSelectRange(null);
       return;
@@ -347,7 +372,7 @@ export function SongStructureLanes({
         click a bar to highlight it on the spectrogram
       </p>
       <div style={{ position: 'relative', width: displayWidth }}>
-        {LANE_ORDER.map(name => (
+        {laneOrder.map(name => (
           <div key={name} style={{ width: displayWidth, height: LANE_H }}>
             <div
               style={{
@@ -359,7 +384,7 @@ export function SongStructureLanes({
               }}
             >
               <LaneCanvas
-                segs={lanes[name]}
+                segs={lanes[name] ?? []}
                 timeCols={timeCols}
                 displayWidth={displayWidth}
                 songBoundaries={songBoundaries}
@@ -379,8 +404,8 @@ export function SongStructureLanes({
             left: 0,
             top: 0,
             width: viewWidth,
-            height: LANE_H * LANE_ORDER.length,
-            marginTop: -(LANE_H * LANE_ORDER.length),
+            height: LANE_H * laneOrder.length,
+            marginTop: -(LANE_H * laneOrder.length),
             cursor: 'pointer',
             zIndex: 2,
           }}

@@ -26,7 +26,7 @@ def test_duration_chain_matches_a_two_second_histogram():
     assert mass_2 > 0.99
 
 
-def test_rows_sum_to_one_and_theme_6_does_not_advance():
+def test_rows_sum_to_one_and_theme_6_returns_to_theme_1():
     exit_prob = np.full((N_SLOTS, 4), 0.4)
     tables = transition_tables(exit_prob, REPEAT_INIT)
     sums = row_probability_sums(tables)
@@ -35,8 +35,12 @@ def test_rows_sum_to_one_and_theme_6_does_not_advance():
     from analysis.HMM.topology import KIND_NEXT, TERMINAL_SLOT
 
     src = int(TERMINAL_SLOT[-1]) * 5
-    kinds = [int(tables.kind[src, k]) for k in range(int(tables.n_out[src]))]
-    assert int(KIND_NEXT) not in kinds
+    next_edges = [
+        int(tables.to[src, k])
+        for k in range(int(tables.n_out[src]))
+        if int(tables.kind[src, k]) == int(KIND_NEXT)
+    ]
+    assert next_edges == [0]
     assert START_STATE == 0
     from analysis.HMM.topology import START_STATES
 
@@ -63,7 +67,7 @@ def test_baum_welch_raises_likelihood():
         assert int(SLOT_THEME[int(path[0]) // 5]) == 0
     start = model.copy()
     start.means = means + rng.normal(scale=1.0, size=means.shape)
-    start.repeat_prob = np.array([0.5, 0.5, 0.5, 0.5, 0.5, 1.0])
+    start.repeat_prob = np.full(6, 0.5)
     fitted, history, complete = baum_welch(sequences, start, max_iter=4, tol=0.0)
     assert history[-1] > history[0]
     assert np.isfinite(complete)
@@ -71,7 +75,8 @@ def test_baum_welch_raises_likelihood():
     metrics = fit_metrics(sequences, themes, fitted)
     assert np.isfinite(metrics["posterior_on_label"])
     assert metrics["song_loglik"].shape == (len(sequences),)
-    assert fitted.repeat_prob[-1] == 1.0
+    assert np.all(fitted.repeat_prob < 1.0)
+    assert np.all(fitted.repeat_prob > 0.0)
     assert np.all(fitted.start_prob > 0.0)
     assert abs(float(fitted.start_prob.sum()) - 1.0) < 1e-8
     assert N_THEMES == 6

@@ -1,582 +1,467 @@
-"""CLI for elementary dictionary-learning tools and legacy helpers."""
+"""Command line for the randomized dictionary build and Mallat matching pursuit.
+
+Both commands read a GPL output folder directly: ``spectrogram_npy/`` (whitened
+windows plus JSON sidecars) and ``CSV_*.csv`` (detections)::
+
+    python -m analysis.dict_learning randomized-build --gpl-dir GPL_OUT --out DICT_DIR
+    python -m analysis.dict_learning matching-pursuit --gpl-dir GPL_OUT \\
+        --dictionary DICT_DIR --out MP_DIR
+
+``randomized-build`` writes ``atoms/template_*.npy``, ``summary.json``,
+``matchings.json`` and ``outer_logs.jsonl``. ``matching-pursuit`` places the
+atoms listed in a dictionary's ``summary.json`` and writes ``summary.json`` and
+``matchings.json``. With ``--catalog DB`` either command also registers its
+output folder in the SQLite catalog (``database/``).
+"""
 
 from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
-from contextlib import closing
+from dataclasses import asdict
 from pathlib import Path
+from typing import Any, Sequence
 
 import numpy as np
 
-from database import catalog
-
-from .io import discover_windows, load_gpl_inputs, load_window
-from .mp import residual_energy, single_template_dictionary
-from .core import Dictionary, Matching, Template
-from .learn.seed_from_gpl import Seed, seed_from_gpl_paths, write_seed_result
-from .learn.match_to_dictionary import match_to_dictionary, write_match_to_dictionary_result
-from .tools import (
-    average_templates,
-    build_dictionary_from_detections,
-    matching_pursuit,
-    merge_templates,
-    remove_template,
-)
+from . import mp as mp_module
+from .core import Dictionary, Matching, Template, Window, as_stack, coverage_from_matchings
+from .io import Detection, discover_windows, find_detection_csvs, load_detections_from_paths
+from .learn import randomized_dictionary as rd
+from .tools import matching_pursuit
 
 
-def _load_windows(args: argparse.Namespace) -> list:
-    if args.npy_dir:
-        return discover_windows(Path(args.npy_dir))
-    if getattr(args, "window", None):
-        return [load_window(Path(p)) for p in args.window]
-    return []
+class CliError(Exception):
+    """Bad input the user can fix. Printed without a traceback; exit code 2."""
 
 
-def _load_dictionary_from_dir(templates_dir: Path) -> Dictionary:
-    dictionary = Dictionary()
-    for i, path in enumerate(sorted(templates_dir.glob("*.npy"))):
-        dictionary.add(Template(template_id=i, data=np.load(path)))
-    return dictionary
+def _npy_dir(gpl_dir: Path) -> Path:
+    nested = gpl_dir / "spectrogram_npy"
+    return nested if nested.is_dir() else gpl_dir
 
 
-def _cmd_seed_from_gpl(args: argparse.Namespace) -> int:
-    if getattr(args, "mp_compute", None):
-        import os
-
-        os.environ["DICT_LEARNING_MP_COMPUTE"] = str(args.mp_compute)
-    seed = seed_from_gpl_paths(
-        window_paths=args.window or None,
-        npy_dir=args.npy_dir,
-        csv_paths=args.csv or None,
-        gpl_output_dir=args.gpl_output_dir,
-        eps_step_fraction=args.eps_step_fraction,
-        min_repeats=args.min_repeats,
-        normalize=not getattr(args, "no_normalize", False),
-        mp_mode=getattr(args, "mp_mode", None),
-        n_workers=getattr(args, "mp_workers", None),
-    )
-    if not seed.is_selected():
-        print(
-            f"no template selected "
-            f"(tried={seed.get_n_candidates_tried()}/{len(seed.get_candidates())} "
-            f"energy0={seed.get_energy_before():.6g})"
-        )
-    else:
-        template = seed.get_template()
-        assert template is not None
-        print(
-            f"selected segment={seed.get_selected_segment_id()} "
-            f"shape={template.data.shape} "
-            f"ΔE={seed.get_delta_energy_total():.6g} "
-            f"E_after={seed.get_energy_after():.6g} "
-            f"n_det={len(seed.get_matchings())} "
-            f"tried={seed.get_n_candidates_tried()}"
-        )
-    if args.out:
-        path = write_seed_result(seed, args.out)
-        print(f"wrote {path}")
-    return 0 if seed.is_selected() else 1
-
-
-def _cmd_matching_pursuit(args: argparse.Namespace) -> int:
-    windows = _load_windows(args)
+def load_windows(gpl_dir: Path, n_windows: int | None, window_offset: int) -> list[Window]:
+    """Windows in time order, sliced to ``[window_offset, window_offset + n_windows)``."""
+    if not gpl_dir.is_dir():
+        raise CliError(f"GPL directory not found: {gpl_dir}")
+    if window_offset < 0:
+        raise CliError(f"--window-offset must be >= 0, got {window_offset}")
+    if n_windows is not None and n_windows < 1:
+        raise CliError(f"--n-windows must be >= 1, got {n_windows}")
+    windows = discover_windows(_npy_dir(gpl_dir))
     if not windows:
-        print("No windows loaded", file=sys.stderr)
-        return 1
-    residual = {w.window_id: np.array(w.data, copy=True) for w in windows}
-    dictionary = Dictionary()
-    if args.templates_dir:
-        dictionary = _load_dictionary_from_dir(Path(args.templates_dir))
-    elif args.seed_manifest:
-        manifest = json.loads(Path(args.seed_manifest).read_text())
-        base = Path(args.seed_manifest).parent
-        tinfo = manifest.get("template")
-        if not tinfo:
-            print("seed_manifest has no selected template", file=sys.stderr)
-            return 1
-        dictionary.add(
-            Template(
-                template_id=int(tinfo.get("template_id", 0)),
-                data=np.load(base / tinfo["file"]),
-            )
+        raise CliError(f"no whitened spectrogram windows in {_npy_dir(gpl_dir)}")
+    windows.sort(key=lambda window: (window.start_sample, window.window_id))
+    end = None if n_windows is None else window_offset + n_windows
+    chosen = windows[window_offset:end]
+    if not chosen:
+        raise CliError(
+            f"--window-offset {window_offset} is past the last of {len(windows)} windows"
         )
-    else:
-        print("Provide --templates-dir or --seed-manifest", file=sys.stderr)
-        return 1
+    return chosen
 
-    e0 = residual_energy(residual)
-    conn = None
-    if args.db and args.input_dictionary_id is not None:
-        conn = catalog.connect(args.db)
-    if getattr(args, "mp_compute", None):
-        import os
 
-        os.environ["DICT_LEARNING_MP_COMPUTE"] = str(args.mp_compute)
-    try:
-        result = matching_pursuit(
-            residual,
-            dictionary,
-            energy_floor=args.energy_floor,
-            eps_step_fraction=args.eps_step_fraction,
-            mp_mode=getattr(args, "mp_mode", None),
-            n_workers=getattr(args, "mp_workers", None),
-            conn=conn,
-            input_dictionary_id=args.input_dictionary_id,
-            out_dir=args.out,
-            name=args.name,
-        )
-    finally:
-        if conn is not None:
-            conn.commit()
-            conn.close()
+def load_detections(gpl_dir: Path) -> list[Detection]:
+    paths = find_detection_csvs(gpl_dir)
+    if not paths:
+        raise CliError(f"no CSV_*.csv detection file in {gpl_dir}")
+    detections = load_detections_from_paths(paths)
+    if not detections:
+        raise CliError(f"detection CSV in {gpl_dir} has no rows")
+    return detections
 
-    loop = result.loop
-    print(
-        f"atoms={len(loop.matchings)} energy {e0:.6g} -> {loop.energies[-1]:.6g} "
-        f"stopped={loop.stopped_reason}"
-        + (
-            f" tool_run_id={result.tool_run_id} dict={result.output_dictionary_id}"
-            if result.tool_run_id
-            else ""
-        )
-    )
-    if args.out:
-        out = Path(args.out)
-        out.mkdir(parents=True, exist_ok=True)
-        summary = {
-            "n_matchings": len(loop.matchings),
-            "energies": loop.energies,
-            "stopped_reason": loop.stopped_reason,
-            "tool_run_id": result.tool_run_id,
-            "output_dictionary_id": result.output_dictionary_id,
-            "matchings": [
-                {
-                    "template_id": m.template_id,
-                    "window_id": m.window_id,
-                    "t_start": m.t_start,
-                    "amplitude": m.amplitude,
-                }
-                for m in loop.matchings
-            ],
+
+def _sec_per_bin(window: Window) -> float | None:
+    if window.sample_freq > 0:
+        return window.overlap / window.sample_freq
+    return None
+
+
+def _matching_rows(matchings: Sequence[Matching]) -> list[dict[str, Any]]:
+    rows = []
+    for matching in matchings:
+        row: dict[str, Any] = {
+            "template_id": int(matching.template_id),
+            "window_id": matching.window_id,
+            "t_start": int(matching.t_start),
+            "amplitude": float(matching.amplitude),
+            "energy": matching.energy,
         }
-        (out / "mp_summary.json").write_text(json.dumps(summary, indent=2))
-        for wid, arr in loop.residual_stack.items():
-            safe = wid.replace("/", "_")
-            np.save(out / f"residual_{safe}.npy", arr)
-        print(f"wrote {out / 'mp_summary.json'}")
-    return 0
+        if matching.n_components > 1:
+            row["coeffs"] = [float(c) for c in matching.coeffs]
+        rows.append(row)
+    return rows
 
 
-def _cmd_average_templates(args: argparse.Namespace) -> int:
-    windows = _load_windows(args)
-    if not windows:
-        print("No windows loaded", file=sys.stderr)
-        return 1
-    dictionary = _load_dictionary_from_dir(Path(args.templates_dir))
-    matchings_payload = json.loads(Path(args.matchings).read_text())
-    raw = matchings_payload.get("matchings", matchings_payload)
-    matchings = [
-        Matching(
-            template_id=int(m["template_id"]),
-            window_id=str(m["window_id"]),
-            t_start=int(m["t_start"]),
-            amplitude=float(m.get("amplitude", 1.0)),
-        )
-        for m in raw
-    ]
-    conn = None
-    if args.db and args.input_dictionary_id is not None:
-        conn = catalog.connect(args.db)
-    try:
-        result = average_templates(
-            windows,
-            dictionary,
-            matchings,
-            conn=conn,
-            input_dictionary_id=args.input_dictionary_id,
-            out_dir=args.out,
-            name=args.name,
-        )
-    finally:
-        if conn is not None:
-            conn.commit()
-            conn.close()
-    print(
-        f"averaged {len(result.dictionary)} templates"
-        + (
-            f" tool_run_id={result.tool_run_id} dict={result.output_dictionary_id}"
-            if result.tool_run_id
-            else ""
-        )
+def _write_json(path: Path, payload: Any) -> None:
+    path.write_text(json.dumps(payload, indent=2))
+
+
+def _coverage(stack: dict[str, np.ndarray], dictionary: Dictionary, matchings) -> dict[str, Any]:
+    widths = {int(t.template_id): int(t.width) for t in dictionary}
+    n_win_m, n_win_t, n_bins_c, n_bins_t = coverage_from_matchings(
+        stack, matchings, template_widths=widths
     )
-    if args.out and result.tool_run_id is None:
-        out = Path(args.out)
-        out.mkdir(parents=True, exist_ok=True)
-        for template in result.dictionary:
-            np.save(out / f"template_{template.template_id:03d}.npy", template.data)
-    return 0
+    return {
+        "time_coverage_fraction": n_bins_c / n_bins_t if n_bins_t else 0.0,
+        "window_coverage_fraction": n_win_m / n_win_t if n_win_t else 0.0,
+        "n_bins_covered": n_bins_c,
+        "n_bins_total": n_bins_t,
+        "n_windows_matched": n_win_m,
+        "n_windows_total": n_win_t,
+    }
 
 
-def _cmd_match_to_dictionary(args: argparse.Namespace) -> int:
-    windows = _load_windows(args)
-    if not windows:
-        print("No windows loaded", file=sys.stderr)
-        return 1
-    matchings_payload = json.loads(Path(args.matchings).read_text())
-    raw = matchings_payload.get("matchings", matchings_payload)
-    matchings = []
-    for m in raw:
-        coeffs = m.get("coeffs")
-        if coeffs is not None:
-            matchings.append(
-                Matching(
-                    template_id=int(m["template_id"]),
-                    window_id=str(m["window_id"]),
-                    t_start=int(m["t_start"]),
-                    coeffs=np.asarray(coeffs, dtype=np.float64),
-                )
+def _apply_compute(compute: str | None) -> None:
+    """``--compute`` sets the MP backend for this process and any MP worker it spawns."""
+    if compute is not None:
+        os.environ["DICT_LEARNING_MP_COMPUTE"] = compute
+
+
+def _run_with_stats(enabled: bool, out_dir: Path, fn):
+    if not enabled:
+        return fn()
+    with mp_module.collecting():
+        result = fn()
+        _write_json(out_dir / "loop_stats.json", mp_module.snapshot())
+    return result
+
+
+def _register(catalog_db: Path | None, out_dir: Path) -> None:
+    """Add the output folder to the catalog when ``--catalog`` was given."""
+    if catalog_db is None:
+        return
+    from contextlib import closing
+
+    from database import catalog
+
+    with closing(catalog.connect(catalog_db)) as conn:
+        try:
+            with conn:
+                result = catalog.register_run_dir(conn, out_dir)
+        except catalog.CatalogError as exc:
+            raise CliError(f"could not register {out_dir} in {catalog_db}: {exc}") from exc
+    print(json.dumps({"catalog": str(catalog_db), **result}))
+
+
+def _probability(name: str, value: float | None) -> float | None:
+    if value is not None and not 0.0 <= value <= 1.0:
+        raise CliError(f"{name} must be in [0, 1], got {value}")
+    return value
+
+
+# ── randomized-build ─────────────────────────────────────────────────────────
+
+
+def run_randomized_build(args: argparse.Namespace) -> int:
+    windows = load_windows(args.gpl_dir, args.n_windows, args.window_offset)
+    detections = load_detections(args.gpl_dir)
+    _probability("--max-relative-distance", args.max_relative_distance)
+    _probability("--post-refine-max-relative-distance", args.post_refine_max_relative_distance)
+    _apply_compute(args.compute)
+    args.out.mkdir(parents=True, exist_ok=True)
+
+    def on_log(log: rd.RandomizedOuterPassLog) -> None:
+        if args.verbose:
+            print(
+                f"outer {log.outer}: +{log.n_atoms_this_pass} atoms, "
+                f"{log.n_atoms} total, time coverage {log.time_coverage_fraction:.3f}",
+                file=sys.stderr,
             )
-        else:
-            matchings.append(
-                Matching(
-                    template_id=int(m["template_id"]),
-                    window_id=str(m["window_id"]),
-                    t_start=int(m["t_start"]),
-                    amplitude=float(m.get("amplitude", 1.0)),
-                )
-            )
-    if args.widths is not None and args.width is not None:
-        print("pass only one of --width or --widths", file=sys.stderr)
-        return 1
-    if args.widths is not None:
-        raw_w = json.loads(args.widths)
-        widths: int | dict[int, int] = {int(k): int(v) for k, v in raw_w.items()}
-    elif args.width is not None:
-        widths = int(args.width)
-    else:
-        print("one of --width or --widths is required", file=sys.stderr)
-        return 1
-    if getattr(args, "mp_compute", None):
-        import os
 
-        os.environ["DICT_LEARNING_MP_COMPUTE"] = str(args.mp_compute)
-    result = match_to_dictionary(
-        windows,
-        matchings,
-        widths=widths,
-        refine_iters=args.refine_iters,
-        template_method=args.template_method,
-        n_components=args.n_components,
-        max_relative_distance=args.max_relative_distance,
-        eps_step_fraction=args.eps_step_fraction,
-        normalize=not args.no_normalize,
-        disallow_overlap=not args.allow_overlap,
-        max_repeats=args.max_repeats,
-        pin_labels=not getattr(args, "no_pin_labels", False),
-        show_progress=not args.no_progress,
-        mp_mode=getattr(args, "mp_mode", None),
-        n_workers=getattr(args, "mp_workers", None),
-    )
-    out_dir = None
-    if args.out:
-        out_dir = write_match_to_dictionary_result(
-            result,
-            args.out,
-            name=args.name,
-            params={
-                "refine_iters": args.refine_iters,
-                "template_method": args.template_method,
-                "n_components": args.n_components,
-                "pin_labels": not getattr(args, "no_pin_labels", False),
-            },
+    def build() -> rd.RandomizedOuterResult:
+        try:
+            return rd.learn_randomized_outer(
+                windows,
+                detections,
+                m_per_outer=args.m_per_outer,
+                min_coverage=args.min_coverage,
+                max_outer=args.max_outer,
+                refine_iters=args.refine_iters,
+                n_components=args.n_components,
+                n_min=args.n_min,
+                epsilon=args.epsilon,
+                min_template_width=args.min_template_width,
+                max_template_width=args.max_template_width,
+                eps_step_fraction=args.eps_step_fraction,
+                max_relative_distance=args.max_relative_distance,
+                post_refine_max_relative_distance=args.post_refine_max_relative_distance,
+                rng=args.seed,
+                mp_mode=args.mp_mode,
+                n_workers=args.workers,
+                show_progress=args.progress,
+                progress_callback=on_log,
+            )
+        except ValueError as exc:
+            raise CliError(str(exc)) from exc
+
+    result = _run_with_stats(args.loop_stats, args.out, build)
+
+    atoms_dir = args.out / "atoms"
+    atoms_dir.mkdir(exist_ok=True)
+    counts: dict[int, int] = {}
+    for matching in result.matchings:
+        counts[int(matching.template_id)] = counts.get(int(matching.template_id), 0) + 1
+    atoms = []
+    for template in result.dictionary:
+        rel = f"atoms/template_{template.template_id:03d}.npy"
+        np.save(args.out / rel, template.data)
+        atoms.append(
+            {
+                "template_id": int(template.template_id),
+                "width": template.width,
+                "n_freq": template.n_freq,
+                "n_components": template.n_components,
+                "n_patches": counts.get(int(template.template_id), 0),
+                "source_segment_id": template.source_segment_id,
+                "path": rel,
+            }
         )
+    _write_json(args.out / "matchings.json", _matching_rows(result.matchings))
+    (args.out / "outer_logs.jsonl").write_text(
+        "".join(json.dumps(asdict(log)) + "\n" for log in result.outer_logs)
+    )
+    summary = {
+        "command": "randomized-build",
+        "gpl_dir": str(args.gpl_dir.resolve()),
+        "wav": str(args.gpl_dir.resolve()),
+        "n_windows": len(windows),
+        "window_ids": [window.window_id for window in windows],
+        "window_offset": args.window_offset,
+        "n_detections": len(detections),
+        "sec_per_bin": _sec_per_bin(windows[0]),
+        "m_per_outer": args.m_per_outer,
+        "min_coverage": args.min_coverage,
+        "max_outer": args.max_outer,
+        "refine_iters": args.refine_iters,
+        "n_components": args.n_components,
+        "n_min": args.n_min,
+        "epsilon": args.epsilon,
+        "min_template_width": args.min_template_width,
+        "max_template_width": args.max_template_width,
+        "eps_step_fraction": args.eps_step_fraction,
+        "max_relative_distance": args.max_relative_distance,
+        "post_refine_max_relative_distance": args.post_refine_max_relative_distance,
+        "seed": args.seed,
+        "stop_reason": result.stop_reason,
+        "n_outer_completed": result.n_outer_completed,
+        "n_atoms": result.n_atoms,
+        "n_matchings": result.n_matchings,
+        "time_coverage_fraction": result.time_coverage_fraction,
+        "window_coverage_fraction": result.window_coverage_fraction,
+        "energy_before": result.energy_before,
+        "energy_after": result.energy_after,
+        "atoms": atoms,
+    }
+    _write_json(args.out / "summary.json", summary)
     print(
         json.dumps(
             {
-                "n_atoms": len(result.dictionary),
-                "n_matchings": len(result.matchings),
-                "iterations_completed": result.iterations_completed,
-                "energy_before": result.energies[0] if result.energies else None,
-                "energy_after": result.energies[-1] if result.energies else None,
-                "out_dir": str(out_dir) if out_dir is not None else None,
-            },
-            indent=2,
-            default=str,
+                "out": str(args.out),
+                "stop_reason": result.stop_reason,
+                "n_atoms": result.n_atoms,
+                "n_matchings": result.n_matchings,
+                "time_coverage_fraction": result.time_coverage_fraction,
+            }
         )
     )
+    if result.n_atoms == 0:
+        print(f"no atoms survived (stop reason: {result.stop_reason})", file=sys.stderr)
+        return 1
+    _register(args.catalog, args.out)
     return 0
 
 
-def _cmd_build_from_detections(args: argparse.Namespace) -> int:
-    windows, detections = load_gpl_inputs(
-        window_paths=args.window or None,
-        npy_dir=args.npy_dir,
-        csv_paths=args.csv or None,
-        gpl_output_dir=args.gpl_output_dir,
-    )
-    conn = catalog.connect(args.db) if args.db else None
-    if getattr(args, "mp_compute", None):
-        import os
-
-        os.environ["DICT_LEARNING_MP_COMPUTE"] = str(args.mp_compute)
-    try:
-        result = build_dictionary_from_detections(
-            windows,
-            detections,
-            n_rounds=args.n_rounds,
-            eps_step_fraction=args.eps_step_fraction,
-            min_repeats=args.min_repeats,
-            normalize=not args.no_normalize,
-            mp_mode=getattr(args, "mp_mode", None),
-            n_workers=getattr(args, "mp_workers", None),
-            conn=conn,
-            out_dir=args.out,
-            name=args.name,
-        )
-    finally:
-        if conn is not None:
-            conn.commit()
-            conn.close()
-    print(
-        f"templates={len(result)} energy "
-        f"{result.get_energy_before():.6g} -> {result.get_energy_after():.6g} "
-        f"stop={result.get_stop_reason()}"
-    )
-    return 0 if len(result) else 1
+# ── matching-pursuit ─────────────────────────────────────────────────────────
 
 
-def _cmd_remove_template(args: argparse.Namespace) -> int:
-    if not args.db or args.input_dictionary_id is None:
-        print("--db and --input-dictionary-id required", file=sys.stderr)
-        return 1
-    with closing(catalog.connect(args.db)) as conn:
-        rows = catalog.list_dictionary_templates(conn, args.input_dictionary_id)
-        dictionary = Dictionary()
-        for row in rows:
-            dictionary.add(
-                Template(
-                    template_id=int(row["template_id"]),
-                    data=np.load(row["npy_path"]),
-                )
+def load_dictionary(dictionary_dir: Path) -> Dictionary:
+    """Atoms listed in a ``randomized-build`` ``summary.json``."""
+    summary_path = dictionary_dir / "summary.json"
+    if not summary_path.is_file():
+        raise CliError(f"no summary.json in dictionary directory {dictionary_dir}")
+    atoms = json.loads(summary_path.read_text()).get("atoms") or []
+    if not atoms:
+        raise CliError(f"{summary_path} lists no atoms")
+    dictionary = Dictionary()
+    for atom in atoms:
+        path = dictionary_dir / atom["path"]
+        if not path.is_file():
+            raise CliError(f"atom file missing: {path}")
+        dictionary.add(
+            Template(
+                template_id=int(atom["template_id"]),
+                data=np.load(path),
+                source_segment_id=atom.get("source_segment_id"),
             )
-        result = remove_template(
-            dictionary,
-            template_id=args.template_id,
-            template_pk=args.template_pk,
-            conn=conn,
-            input_dictionary_id=args.input_dictionary_id,
-            name=args.name,
         )
-        conn.commit()
-    print(
-        f"removed -> dict={result.output_dictionary_id} "
-        f"tool_run_id={result.tool_run_id} n={len(result.dictionary)}"
-    )
-    return 0
+    return dictionary
 
 
-def _cmd_merge_templates(args: argparse.Namespace) -> int:
-    windows = _load_windows(args)
-    if not windows:
-        print("No windows loaded", file=sys.stderr)
-        return 1
-    if not args.db or args.input_dictionary_id is None:
-        print("--db and --input-dictionary-id required", file=sys.stderr)
-        return 1
-    matchings_payload = json.loads(Path(args.matchings).read_text())
-    raw = matchings_payload.get("matchings", matchings_payload)
-    matchings = [
-        Matching(
-            template_id=int(m["template_id"]),
-            window_id=str(m["window_id"]),
-            t_start=int(m["t_start"]),
-            amplitude=float(m.get("amplitude", 1.0)),
-        )
-        for m in raw
-    ]
-    with closing(catalog.connect(args.db)) as conn:
-        rows = catalog.list_dictionary_templates(conn, args.input_dictionary_id)
-        dictionary = Dictionary()
-        for row in rows:
-            dictionary.add(
-                Template(
-                    template_id=int(row["template_id"]),
-                    data=np.load(row["npy_path"]),
-                )
+def run_matching_pursuit(args: argparse.Namespace) -> int:
+    windows = load_windows(args.gpl_dir, args.n_windows, args.window_offset)
+    dictionary = load_dictionary(args.dictionary)
+    n_freq = windows[0].n_freq
+    for template in dictionary:
+        if template.n_freq != n_freq:
+            raise CliError(
+                f"atom {template.template_id} has {template.n_freq} frequency rows; "
+                f"the windows have {n_freq}"
             )
-        result = merge_templates(
-            windows,
-            dictionary,
-            matchings,
-            args.template_a,
-            args.template_b,
-            conn=conn,
-            input_dictionary_id=args.input_dictionary_id,
-            out_dir=args.out,
-            name=args.name,
-        )
-        conn.commit()
+    _probability("--max-relative-distance", args.max_relative_distance)
+    _apply_compute(args.compute)
+    args.out.mkdir(parents=True, exist_ok=True)
+    stack = as_stack(windows)
+    normalize = dictionary.max_n_components == 1
+
+    def run():
+        try:
+            return matching_pursuit(
+                stack,
+                dictionary,
+                eps_step_fraction=args.eps_step_fraction,
+                max_repeats=args.max_repeats,
+                normalize=normalize,
+                disallow_overlap=args.disallow_overlap,
+                show_progress=args.progress,
+                mp_mode=args.mp_mode,
+                n_workers=args.workers,
+                max_relative_distance=args.max_relative_distance,
+            )
+        except ValueError as exc:
+            raise CliError(str(exc)) from exc
+
+    result = _run_with_stats(args.loop_stats, args.out, run)
+    loop = result.loop
+    _write_json(args.out / "matchings.json", _matching_rows(loop.matchings))
+    summary = {
+        "command": "matching-pursuit",
+        "gpl_dir": str(args.gpl_dir.resolve()),
+        "dictionary": str(args.dictionary.resolve()),
+        "n_windows": len(windows),
+        "window_ids": [window.window_id for window in windows],
+        "window_offset": args.window_offset,
+        "n_atoms": len(dictionary),
+        "n_matchings": len(loop.matchings),
+        "stop_reason": loop.stopped_reason,
+        "energy_before": loop.energies[0],
+        "energy_after": loop.energies[-1],
+        **_coverage(stack, dictionary, loop.matchings),
+    }
+    _write_json(args.out / "summary.json", summary)
     print(
-        f"merged -> dict={result.output_dictionary_id} "
-        f"tool_run_id={result.tool_run_id} merged_id={result.merged_template_id}"
+        json.dumps(
+            {
+                "out": str(args.out),
+                "stop_reason": loop.stopped_reason,
+                "n_matchings": len(loop.matchings),
+            }
+        )
     )
+    _register(args.catalog, args.out)
     return 0
 
 
-def _add_mp_parallel_args(parser: argparse.ArgumentParser) -> None:
+# ── parser ───────────────────────────────────────────────────────────────────
+
+
+def _optional_int(text: str) -> int | None:
+    return None if text.lower() == "none" else int(text)
+
+
+def _optional_float(text: str) -> float | None:
+    return None if text.lower() == "none" else float(text)
+
+
+def _add_input_args(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument("--gpl-dir", type=Path, required=True, help="GPL output folder")
+    parser.add_argument("--out", type=Path, required=True, help="Output folder")
     parser.add_argument(
-        "--mp-mode",
-        choices=("per_window", "global"),
-        default=None,
-        help="MP mode: per_window (default) or classic global Mallat",
+        "--n-windows", type=int, default=None, help="Number of windows to use (default: all)"
     )
+    parser.add_argument("--window-offset", type=int, default=0, help="First window to use")
     parser.add_argument(
-        "--mp-workers",
-        type=int,
-        default=None,
-        help="Parallel workers (default: all CPUs available to this process)",
+        "--catalog", type=Path, default=None,
+        help="Also register the output folder in this catalog SQLite file",
     )
+
+
+def _add_mp_args(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument("--eps-step-fraction", type=float, default=rd.defaults.EPS_STEP_FRACTION)
     parser.add_argument(
-        "--mp-compute",
-        choices=("auto", "cpu", "cuda"),
-        default=None,
-        help="score_shifts backend: auto (GPU when beneficial), cpu, or cuda",
+        "--max-relative-distance",
+        type=_optional_float,
+        default=rd.defaults.MAX_RELATIVE_DISTANCE,
+        help="Reject placements leaving more than this energy fraction unexplained ('none' = off)",
+    )
+    parser.add_argument("--mp-mode", choices=("global", "per_window"), default=None)
+    parser.add_argument("--workers", type=int, default=None, help="MP worker processes")
+    parser.add_argument("--compute", choices=("cpu", "cuda", "auto"), default=None)
+    parser.add_argument("--progress", action="store_true", help="Show progress bars")
+    parser.add_argument(
+        "--loop-stats", action="store_true", help="Write MP loop counters to loop_stats.json"
     )
 
 
 def build_parser() -> argparse.ArgumentParser:
-    p = argparse.ArgumentParser(
-        prog="python -m analysis.dict_learning.code.cli",
-        description="Elementary dictionary-learning tools (+ legacy seed/MP helpers)",
+    parser = argparse.ArgumentParser(
+        prog="python -m analysis.dict_learning",
+        description="Randomized dictionary build and Mallat matching pursuit on GPL output.",
     )
-    sub = p.add_subparsers(dest="command", required=True)
+    sub = parser.add_subparsers(dest="command", required=True)
 
-    s = sub.add_parser("seed-from-gpl", help="Select one template via energy-ranked MP trials")
-    s.add_argument("--window", action="append", default=[], help="Path to analysis .npy")
-    s.add_argument("--npy-dir", type=str, default=None)
-    s.add_argument("--csv", action="append", default=[], help="Path to CSV_*.csv")
-    s.add_argument("--gpl-output-dir", type=str, default=None)
-    s.add_argument("--eps-step-fraction", type=float, default=0.5)
-    s.add_argument("--min-repeats", type=int, default=1)
-    s.add_argument("--no-normalize", action="store_true")
-    s.add_argument("--out", type=str, default=None)
-    _add_mp_parallel_args(s)
-    s.set_defaults(func=_cmd_seed_from_gpl)
-
-    m = sub.add_parser("matching-pursuit", aliases=["mp-run"], help="A: Mallat matching pursuit")
-    m.add_argument("--window", action="append", default=[])
-    m.add_argument("--npy-dir", type=str, default=None)
-    m.add_argument("--templates-dir", type=str, default=None)
-    m.add_argument("--seed-manifest", type=str, default=None)
-    m.add_argument("--energy-floor", type=float, default=None)
-    m.add_argument("--eps-step-fraction", type=float, default=0.5)
-    m.add_argument("--out", type=str, default=None)
-    m.add_argument("--db", type=str, default=None, help="Catalog SQLite path (optional persist)")
-    m.add_argument("--input-dictionary-id", type=int, default=None)
-    m.add_argument("--name", type=str, default=None)
-    _add_mp_parallel_args(m)
-    m.set_defaults(func=_cmd_matching_pursuit)
-
-    a = sub.add_parser("average-templates", help="B: Pure 1–1 average of each atom's patches")
-    a.add_argument("--window", action="append", default=[])
-    a.add_argument("--npy-dir", type=str, default=None)
-    a.add_argument("--templates-dir", type=str, required=True)
-    a.add_argument("--matchings", type=str, required=True, help="JSON with matchings list")
-    a.add_argument("--out", type=str, default=None)
-    a.add_argument("--db", type=str, default=None)
-    a.add_argument("--input-dictionary-id", type=int, default=None)
-    a.add_argument("--name", type=str, default=None)
-    a.set_defaults(func=_cmd_average_templates)
-
-    mtd = sub.add_parser(
-        "match-to-dictionary",
-        help="Build dictionary from labeled matchings (+ widths), then refine",
+    build = sub.add_parser(
+        "randomized-build",
+        help="Learn a dictionary: random seeds, MP + PCA refine, coverage-gated outer loop",
+        formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
-    mtd.add_argument("--window", action="append", default=[])
-    mtd.add_argument("--npy-dir", type=str, default=None)
-    mtd.add_argument("--matchings", type=str, required=True, help="JSON with matchings list")
-    mtd.add_argument("--width", type=int, default=None, help="Shared template width")
-    mtd.add_argument(
-        "--widths",
-        type=str,
-        default=None,
-        help='Per-template widths JSON, e.g. \'{"0":21,"1":20}\'',
+    _add_input_args(build)
+    build.add_argument("--m-per-outer", type=int, default=rd.DEFAULT_OUTER_M)
+    build.add_argument("--min-coverage", type=float, default=rd.DEFAULT_OUTER_MIN_COVERAGE)
+    build.add_argument("--max-outer", type=int, default=rd.DEFAULT_OUTER_MAX_OUTER)
+    build.add_argument("--refine-iters", type=int, default=rd.DEFAULT_REFINE_ITERS)
+    build.add_argument("--n-components", type=int, default=rd.defaults.N_COMPONENTS)
+    build.add_argument("--n-min", type=int, default=rd.DEFAULT_OUTER_N_MIN)
+    build.add_argument("--epsilon", type=float, default=rd.DEFAULT_CREATE_EPSILON)
+    build.add_argument(
+        "--min-template-width", type=_optional_int, default=rd.DEFAULT_MIN_TEMPLATE_WIDTH
     )
-    mtd.add_argument("--refine-iters", type=int, default=1)
-    mtd.add_argument("--template-method", default="pca", choices=("pca", "average"))
-    mtd.add_argument("--n-components", type=int, default=1)
-    mtd.add_argument(
-        "--max-relative-distance",
-        type=float,
-        default=None,
-        help=(
-            "Reject patches leaving more than this fraction of their energy "
-            "unexplained by the atom, in MP and in template rebuilds (0-1)"
-        ),
+    build.add_argument(
+        "--max-template-width", type=_optional_int, default=rd.DEFAULT_MAX_TEMPLATE_WIDTH
     )
-    mtd.add_argument("--eps-step-fraction", type=float, default=0.2)
-    mtd.add_argument("--max-repeats", type=int, default=None)
-    mtd.add_argument("--no-normalize", action="store_true")
-    mtd.add_argument("--allow-overlap", action="store_true")
-    mtd.add_argument(
-        "--no-pin-labels",
-        action="store_true",
-        help="Let refine MP reassign the input labels instead of keeping them",
+    build.add_argument(
+        "--post-refine-max-relative-distance",
+        type=_optional_float,
+        default=rd.DEFAULT_OUTER_POST_REFINE_TAU,
     )
-    mtd.add_argument("--no-progress", action="store_true")
-    mtd.add_argument("--out", type=str, default=None)
-    mtd.add_argument("--name", type=str, default=None)
-    _add_mp_parallel_args(mtd)
-    mtd.set_defaults(func=_cmd_match_to_dictionary)
+    build.add_argument("--seed", type=int, default=None, help="Random seed")
+    build.add_argument("--verbose", action="store_true", help="Print one line per outer pass")
+    _add_mp_args(build)
+    build.set_defaults(func=run_randomized_build)
 
-    c = sub.add_parser(
-        "build-from-detections",
-        help="C: Greedy GPL single-atom dictionary growth",
+    pursue = sub.add_parser(
+        "matching-pursuit",
+        help="Place a saved dictionary on GPL windows with Mallat MP",
+        formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
-    c.add_argument("--window", action="append", default=[])
-    c.add_argument("--npy-dir", type=str, default=None)
-    c.add_argument("--csv", action="append", default=[])
-    c.add_argument("--gpl-output-dir", type=str, default=None)
-    c.add_argument("--n-rounds", type=int, default=5)
-    c.add_argument("--eps-step-fraction", type=float, default=0.5)
-    c.add_argument("--min-repeats", type=int, default=1)
-    c.add_argument("--no-normalize", action="store_true")
-    c.add_argument("--out", type=str, default=None)
-    c.add_argument("--db", type=str, default=None)
-    c.add_argument("--name", type=str, default=None)
-    _add_mp_parallel_args(c)
-    c.set_defaults(func=_cmd_build_from_detections)
-
-    d = sub.add_parser("remove-template", help="D: New dictionary without one atom")
-    d.add_argument("--db", type=str, required=True)
-    d.add_argument("--input-dictionary-id", type=int, required=True)
-    d.add_argument("--template-id", type=int, default=None)
-    d.add_argument("--template-pk", type=int, default=None)
-    d.add_argument("--name", type=str, default=None)
-    d.set_defaults(func=_cmd_remove_template)
-
-    e = sub.add_parser("merge-templates", help="E: Merge two atoms by averaging detections")
-    e.add_argument("--window", action="append", default=[])
-    e.add_argument("--npy-dir", type=str, default=None)
-    e.add_argument("--db", type=str, required=True)
-    e.add_argument("--input-dictionary-id", type=int, required=True)
-    e.add_argument("--template-a", type=int, required=True)
-    e.add_argument("--template-b", type=int, required=True)
-    e.add_argument("--matchings", type=str, required=True)
-    e.add_argument("--out", type=str, required=True)
-    e.add_argument("--name", type=str, default=None)
-    e.set_defaults(func=_cmd_merge_templates)
-
-    return p
+    _add_input_args(pursue)
+    pursue.add_argument(
+        "--dictionary", type=Path, required=True, help="Output folder of randomized-build"
+    )
+    pursue.add_argument("--max-repeats", type=int, default=None)
+    pursue.add_argument("--disallow-overlap", action="store_true")
+    _add_mp_args(pursue)
+    pursue.set_defaults(func=run_matching_pursuit)
+    return parser
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = build_parser()
-    args = parser.parse_args(argv)
-    return int(args.func(args))
+    args = build_parser().parse_args(argv)
+    try:
+        return int(args.func(args))
+    except CliError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 2
 
-
-if __name__ == "__main__":
-    raise SystemExit(main())
