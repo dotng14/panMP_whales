@@ -38,6 +38,8 @@ export type AnalysisChoice = { kind: CatalogItem['kind']; id: number; label: str
 export interface FileAnalysesResponse {
   stem: string;
   items: CatalogItem[];
+  /** A GPL spectrogram already exists for the WAV (view it) vs. GPL must run first. */
+  gplCached: boolean;
 }
 
 /** Dictionaries and CSVs in the catalog for one library WAV. */

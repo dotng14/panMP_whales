@@ -8,6 +8,7 @@ import {
 import { InlineRename } from './InlineRename';
 
 const SPECTROGRAM_ONLY_LABEL = 'Spectrogram only';
+const NO_SPECTROGRAM_LABEL = 'No spectrogram yet';
 const KIND_FILTER_KEY = 'spectrogram-viewer.picker-kinds';
 
 type SortField = 'name' | 'time' | 'index';
@@ -89,6 +90,7 @@ function sortButtonStyle(active: boolean): CSSProperties {
 /** Step 2 of the library flow: pick a dictionary or song-structure CSV to overlay. */
 export function AnalysisPicker({ fileId, fileName, onChoose, onBack, initialChoice, disabled }: Props) {
   const [items, setItems] = useState<CatalogItem[] | null>(null);
+  const [gplCached, setGplCached] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [sortField, setSortField] = useState<SortField>('time');
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc');
@@ -102,6 +104,7 @@ export function AnalysisPicker({ fileId, fileName, onChoose, onBack, initialChoi
       .then(res => {
         if (cancelled) return;
         setItems(res.items);
+        setGplCached(res.gplCached);
         const restored = initialChoice === null
           ? 'none'
           : initialChoice && res.items.some(i => keyOf(i) === keyOf(initialChoice))
@@ -266,10 +269,10 @@ export function AnalysisPicker({ fileId, fileName, onChoose, onBack, initialChoi
           <div onClick={() => setSelected('none')} onDoubleClick={confirm} style={rowStyle(selected === 'none')}>
             <span style={{ fontSize: 15 }}>🖼️</span>
             <span style={{ flex: 1 }}>
-              {SPECTROGRAM_ONLY_LABEL}
+              {gplCached ? SPECTROGRAM_ONLY_LABEL : NO_SPECTROGRAM_LABEL}
               <span style={{ color: '#9ca3af' }}>
                 {items.length === 0
-                  ? ' — nothing in the catalog for this file yet'
+                  ? gplCached ? ' — no dictionaries or CSVs for this file yet' : ' — nothing in the catalog for this file yet'
                   : visibleItems && visibleItems.length < items.length
                     ? ` — ${items.length - visibleItems.length} hidden by the filters`
                     : ' — no overlay'}
@@ -290,6 +293,7 @@ export function AnalysisPicker({ fileId, fileName, onChoose, onBack, initialChoi
         <button
           onClick={confirm}
           disabled={!canConfirm}
+          title={gplCached ? 'Open the saved GPL spectrogram' : 'Run GPL on this file to make its spectrogram (saved for next time)'}
           style={{
             padding: '5px 14px',
             borderRadius: 4,
@@ -301,7 +305,7 @@ export function AnalysisPicker({ fileId, fileName, onChoose, onBack, initialChoi
             fontSize: 13,
           }}
         >
-          Analyze
+          {gplCached ? 'View' : 'Run GPL'}
         </button>
       </div>
     </div>
