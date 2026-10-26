@@ -6,6 +6,7 @@ source =
     analysis.dict_learning
     analysis.matrix_profile
     analysis.bands
+    database
 omit =
     */dict_learning/experiments/*
     */dict_learning/notebooks/*

@@ -1,19 +1,21 @@
 # analysis/test
 
-Tests for the three baseline pipelines and the code under them:
+Tests for the three baseline pipelines, the catalog, and the code under them:
 
-| Pipeline | Command |
+| Entry point | Command |
 |---|---|
-| Randomized dictionary build | `python -m analysis.dict_learning randomized-build` |
-| Mallat matching pursuit with a saved dictionary | `python -m analysis.dict_learning matching-pursuit` |
+| Randomized dictionary build | `python -m analysis.dict_learning randomized-build [--catalog DB]` |
+| Mallat matching pursuit with a saved dictionary | `python -m analysis.dict_learning matching-pursuit [--catalog DB]` |
 | Pan matrix profile | `python -m analysis.matrix_profile pan` |
+| Catalog of runs and CSVs | `python -m database register` / `index` |
+| Catalog HTTP API | `/api/catalog/*`, `/api/library/analyses`, `/api/jobs/{id}/song-structure?csvId=` |
 
 There are two layers:
 
 | Layer | Folder | Drives the code through | Coverage |
 |---|---|---|---|
 | **Unit** | `unit/` | Direct function calls | Reported, not enforced. Aim: as high as practical per function. |
-| **Integration** | `integration/` | The CLIs: `main(argv)` in-process, plus one real `python -m` subprocess per command | **100% of lines and branches the CLIs can run**, enforced |
+| **Integration** | `integration/` | The CLIs: `main(argv)` in-process, plus one real `python -m` subprocess per command; the catalog API through FastAPI's `TestClient` | **100% of lines and branches the CLIs and the catalog API can run**, enforced |
 
 ## Layout
 
@@ -21,16 +23,21 @@ There are two layers:
 analysis/test/
 ├── README.md
 ├── conftest.py          shared fixtures (session-scoped, written to pytest's tmp dir)
-├── synthetic.py         builders for synthetic GPL folders, series, WAVs; run_module()
+├── synthetic.py         builders for synthetic GPL folders, series, WAVs, song-structure CSVs; run_module()
+├── catalog_setup.py     helpers for the catalog tests (run the CLIs, copy the catalog)
 ├── unit/
 │   ├── .coveragerc      unit coverage report
+│   ├── database/        catalog helpers, validation, hand-made run folders
 │   ├── dict_learning/   MP, refine, randomized build, learn_from_motifs, bands
 │   └── matrix_profile/  mpxForPan, panMP, pan_profile, signals, MATLAB parity
 └── integration/
     ├── .coveragerc      the 100% gate
+    ├── conftest.py      catalog_runs: a build + MP registered with --catalog, plus one CSV
     ├── test_randomized_build_cli.py
     ├── test_matching_pursuit_cli.py
-    └── test_pan_cli.py
+    ├── test_pan_cli.py
+    ├── test_catalog_cli.py   --catalog, python -m database register / index
+    └── test_catalog_api.py   the backend's catalog routes (TestClient)
 ```
 
 `GPL_Python/tests/` and `HMM/test_soft_hmm.py` are separate suites and stay
@@ -44,7 +51,7 @@ virtual environment **used only for this checkout**:
 ```bash
 python -m venv .venv
 . .venv/bin/activate
-pip install -e '.[test]'          # numpy, scipy, matplotlib, numba, tqdm, pytest, pytest-cov, …
+pip install -e '.[test]'          # numpy, scipy, matplotlib, numba, tqdm, FastAPI, pytest, pytest-cov, httpx2, …
 pip install -e '.[test,gpu]'      # also CuPy, to run the CUDA test
 ```
 
@@ -54,20 +61,22 @@ top-level `analysis` package, and the last install wins for every program using
 that environment.
 
 You can also skip the install: `pyproject.toml` tells pytest to put the
-repository root first on `sys.path` (`pythonpath = ["."]`), so the tests always
-import this checkout's `analysis` package. You then only need the packages
-listed in `pyproject.toml`, plus `pytest` and `pytest-cov`.
+repository root and `backend/` first on `sys.path` (`pythonpath = [".", "backend"]`),
+so the tests always import this checkout's `analysis`, `database` and the
+backend's `app`. You then only need the packages listed in `pyproject.toml`,
+plus `pytest`, `pytest-cov` and `httpx2` (FastAPI's `TestClient` needs it).
 
 ## Running
 
 Always run from the repository root.
 
 ```bash
-# Everything under analysis/ (unit + integration + GPL_Python + HMM)
-python -m pytest analysis
+# Everything under analysis/ (unit + integration + GPL_Python + HMM). The flag
+# keeps one known collection error (below) from stopping the run.
+python -m pytest analysis --continue-on-collection-errors
 
-# One layer
-python -m pytest analysis/test/unit
+# One layer (unit/ holds the known collection error too)
+python -m pytest analysis/test/unit --continue-on-collection-errors
 python -m pytest analysis/test/integration
 
 # The coverage gate (fails below 100%)
@@ -75,7 +84,7 @@ python -m pytest analysis/test/integration \
   --cov --cov-config=analysis/test/integration/.coveragerc
 
 # The unit coverage report
-python -m pytest analysis/test/unit \
+python -m pytest analysis/test/unit --continue-on-collection-errors \
   --cov --cov-config=analysis/test/unit/.coveragerc --cov-report=term
 
 # One file, one test, or skip the CUDA test
@@ -90,9 +99,10 @@ Measured on the development server (2× RTX 3080 Ti, Python 3.13):
 
 | Run | Wall time |
 |---|---|
-| All of `analysis/`, cold numba cache | about 9 s |
-| All of `analysis/`, warm numba cache | about 6 s |
-| Integration suite with the coverage gate | about 7 s |
+| All of `analysis/`, warm numba cache | about 10 s |
+| Integration suite with the coverage gate | about 17 s (about 9 s with the GPUs hidden) |
+
+A cold numba cache adds a few seconds.
 
 numba compiles its kernels on first use and caches them (`cache=True`) in
 `__pycache__/`, so the first run on a machine is the slow one.
@@ -129,6 +139,11 @@ directory. Nothing in the repository is read or written.
   3 rows, one too short for the motif lengths, and a 3-D array (invalid).
 - **`wav_file` / `stereo_wav_file`:** 6 s at 2 kHz, noise plus repeated 150 Hz
   and 350 Hz bursts, mono and stereo.
+- **`catalog_runs`** (integration only): a GPL folder whose window ids carry the
+  stem `SOCAL_T_230426_193500`, a randomized build and a matching-pursuit run
+  registered with `--catalog`, and a 6-unit song-structure CSV for that stem.
+  Tests that write to the catalog take a copy (`catalog_runs.copy_db`). The API
+  tests point `app.config` at the copy and at a one-WAV library.
 
 Test parameters are kept small for speed: 1–3 outer passes, 1 refine
 iteration, fixed `--seed 0`, `--workers 1` unless the test is about workers,
@@ -138,13 +153,14 @@ series of a few hundred samples.
 ## The coverage gate
 
 `integration/.coveragerc` measures `analysis.dict_learning`,
-`analysis.matrix_profile` and `analysis.bands`, with branch coverage, and fails
-below 100%. It also counts the `python -m` subprocesses (`patch = subprocess`).
+`analysis.matrix_profile`, `analysis.bands`, `database` and the backend's
+catalog modules (`app.services.catalog_service`, `app.routes.catalog`), with
+branch coverage, and fails below 100%. It also counts the `python -m` subprocesses (`patch = subprocess`).
 `learn_from_motifs.py` and `refine.py` are left out: they aren't part of the
 baseline pipelines.
 
-**What 100% means here:** every line and branch that one of the three CLIs can
-run. Code the CLIs can't reach is marked in the source, on the line, with the
+**What 100% means here:** every line and branch that one of the CLIs or the
+catalog API can run. Code the CLIs can't reach is marked in the source, on the line, with the
 reason:
 
 ```python
@@ -163,8 +179,8 @@ there.
 
 What gets marked:
 
-- input checks for library callers, where the CLI validates first or can't pass
-  the bad value;
+- input checks for library callers, where the CLI or API validates first or
+  can't pass the bad value;
 - library input types the CLIs never use (array templates, lists of windows,
   pre-built segments);
 - helpers used only by `learn_from_motifs`, notebooks or unit tests;
@@ -177,13 +193,13 @@ What gets marked:
 To review them:
 
 ```bash
-grep -rn "no-pipeline-cover:\|no-pipeline-branch:\|gpu-only" analysis --include=*.py
+grep -rn "no-pipeline-cover:\|no-pipeline-branch:\|gpu-only" analysis database --include=*.py
 ```
 
-At the time of writing there are 153 `no-pipeline-cover` and 11
+At the time of writing there are 160 `no-pipeline-cover` and 11
 `no-pipeline-branch` markers, in `dict_learning/code/{core,io,mp,tools}.py`,
 `learn/randomized_dictionary.py`, `dict_learning/__init__.py`,
-`matrix_profile/__init__.py` and `bands.py`.
+`matrix_profile/__init__.py`, `bands.py` and `database/catalog.py`.
 
 **When the gate fails after a change:** add an integration test through a CLI if
 the new code is reachable that way. Mark a line only when no CLI input can reach

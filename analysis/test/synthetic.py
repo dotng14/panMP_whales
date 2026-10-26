@@ -66,6 +66,7 @@ def write_gpl_folder(
     noise: float = 0.05,
     detections: str = "planted",
     sidecar_sample_freq: bool = True,
+    stem: str = "synthetic",
     seed: int = 0,
 ) -> GplFolder:
     """Write a GPL output folder.
@@ -81,6 +82,7 @@ def write_gpl_folder(
     - ``none``: no CSV at all.
 
     ``sidecar_sample_freq=False`` leaves ``sample_freq`` out of the sidecars.
+    ``stem`` is the WAV stem inside the window ids (``spwhiten_<stem>_w000001_…``).
     """
     rng = np.random.default_rng(seed)
     root.mkdir(parents=True, exist_ok=True)
@@ -109,8 +111,8 @@ def write_gpl_folder(
             rows.append(_detection(start_sample, body + 2, 4))
             sub_hop = start_sample + 3
             rows.append({**_detection(start_sample, 0, 1), "start_time": sub_hop, "end_time": sub_hop + 4})
-        stem = f"spwhiten_synthetic_w{w + 1:06d}_s{start_sample:09d}_e{start_sample + window_samples - 1:09d}"
-        np.save(npy_dir / f"{stem}.npy", data.astype(np.float32))
+        window_id = f"spwhiten_{stem}_w{w + 1:06d}_s{start_sample:09d}_e{start_sample + window_samples - 1:09d}"
+        np.save(npy_dir / f"{window_id}.npy", data.astype(np.float32))
         sidecar = {
             "rows": n_freq,
             "cols": n_time,
@@ -124,9 +126,9 @@ def write_gpl_folder(
         }
         if not sidecar_sample_freq:
             del sidecar["sample_freq"]
-        (npy_dir / f"{stem}.json").write_text(json.dumps(sidecar))
+        (npy_dir / f"{window_id}.json").write_text(json.dumps(sidecar))
         # Display arrays sit next to the windows in real GPL output; loaders skip them.
-        np.save(npy_dir / f"{stem}_display.npy", np.zeros((2, 2), dtype=np.uint8))
+        np.save(npy_dir / f"{window_id}_display.npy", np.zeros((2, 2), dtype=np.uint8))
     # An array without a sidecar: window loaders must skip it.
     np.save(npy_dir / "notes.npy", np.zeros(3))
     if detections != "none":
@@ -190,6 +192,20 @@ def write_wav(
         handle.setsampwidth(2)
         handle.setframerate(sample_rate)
         handle.writeframes(pcm.tobytes())
+    return path
+
+
+def write_motif_csv(path: Path, *, start_unix: float, n_songs: int = 2, units_per_song: int = 3) -> Path:
+    """A song-structure CSV (``*.motif_segments.csv``): one-second units from ``start_unix``."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("w", newline="") as handle:
+        writer = csv.writer(handle)
+        writer.writerow(["motif", "song", "theme", "phrase_id", "phrase_count", "start_unix", "end_unix"])
+        t = start_unix
+        for song in range(1, n_songs + 1):
+            for unit in range(units_per_song):
+                writer.writerow([f"U{unit + 1}", song, 1, 1, 1, t, t + 1.0])
+                t += 1.0
     return path
 
 

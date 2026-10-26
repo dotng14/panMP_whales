@@ -1,5 +1,5 @@
-# Coverage for the integration suite: every line and branch the three CLIs
-# can run must be exercised. See analysis/test/README.md.
+# Coverage for the integration suite: every line and branch the CLIs and the
+# catalog API can run must be exercised. See analysis/test/README.md.
 [run]
 branch = True
 # Count `python -m ...` subprocesses too (the entry-point tests).
@@ -8,6 +8,9 @@ source =
     analysis.dict_learning
     analysis.matrix_profile
     analysis.bands
+    database
+    app.services.catalog_service
+    app.routes.catalog
 omit =
     # Not part of the baseline pipelines (kept for the later mp-greedy mode).
     */dict_learning/code/learn/learn_from_motifs.py
