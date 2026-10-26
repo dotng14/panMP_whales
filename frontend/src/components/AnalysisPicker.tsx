@@ -98,6 +98,9 @@ export function AnalysisPicker({ fileId, fileName, onChoose, onBack, initialChoi
   const [selected, setSelected] = useState<Selection>(undefined);
 
   // The owner remounts this per file (keyed on fileId), so one fetch per mount.
+  // The choice to restore is the one at mount: confirming a pick updates
+  // initialChoice, and refetching then would only repeat the same list.
+  const [restoreChoice] = useState(initialChoice);
   useEffect(() => {
     let cancelled = false;
     getFileAnalyses(fileId)
@@ -105,16 +108,16 @@ export function AnalysisPicker({ fileId, fileName, onChoose, onBack, initialChoi
         if (cancelled) return;
         setItems(res.items);
         setGplCached(res.gplCached);
-        const restored = initialChoice === null
+        const restored = restoreChoice === null
           ? 'none'
-          : initialChoice && res.items.some(i => keyOf(i) === keyOf(initialChoice))
-            ? keyOf(initialChoice)
+          : restoreChoice && res.items.some(i => keyOf(i) === keyOf(restoreChoice))
+            ? keyOf(restoreChoice)
             : undefined;
         setSelected(restored ?? (res.items.length > 0 ? keyOf(res.items[0]) : 'none'));
       })
       .catch(e => { if (!cancelled) setError(String(e)); });
     return () => { cancelled = true; };
-  }, [fileId, initialChoice]);
+  }, [fileId, restoreChoice]);
 
   useEffect(() => {
     try {

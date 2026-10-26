@@ -102,9 +102,23 @@ export function useGplJob(options: UseGplJobOptions = {}) {
     writeStoredSession(state.jobId, pendingLibraryFileIdRef.current);
   }, [state.jobId]);
 
+  // panel_ready and complete arrive back to back, and both load the panel:
+  // share one request per job while it is in flight (dropped once settled,
+  // so a failed load can be retried and no decoded panel is held here).
+  const panelRequestsRef = useRef(new Map<string, Promise<SpectrogramViewerProps>>());
+  const _fetchPanelOnce = useCallback((jobId: string) => {
+    const requests = panelRequestsRef.current;
+    let request = requests.get(jobId);
+    if (!request) {
+      request = fetchPanel(jobId).finally(() => requests.delete(jobId));
+      requests.set(jobId, request);
+    }
+    return request;
+  }, []);
+
   const _loadExistingResults = useCallback(async (jobId: string) => {
     try {
-      const panel = await fetchPanel(jobId);
+      const panel = await _fetchPanelOnce(jobId);
       setState(s => {
         if (s.jobId !== jobId || s.panels.length > 0) return s;
         return { ...s, panels: [{ ...panel, jobId }] };
@@ -112,7 +126,7 @@ export function useGplJob(options: UseGplJobOptions = {}) {
     } catch {
       // Panel may not be ready yet.
     }
-  }, []);
+  }, [_fetchPanelOnce]);
 
   const _startJobEvents = useCallback((jobId: string) => {
     const disconnect = connectJobEvents(jobId, {
@@ -129,7 +143,7 @@ export function useGplJob(options: UseGplJobOptions = {}) {
         setState(s => ({ ...s, progress: { done, total } }));
       },
       onPanelReady() {
-        fetchPanel(jobId)
+        _fetchPanelOnce(jobId)
           .then(props => {
             setState(s => {
               if (s.panels.some(panel => panel.jobId === jobId)) return s;
@@ -153,7 +167,7 @@ export function useGplJob(options: UseGplJobOptions = {}) {
       },
     });
     disconnectRef.current = disconnect;
-  }, [_loadExistingResults]);
+  }, [_fetchPanelOnce, _loadExistingResults]);
 
   const _reset = useCallback(() => {
     disconnectRef.current?.();
