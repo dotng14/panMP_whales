@@ -2,8 +2,10 @@ import { useEffect, useMemo, useState, type CSSProperties } from 'react';
 import {
   getFileAnalyses,
   patchCatalogLabel,
+  describeChoice,
   type AnalysisChoice,
   type CatalogItem,
+  type OverlayRef,
 } from '../api/catalog';
 import { InlineRename } from './InlineRename';
 
@@ -13,8 +15,8 @@ const KIND_FILTER_KEY = 'spectrogram-viewer.picker-kinds';
 
 type SortField = 'name' | 'time' | 'index';
 type Kind = CatalogItem['kind'];
-/** `undefined` = nothing picked yet; `'none'` = the spectrogram-only row. */
-type Selection = string | undefined;
+/** At most one dictionary and one CSV by id; both null = the spectrogram-only row. */
+type Selection = Record<Kind, number | null>;
 
 interface Props {
   fileId: string;
@@ -26,6 +28,24 @@ interface Props {
 }
 
 const keyOf = (item: { kind: Kind; id: number }) => `${item.kind}:${item.id}`;
+
+const createdMs = (item: CatalogItem) => (item.createdAt ? new Date(item.createdAt).getTime() : 0);
+
+/** The newest item of a kind (the default pick), or null when there is none. */
+function newestId(items: CatalogItem[], kind: Kind): number | null {
+  let best: CatalogItem | null = null;
+  for (const item of items) {
+    if (item.kind === kind && (best === null || createdMs(item) > createdMs(best))) best = item;
+  }
+  return best?.id ?? null;
+}
+
+/** The restored id when it is still in the catalog, else the newest of that kind. */
+function restoredId(items: CatalogItem[], kind: Kind, ref: OverlayRef | null | undefined): number | null {
+  if (ref === null) return null;
+  if (ref && items.some(i => i.kind === kind && i.id === ref.id)) return ref.id;
+  return newestId(items, kind);
+}
 
 function readKindFilter(): Record<Kind, boolean> {
   try {
@@ -87,7 +107,7 @@ function sortButtonStyle(active: boolean): CSSProperties {
   };
 }
 
-/** Step 2 of the library flow: pick a dictionary or song-structure CSV to overlay. */
+/** Step 2 of the library flow: pick a dictionary and/or a song-structure CSV to overlay. */
 export function AnalysisPicker({ fileId, fileName, onChoose, onBack, initialChoice, disabled }: Props) {
   const [items, setItems] = useState<CatalogItem[] | null>(null);
   const [gplCached, setGplCached] = useState(false);
@@ -95,7 +115,7 @@ export function AnalysisPicker({ fileId, fileName, onChoose, onBack, initialChoi
   const [sortField, setSortField] = useState<SortField>('time');
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc');
   const [showKind, setShowKind] = useState<Record<Kind, boolean>>(readKindFilter);
-  const [selected, setSelected] = useState<Selection>(undefined);
+  const [selected, setSelected] = useState<Selection | undefined>(undefined);
 
   // The owner remounts this per file (keyed on fileId), so one fetch per mount.
   // The choice to restore is the one at mount: confirming a pick updates
@@ -108,12 +128,11 @@ export function AnalysisPicker({ fileId, fileName, onChoose, onBack, initialChoi
         if (cancelled) return;
         setItems(res.items);
         setGplCached(res.gplCached);
-        const restored = restoreChoice === null
-          ? 'none'
-          : restoreChoice && res.items.some(i => keyOf(i) === keyOf(restoreChoice))
-            ? keyOf(restoreChoice)
-            : undefined;
-        setSelected(restored ?? (res.items.length > 0 ? keyOf(res.items[0]) : 'none'));
+        // Default: the newest dictionary and the newest CSV, drawn together.
+        setSelected({
+          dictionary: restoredId(res.items, 'dictionary', restoreChoice?.dictionary),
+          csv: restoredId(res.items, 'csv', restoreChoice?.csv),
+        });
       })
       .catch(e => { if (!cancelled) setError(String(e)); });
     return () => { cancelled = true; };
@@ -152,11 +171,7 @@ export function AnalysisPicker({ fileId, fileName, onChoose, onBack, initialChoi
         if (aNamed !== bNamed) return aNamed - bNamed;
         return sign * a.displayName.toLocaleLowerCase().localeCompare(b.displayName.toLocaleLowerCase());
       }
-      if (sortField === 'time') {
-        const aTime = a.createdAt ? new Date(a.createdAt).getTime() : 0;
-        const bTime = b.createdAt ? new Date(b.createdAt).getTime() : 0;
-        return sign * (aTime - bTime);
-      }
+      if (sortField === 'time') return sign * (createdMs(a) - createdMs(b));
       // Ids are per kind, so index order groups dictionaries before CSVs.
       if (a.kind !== b.kind) return a.kind === 'dictionary' ? -1 : 1;
       return sign * (a.id - b.id);
@@ -164,12 +179,27 @@ export function AnalysisPicker({ fileId, fileName, onChoose, onBack, initialChoi
     return copy;
   }, [items, showKind, sortField, sortOrder]);
 
-  const chosen = items?.find(i => keyOf(i) === selected) ?? null;
+  const isSelected = (item: CatalogItem) => selected?.[item.kind] === item.id;
+  const noneSelected = selected !== undefined && selected.dictionary === null && selected.csv === null;
+  // Clicking an item picks it for its kind (replacing the other one of that
+  // kind) or, when already picked, drops it.
+  const toggled = (sel: Selection, item: CatalogItem): Selection =>
+    ({ ...sel, [item.kind]: sel[item.kind] === item.id ? null : item.id });
+  const NONE: Selection = { dictionary: null, csv: null };
+
+  // A kind hidden by its filter checkbox is not drawn either.
+  const choiceFor = (sel: Selection): AnalysisChoice => {
+    const ref = (kind: Kind): OverlayRef | null => {
+      const item = showKind[kind] ? items?.find(i => i.kind === kind && i.id === sel[kind]) : undefined;
+      return item ? { id: item.id, label: item.displayName } : null;
+    };
+    return { dictionary: ref('dictionary'), csv: ref('csv') };
+  };
   const canConfirm = selected !== undefined && !disabled;
 
-  const confirm = () => {
-    if (!canConfirm) return;
-    onChoose(chosen ? { kind: chosen.kind, id: chosen.id, label: chosen.displayName } : null);
+  const confirm = (sel: Selection | undefined = selected) => {
+    if (!sel || disabled) return;
+    onChoose(choiceFor(sel));
   };
 
   const saveLabel = async (item: CatalogItem, next: string) => {
@@ -220,13 +250,35 @@ export function AnalysisPicker({ fileId, fileName, onChoose, onBack, initialChoi
         )}
         {error && <div style={{ padding: '12px', color: '#dc2626' }}>{error}</div>}
 
+        {items !== null && (
+          <div onClick={() => setSelected(NONE)} onDoubleClick={() => confirm(NONE)} style={rowStyle(noneSelected)}>
+            <span style={{ fontSize: 15 }}>🖼️</span>
+            <span style={{ flex: 1 }}>
+              {gplCached ? SPECTROGRAM_ONLY_LABEL : NO_SPECTROGRAM_LABEL}
+              <span style={{ color: '#9ca3af' }}>
+                {items.length === 0
+                  ? gplCached ? ' — no dictionaries or CSVs for this file yet' : ' — nothing in the catalog for this file yet'
+                  : visibleItems && visibleItems.length < items.length
+                    ? ` — ${items.length - visibleItems.length} hidden by the filters`
+                    : ' — no overlay'}
+              </span>
+            </span>
+          </div>
+        )}
+
         {visibleItems?.map(item => {
           const key = keyOf(item);
           const badge = item.kind === 'dictionary' ? item.source : 'csv';
           const colors = BADGE_COLORS[badge];
           const parentId = item.kind === 'dictionary' ? item.parentId : null;
           return (
-            <div key={key} onClick={() => setSelected(key)} onDoubleClick={confirm} style={rowStyle(selected === key)}>
+            <div
+              key={key}
+              onClick={() => setSelected(sel => toggled(sel ?? NONE, item))}
+              // The two clicks before a double-click toggle the row off and on again.
+              onDoubleClick={() => confirm({ ...(selected ?? NONE), [item.kind]: item.id })}
+              style={rowStyle(isSelected(item))}
+            >
               <span style={{ fontSize: 15 }}>{item.kind === 'dictionary' ? '📚' : '📄'}</span>
               <span
                 title={parentId != null ? `${item.kind} ${item.id}, parent dictionary ${parentId}` : `${item.kind} ${item.id}`}
@@ -268,21 +320,6 @@ export function AnalysisPicker({ fileId, fileName, onChoose, onBack, initialChoi
           );
         })}
 
-        {items !== null && (
-          <div onClick={() => setSelected('none')} onDoubleClick={confirm} style={rowStyle(selected === 'none')}>
-            <span style={{ fontSize: 15 }}>🖼️</span>
-            <span style={{ flex: 1 }}>
-              {gplCached ? SPECTROGRAM_ONLY_LABEL : NO_SPECTROGRAM_LABEL}
-              <span style={{ color: '#9ca3af' }}>
-                {items.length === 0
-                  ? gplCached ? ' — no dictionaries or CSVs for this file yet' : ' — nothing in the catalog for this file yet'
-                  : visibleItems && visibleItems.length < items.length
-                    ? ` — ${items.length - visibleItems.length} hidden by the filters`
-                    : ' — no overlay'}
-              </span>
-            </span>
-          </div>
-        )}
       </div>
 
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 12px', borderTop: '1px solid #d1d5db', background: '#f9fafb' }}>
@@ -292,9 +329,11 @@ export function AnalysisPicker({ fileId, fileName, onChoose, onBack, initialChoi
         >
           ← Back
         </button>
-        <span style={{ flex: 1 }} />
+        <span style={{ flex: 1, color: '#6b7280', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+          {selected && `Overlay: ${describeChoice(choiceFor(selected))}`}
+        </span>
         <button
-          onClick={confirm}
+          onClick={() => confirm()}
           disabled={!canConfirm}
           title={gplCached ? 'Open the saved GPL spectrogram' : 'Run GPL on this file to make its spectrogram (saved for next time)'}
           style={{

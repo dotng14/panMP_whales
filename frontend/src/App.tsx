@@ -3,7 +3,7 @@ import { SpectrogramViewer } from './components/SpectrogramViewer';
 import { WavFileUpload } from './components/WavFileUpload';
 import { WavLibraryPicker } from './components/WavLibraryPicker';
 import { AnalysisPicker } from './components/AnalysisPicker';
-import type { AnalysisChoice } from './api/catalog';
+import { describeChoice, type AnalysisChoice } from './api/catalog';
 import { JobProgress } from './components/JobProgress';
 import { useGplJob } from './hooks/useGplJob';
 import { generateMockData } from './utils/mockData';
@@ -15,11 +15,19 @@ const UI_SESSION_TTL_MS = 6 * 60 * 60 * 1000;
 
 const mockData = USE_MOCK ? generateMockData(0) : null;
 
-function isAnalysisChoice(value: unknown): value is AnalysisChoice {
+function isOverlayRef(value: unknown): boolean {
   if (value === null) return true;
   if (typeof value !== 'object' || value === undefined) return false;
   const v = value as Record<string, unknown>;
-  return (v.kind === 'dictionary' || v.kind === 'csv') && typeof v.id === 'number' && typeof v.label === 'string';
+  return typeof v.id === 'number' && typeof v.label === 'string';
+}
+
+// A session saved before the picker took a dictionary and a CSV together
+// fails this check and is dropped (the picker then starts from its defaults).
+function isAnalysisChoice(value: unknown): value is AnalysisChoice {
+  if (typeof value !== 'object' || value === null) return false;
+  const v = value as Record<string, unknown>;
+  return 'dictionary' in v && 'csv' in v && isOverlayRef(v.dictionary) && isOverlayRef(v.csv);
 }
 
 export default function App() {
@@ -114,7 +122,7 @@ export default function App() {
   const handleChooseAnalysis = (choice: AnalysisChoice) => {
     if (!selectedFile) return;
     setAnalysis(choice);
-    setRunning({ fileName: selectedFile.name, overlay: choice?.label ?? 'spectrogram only' });
+    setRunning({ fileName: selectedFile.name, overlay: describeChoice(choice) });
     setPickerCollapsed(true);
     processLibraryFile(selectedFile.fileId);
   };

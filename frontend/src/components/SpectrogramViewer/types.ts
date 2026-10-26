@@ -24,7 +24,7 @@ export interface SpectrogramViewerProps {
   /** Frequency axis bounds in Hz (from panel header) */
   freqLo?: number;
   freqHi?: number;
-  /** Overlay picked in the catalog: a CSV's song structure, a dictionary's atom
-   *  lane, or null for none. Omitted: the CSV named after the WAV, if any. */
+  /** Overlays picked in the catalog: a dictionary's atom lane and/or a CSV's
+   *  song structure (neither: none). Omitted: the CSV named after the WAV, if any. */
   analysis?: AnalysisChoice;
 }

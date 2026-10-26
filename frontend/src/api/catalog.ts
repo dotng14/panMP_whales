@@ -32,8 +32,24 @@ export interface CatalogCsv extends CatalogItemBase {
 
 export type CatalogItem = CatalogDictionary | CatalogCsv;
 
-/** What the viewer overlays: a catalog item, or nothing (spectrogram only). */
-export type AnalysisChoice = { kind: CatalogItem['kind']; id: number; label: string } | null;
+/** One catalog item picked as an overlay. */
+export interface OverlayRef {
+  id: number;
+  label: string;
+}
+
+/** What the viewer overlays: at most one dictionary (atom lane) and one CSV
+ *  (song-structure lanes); both null is the spectrogram only. */
+export interface AnalysisChoice {
+  dictionary: OverlayRef | null;
+  csv: OverlayRef | null;
+}
+
+/** Short text for the overlay, e.g. "build 3 + HMM v1" or "spectrogram only". */
+export function describeChoice(choice: AnalysisChoice): string {
+  const parts = [choice.dictionary?.label, choice.csv?.label].filter(Boolean);
+  return parts.length > 0 ? parts.join(' + ') : 'spectrogram only';
+}
 
 export interface FileAnalysesResponse {
   stem: string;

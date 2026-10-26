@@ -53,7 +53,7 @@ export function SpectrogramViewer({
   const [followPlayhead, setFollowPlayhead] = useState(true);
   const followPlayheadRef = useRef(true);
   const [songStructure, setSongStructure] = useState<SongStructure | null>(null);
-  /** MP placements of the chosen dictionary (atom lane); null when a CSV or nothing is shown. */
+  /** MP placements of the chosen dictionary (atom lane); null when no dictionary is shown. */
   const [placements, setPlacements] = useState<Placement[] | null>(null);
   const [songIndex, setSongIndex] = useState(0);
   const [songNavActive, setSongNavActive] = useState(false);
@@ -70,32 +70,34 @@ export function SpectrogramViewer({
   const scale = sharedScale ?? ownScale;
   const { pxPerSec, maxFreqHz, hasFreqRange, freqCropFraction } = scale;
 
-  // Fetch the overlay for this job: a catalog CSV's song structure, a catalog
-  // dictionary's placements, or (no choice made) the CSV named after the WAV.
-  // Independent of the GPL pipeline, so a missing CSV (404) just shows nothing.
-  const analysisKind = analysis === undefined ? undefined : (analysis?.kind ?? null);
-  const analysisId = analysis?.id;
+  // Fetch the overlays for this job: a catalog dictionary's placements and/or
+  // a catalog CSV's song structure, or (no choice made) the CSV named after
+  // the WAV. Independent of the GPL pipeline, so a missing CSV (404) just shows nothing.
+  const overlayChosen = analysis !== undefined;
+  const dictionaryId = analysis?.dictionary?.id;
+  const csvId = analysis?.csv?.id;
   useEffect(() => {
     setSongStructure(null);
     setPlacements(null);
     setSongIndex(0);
     setSongNavActive(false);
     setLaneHighlight(null);
-    if (!jobId || analysisKind === null) return;
+    if (!jobId) return;
     let cancelled = false;
-    if (analysisKind === 'dictionary' && analysisId !== undefined) {
-      fetchDictionaryPlacements(analysisId)
+    if (dictionaryId !== undefined) {
+      fetchDictionaryPlacements(dictionaryId)
         .then(data => { if (!cancelled) setPlacements(data.placements); })
         .catch(() => { if (!cancelled) setPlacements(null); });
-    } else {
-      fetchSongStructure(jobId, analysisKind === 'csv' ? analysisId : undefined)
+    }
+    if (!overlayChosen || csvId !== undefined) {
+      fetchSongStructure(jobId, csvId)
         .then(data => { if (!cancelled) setSongStructure(data); })
         .catch(() => { if (!cancelled) setSongStructure(null); });
     }
     return () => {
       cancelled = true;
     };
-  }, [jobId, analysisKind, analysisId]);
+  }, [jobId, overlayChosen, dictionaryId, csvId]);
 
   const spectrogramH = SPEC_TARGET_H;
 
@@ -256,18 +258,23 @@ export function SpectrogramViewer({
   // lane rows below — this full-file scan is the expensive part, so toggling
   // a checkbox should only filter already-built segments, not rebuild them.
   const mergedLanes = useMemo((): Partial<Record<LaneName, LaneSeg[]>> | null => {
-    if (!audioDurationSec) return null;
-    if (placements) return { atom: buildAtomLane(placements, audioDurationSec, timeCols) };
-    if (!songStructure) return null;
-    const raw = buildLanes(songStructure.units, songStructure.songs, audioDurationSec, timeCols);
-    return {
-      motif: mergeAdjacent(raw.motif),
-      phrase: mergeAdjacent(raw.phrase),
-      theme: mergeAdjacent(raw.theme),
-      song: mergeAdjacent(raw.song),
-    };
+    if (!audioDurationSec || (!songStructure && !placements)) return null;
+    const lanes: Partial<Record<LaneName, LaneSeg[]>> = {};
+    if (songStructure) {
+      const raw = buildLanes(songStructure.units, songStructure.songs, audioDurationSec, timeCols);
+      lanes.motif = mergeAdjacent(raw.motif);
+      lanes.phrase = mergeAdjacent(raw.phrase);
+      lanes.theme = mergeAdjacent(raw.theme);
+      lanes.song = mergeAdjacent(raw.song);
+    }
+    if (placements) lanes.atom = buildAtomLane(placements, audioDurationSec, timeCols);
+    return lanes;
   }, [songStructure, placements, audioDurationSec, timeCols]);
-  const laneOrder: readonly LaneName[] = placements ? ATOM_LANES : LANE_ORDER;
+  // Song-structure lanes first, then the atom lane under them.
+  const laneOrder = useMemo((): readonly LaneName[] => [
+    ...(songStructure ? LANE_ORDER : []),
+    ...(placements ? ATOM_LANES : []),
+  ], [songStructure, placements]);
   const laneSongs = songStructure?.songs ?? [];
 
   // Boundary markers drawn directly on the spectrogram, colored to match each
