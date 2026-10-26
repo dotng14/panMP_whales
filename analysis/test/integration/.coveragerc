@@ -1,0 +1,32 @@
+# Coverage for the integration suite: every line and branch the three CLIs
+# can run must be exercised. See analysis/test/README.md.
+[run]
+branch = True
+# Count `python -m ...` subprocesses too (the entry-point tests).
+patch = subprocess
+source =
+    analysis.dict_learning
+    analysis.matrix_profile
+    analysis.bands
+omit =
+    # Not part of the baseline pipelines (kept for the later mp-greedy mode).
+    */dict_learning/code/learn/learn_from_motifs.py
+    */dict_learning/code/learn/refine.py
+    */dict_learning/experiments/*
+    */dict_learning/notebooks/*
+    */dict_learning/scripts/*
+
+[report]
+show_missing = True
+skip_covered = True
+fail_under = 100
+# Code the CLIs cannot reach: library entry points, notebook helpers, and
+# input checks for callers other than the CLIs. Each marked line says why.
+exclude_also =
+    no-pipeline-cover:
+    ${COVERAGE_EXCLUDE_GPU-no-pipeline-cover:}
+partial_branches =
+    no-pipeline-branch:
+    ${COVERAGE_PARTIAL_GPU-no-pipeline-branch:}
+# On a machine without CUDA, also skip the CUDA-only lines:
+#   COVERAGE_EXCLUDE_GPU=gpu-only: COVERAGE_PARTIAL_GPU=gpu-only-branch: pytest ...

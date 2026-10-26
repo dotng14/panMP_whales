@@ -12,14 +12,9 @@ tiebreak — see ``PlacementScore`` in ``mp_step.py``.
 
 from __future__ import annotations
 
-import sys
-from pathlib import Path
 
 import numpy as np
 
-REPO_ROOT = Path(__file__).resolve().parents[3]
-if str(REPO_ROOT) not in sys.path:
-    sys.path.insert(0, str(REPO_ROOT))
 
 from analysis.dict_learning.code.core import Dictionary, Template  # noqa: E402
 from analysis.dict_learning.code.mp import (  # noqa: E402

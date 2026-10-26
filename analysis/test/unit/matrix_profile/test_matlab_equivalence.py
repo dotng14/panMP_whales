@@ -8,19 +8,17 @@ from __future__ import annotations
 
 import shutil
 import subprocess
-import sys
 from pathlib import Path
 
 import numpy as np
 import pytest
 
-ROOT = Path(__file__).resolve().parents[1] / "matrix_profile"
-REPO_ROOT = Path(__file__).resolve().parents[2]
-if str(REPO_ROOT) not in sys.path:
-    sys.path.insert(0, str(REPO_ROOT))
 
 from analysis.matrix_profile import mpxForPan  # noqa: E402
+import analysis.matrix_profile as matrix_profile_pkg
 from analysis.matrix_profile import panMP  # noqa: E402
+
+ROOT = Path(matrix_profile_pkg.__file__).resolve().parent
 
 MATLAB = shutil.which("matlab")
 pytestmark = pytest.mark.skipif(MATLAB is None, reason="MATLAB not on PATH")

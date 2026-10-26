@@ -1,0 +1,15 @@
+# Coverage for the unit suite: reported, not gated. Unlike the integration
+# config, nothing is excluded, so library-only code counts here.
+[run]
+branch = True
+source =
+    analysis.dict_learning
+    analysis.matrix_profile
+    analysis.bands
+omit =
+    */dict_learning/experiments/*
+    */dict_learning/notebooks/*
+    */dict_learning/scripts/*
+
+[report]
+show_missing = False

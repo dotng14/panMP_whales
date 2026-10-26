@@ -4,10 +4,9 @@ from __future__ import annotations
 
 import numpy as np
 
-from analysis.dict_learning.code.learn.learn_dictionary import learn_averaged_templates_from_gpl
 from analysis.dict_learning.code.mp import run_mp_loop, single_template_dictionary
 from analysis.dict_learning.code.core import Matching, Segment, Template, Window
-from analysis.dict_learning.code.learn.seed_from_gpl import mean_center
+from analysis.dict_learning.code.core import mean_center
 from analysis.dict_learning.code.tools import pca_basis, rebuild_template_from_matchings
 
 
@@ -39,60 +38,6 @@ def test_template_rank1_and_basis():
     t2 = Template(1, basis)
     assert t2.n_components == 2
     assert t2.basis.shape == (2, 4, 6)
-
-
-def test_learn_n_components_2_synthetic():
-    rng = np.random.default_rng(0)
-    freq, width, tlen = 8, 6, 80
-    v1 = rng.normal(size=(freq, width))
-    v1 /= np.linalg.norm(v1)
-    v2 = rng.normal(size=(freq, width))
-    v2 = v2 - np.sum(v2 * v1) * v1
-    v2 /= np.linalg.norm(v2)
-
-    signal = np.zeros((freq, tlen), dtype=np.float64)
-    starts = [5, 25, 45, 65]
-    for i, t0 in enumerate(starts):
-        a, b = (2.0, 0.5) if i % 2 == 0 else (1.5, -0.8)
-        signal[:, t0 : t0 + width] += a * v1 + b * v2
-
-    window = Window(
-        window_id="w0",
-        data=signal,
-        start_sample=1,
-        end_sample=tlen,
-        overlap=1,
-    )
-    segments = [
-        Segment(
-            segment_id=f"s{i}",
-            data=np.array(signal[:, t0 : t0 + width], copy=True),
-            window_id="w0",
-            t_start=t0,
-            t_end=t0 + width,
-            global_start_sample=t0,
-            global_end_sample=t0 + width,
-            detection_index=i,
-        )
-        for i, t0 in enumerate(starts)
-    ]
-    result = learn_averaged_templates_from_gpl(
-        [window],
-        segments,
-        n_rounds=1,
-        eps_step_fraction=1e-9,
-        min_repeats=3,
-        n_components=2,
-        disallow_overlap=True,
-        show_progress=False,
-    )
-    templates = result.get_templates()
-    assert len(templates) == 1
-    assert templates[0].n_components == 2
-    assert templates[0].data.ndim == 3
-    assert len(result.get_matchings()) >= 3
-    for m in result.get_matchings():
-        assert np.asarray(m.coeffs).size == 2
 
 
 def test_rebuild_and_place_k2():

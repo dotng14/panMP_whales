@@ -8,18 +8,10 @@ published precision.
 
 from __future__ import annotations
 
-import sys
-from pathlib import Path
 
 import numpy as np
 import pytest
 
-ROOT = Path(__file__).resolve().parents[1] / "matrix_profile"
-REPO_ROOT = Path(__file__).resolve().parents[2]
-if str(REPO_ROOT) not in sys.path:
-    sys.path.insert(0, str(REPO_ROOT))
-if str(ROOT) not in sys.path:
-    sys.path.insert(0, str(ROOT))
 
 from analysis.matrix_profile import mpxForPan  # noqa: E402
 from analysis.matrix_profile import mpx_fast  # noqa: E402
