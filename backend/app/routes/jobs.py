@@ -51,7 +51,7 @@ async def create_job_endpoint(file: UploadFile) -> dict:
     job_dir.mkdir(parents=True, exist_ok=True)
 
     wav_path = job_dir / "input.wav"
-    wav_path.write_bytes(content)
+    await asyncio.to_thread(wav_path.write_bytes, content)
 
     job = create_job(job_id, file.filename, job_dir)
     await start_job(job)
@@ -62,6 +62,10 @@ async def create_job_endpoint(file: UploadFile) -> dict:
 @router.post("/api/jobs/from-library")
 async def create_job_from_library(body: LibraryJobRequest) -> dict:
     wav_path = resolve_file_id(body.fileId)  # raises 400/403/404 on bad input
+    # Off the event loop (it can rebuild panel.bin), and before the in-flight
+    # check: nothing below may await until set_in_flight_library_job, or two
+    # requests for the same file could both start a pipeline run.
+    cached = await asyncio.to_thread(is_gpl_cached, wav_path)
 
     # Attach to an already-running job for this file instead of starting a
     # second concurrent pipeline run that would race the first over the same
@@ -82,7 +86,7 @@ async def create_job_from_library(body: LibraryJobRequest) -> dict:
     # Fast path: if a pre-processed .gpl cache exists, skip the pipeline entirely.
     cache_dir = cache_dir_for(wav_path)
     manifest_path = cache_dir / "manifest.json"
-    if is_gpl_cached(wav_path):
+    if cached:
         manifest = json.loads(manifest_path.read_text())
         manifest["jobId"] = job_id
         # Symlink the cache's output dir into the job dir (no copy) so the panel
@@ -142,7 +146,7 @@ async def get_job_audio(job_id: str) -> FileResponse:
 
 
 @router.get("/api/jobs/{job_id}/song-structure")
-async def get_song_structure(job_id: str, csvId: int | None = Query(None)) -> dict:
+def get_song_structure(job_id: str, csvId: int | None = Query(None)) -> dict:
     """Motif / song / theme / phrase units: from catalog CSV ``csvId``, else the CSV named after the WAV."""
     from app.services import catalog_service  # noqa: PLC0415
     from app.services.song_structure import load_song_structure, load_song_structure_csv  # noqa: PLC0415

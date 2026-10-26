@@ -19,7 +19,7 @@ async def get_roots() -> dict:
 
 
 @router.get("/api/library/analyses")
-async def get_file_analyses(fileId: str = Query(...)) -> dict:
+def get_file_analyses(fileId: str = Query(...)) -> dict:
     """Dictionaries and song-structure CSVs in the catalog for one library WAV (the picker).
 
     ``gplCached`` says whether its GPL spectrogram already exists (view) or must be run.
@@ -29,7 +29,7 @@ async def get_file_analyses(fileId: str = Query(...)) -> dict:
 
 
 @router.get("/api/library/browse")
-async def browse(
+def browse(
     root: int = Query(0),
     path: str = Query(""),
     q: str = Query(""),

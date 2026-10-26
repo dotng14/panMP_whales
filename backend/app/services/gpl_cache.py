@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import json
 import shutil
+import threading
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -10,6 +11,9 @@ from app.config import GPL_RESULT_DIRNAME, WAV_LIBRARY_ROOTS
 from app.services import catalog_service
 from app.services.manifest_builder import build_manifest_from_outputs
 from analysis.GPL_Python.gpl_outputs import PANEL_VERSION, read_panel_header, write_panel_bin
+
+
+_panel_lock = threading.Lock()
 
 
 @dataclass(frozen=True)
@@ -68,16 +72,19 @@ def _sidecar_npy_legacy(output_dir: Path) -> bool:
 def _ensure_panel_current(output_dir: Path, stem: str) -> bool:
     """Ensure panel.bin exists (prefer analysis process_v4; backfill if missing)."""
     panel_path = output_dir / "panel.bin"
-    hdr = read_panel_header(panel_path) if panel_path.exists() else None
-    if hdr is not None and hdr.get("panelVersion", 0) >= PANEL_VERSION:
-        if "freqLo" in hdr and "freqHi" in hdr:
+    # Routes call this from the thread pool; two rebuilds of one panel.bin at
+    # once would interleave their writes.
+    with _panel_lock:
+        hdr = read_panel_header(panel_path) if panel_path.exists() else None
+        if hdr is not None and hdr.get("panelVersion", 0) >= PANEL_VERSION:
+            if "freqLo" in hdr and "freqHi" in hdr:
+                return True
+        try:
+            write_panel_bin(output_dir, stem)
             return True
-    try:
-        write_panel_bin(output_dir, stem)
-        return True
-    except Exception:
-        panel_path.unlink(missing_ok=True)
-        return False
+        except Exception:
+            panel_path.unlink(missing_ok=True)
+            return False
 
 
 def check_gpl_cache(wav_path: Path) -> CacheStatus:
