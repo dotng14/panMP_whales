@@ -3,7 +3,7 @@ from __future__ import annotations
 import asyncio
 from pathlib import Path
 
-from app.services.gpl_cache import finalize_gpl_cache
+from app.services.gpl_cache import finalize_gpl_cache, register_gpl_in_catalog
 from app.services.job_store import JobState, clear_in_flight_library_job
 from app.services.manifest_builder import build_manifest_from_outputs
 from app.ws.hub import broadcast_json
@@ -53,6 +53,16 @@ def _run_job_sync(job: JobState, loop: asyncio.AbstractEventLoop) -> None:
                 broadcast_json(
                     job.ws_clients,
                     {"type": "warning", "message": f"Cache write failed: {exc}"},
+                ),
+                loop,
+            ).result()
+        try:
+            register_gpl_in_catalog(job.library_wav_path)
+        except Exception as exc:
+            asyncio.run_coroutine_threadsafe(
+                broadcast_json(
+                    job.ws_clients,
+                    {"type": "warning", "message": f"Catalog registration failed: {exc}"},
                 ),
                 loop,
             ).result()

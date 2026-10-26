@@ -283,6 +283,18 @@ def delete_matching_feedback(matching_id: int) -> dict[str, Any]:
     return {"matchingId": matching_id, "deleted": deleted}
 
 
+def register_gpl_output(wav_path: Path, output_dir: Path, *, library_root: Path | None) -> int:
+    """Record a library WAV and its GPL output folder; returns the ``segmentation_id``.
+
+    Creates the catalog when it does not exist yet. Safe to repeat (upserts).
+    """
+    with closing(_write_conn()) as conn:
+        wav_id = catalog.upsert_wav_file(conn, library_root=library_root or wav_path.parent, abs_path=wav_path)
+        segmentation_id = catalog.index_gpl_dir(conn, output_dir, wav_id=wav_id)
+        conn.commit()
+    return segmentation_id
+
+
 def reindex() -> dict[str, Any]:
     return index_existing.reindex(
         config.CATALOG_DB,

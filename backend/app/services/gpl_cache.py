@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from app.config import GPL_RESULT_DIRNAME, WAV_LIBRARY_ROOTS
+from app.services import catalog_service
 from app.services.manifest_builder import build_manifest_from_outputs
 from analysis.GPL_Python.gpl_outputs import PANEL_VERSION, read_panel_header, write_panel_bin
 
@@ -106,6 +107,13 @@ def check_gpl_cache(wav_path: Path) -> CacheStatus:
 
 def is_gpl_cached(wav_path: Path) -> bool:
     return check_gpl_cache(wav_path).cached
+
+
+def register_gpl_in_catalog(wav_path: Path) -> int:
+    """Record the WAV's cached GPL output in the catalog; returns the ``segmentation_id``."""
+    return catalog_service.register_gpl_output(
+        wav_path, cache_dir_for(wav_path) / "output", library_root=containing_root(wav_path)
+    )
 
 
 def ensure_cache_output_dir(wav_path: Path) -> Path:

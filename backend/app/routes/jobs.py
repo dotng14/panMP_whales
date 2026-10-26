@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import asyncio
 import json
+import logging
 import uuid
 from pathlib import Path
 
@@ -9,7 +11,7 @@ from fastapi.responses import FileResponse
 from pydantic import BaseModel
 
 from app.config import MAX_UPLOAD_MB, TMP_DIR
-from app.services.gpl_cache import cache_dir_for, is_gpl_cached
+from app.services.gpl_cache import cache_dir_for, is_gpl_cached, register_gpl_in_catalog
 from app.services.job_store import (
     JobState,
     create_job,
@@ -21,6 +23,7 @@ from app.services.library_service import resolve_file_id
 from app.services.pipeline_service import start_job, start_job_fast
 
 router = APIRouter()
+logger = logging.getLogger(__name__)
 
 
 def _require_job(job_id: str) -> JobState:
@@ -85,6 +88,11 @@ async def create_job_from_library(body: LibraryJobRequest) -> dict:
         # Symlink the cache's output dir into the job dir (no copy) so the panel
         # endpoint serves panel.bin straight from the cache.
         (job_dir / "output").symlink_to(cache_dir / "output", target_is_directory=True)
+        # Caches made before jobs registered themselves reach the catalog here.
+        try:
+            await asyncio.to_thread(register_gpl_in_catalog, wav_path)
+        except Exception:
+            logger.exception("Catalog registration failed for %s", wav_path)
         await start_job_fast(job, manifest)
     else:
         # Slow path: process into the .gpl cache dir so results persist for next time.
