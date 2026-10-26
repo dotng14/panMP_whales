@@ -47,7 +47,7 @@ from ..core import (
 from ..io import Detection
 from ..mp import refit_and_deflate, residual_energy
 from ..tools import matching_pursuit, rebuild_template_from_matchings
-from .seed_from_gpl import detections_to_segments
+from ..io import detections_to_segments
 
 # Default post-refine gate: drop placements with unexplained energy fraction
 # ``dnorm(x, A) > POST_REFINE_MAX_RELATIVE_DISTANCE``.
@@ -143,13 +143,13 @@ def _crop_matching_patch(
 ) -> np.ndarray | None:
     arr = stack.get(matching.window_id)
     if arr is None:
-        return None
+        return None  # no-pipeline-cover: matchings always point into the stack
     patch = np.asarray(
         arr[:n_freq, int(matching.t_start) : int(matching.t_start) + width],
         dtype=np.float64,
     )
     if patch.shape != (n_freq, width):
-        return None
+        return None  # no-pipeline-cover: MP places whole atoms inside windows
     return patch
 
 
@@ -168,13 +168,13 @@ def filter_matchings_by_atom_distance(
     """
     tau = float(max_relative_distance)
     if not (0.0 <= tau <= 1.0):
-        raise ValueError(f"max_relative_distance must be in [0, 1], got {tau}")
+        raise ValueError(f"max_relative_distance must be in [0, 1], got {tau}")  # no-pipeline-cover: the CLI checks the range first
     by_id = {int(t.template_id): t for t in dictionary}
     kept: list[Matching] = []
     n_filtered = 0
     for matching in matchings:
         atom = by_id.get(int(matching.template_id))
-        if atom is None:
+        if atom is None:  # no-pipeline-cover: matchings always belong to the dictionary
             n_filtered += 1
             continue
         patch = _crop_matching_patch(
@@ -183,7 +183,7 @@ def filter_matchings_by_atom_distance(
             n_freq=int(atom.n_freq),
             width=int(atom.width),
         )
-        if patch is None:
+        if patch is None:  # no-pipeline-cover: matchings always point into the stack
             n_filtered += 1
             continue
         if patch_template_relative_distance(patch, atom) > tau:
@@ -193,7 +193,7 @@ def filter_matchings_by_atom_distance(
     return kept, n_filtered
 
 
-def dictionary_explained_energy(
+def dictionary_explained_energy(  # no-pipeline-cover: growth gate (parent/alpha) helper; the build does not use it
     patch: np.ndarray,
     dictionary: Dictionary,
 ) -> float:
@@ -226,10 +226,10 @@ def _crop_patch(
     t_end: int,
 ) -> np.ndarray | None:
     arr = stack.get(window_id)
-    if arr is None:
+    if arr is None:  # no-pipeline-cover: segments always point into the stack
         return None
     patch = np.asarray(arr[:, int(t_start) : int(t_end)], dtype=np.float64)
-    if patch.size == 0 or patch.shape[1] <= 0:
+    if patch.size == 0 or patch.shape[1] <= 0:  # no-pipeline-cover: detections_to_segments drops empty crops
         return None
     return patch
 
@@ -239,12 +239,12 @@ def _partition_to_segments(
     partition: Sequence[Detection] | Sequence[Segment],
     windows_for_units: Sequence[Window] | None,
 ) -> list[Segment]:
-    if not partition:
+    if not partition:  # no-pipeline-cover: the CLI rejects an empty detection list
         return []
     if isinstance(partition[0], Segment):
-        base = list(partition)  # type: ignore[arg-type]
+        base = list(partition)  # type: ignore[arg-type]  # no-pipeline-cover: library input: pre-built segments
     else:
-        if not windows_for_units:
+        if not windows_for_units:  # no-pipeline-cover: the build always passes the windows
             raise ValueError(
                 "windows_for_units (or a Window stack) required with Detection inputs"
             )
@@ -253,7 +253,7 @@ def _partition_to_segments(
     out: list[Segment] = []
     for seg in base:
         patch = _crop_patch(residual, seg.window_id, seg.t_start, seg.t_end)
-        if patch is None:
+        if patch is None:  # no-pipeline-cover: segments always point into the stack
             continue
         out.append(
             Segment(
@@ -294,15 +294,15 @@ def _pool_segments(
         if max_template_width is not None and w > max_template_width:
             continue
         orig = _crop_patch(original, seg.window_id, seg.t_start, seg.t_end)
-        if orig is None or orig.shape != seg.data.shape:
+        if orig is None or orig.shape != seg.data.shape:  # no-pipeline-cover: residual and original share window shapes
             continue
         orig_norm = float(np.linalg.norm(orig))
-        if orig_norm <= 0.0:
+        if orig_norm <= 0.0:  # no-pipeline-cover: detections_to_segments drops silent crops
             continue
         resid_norm = float(np.linalg.norm(seg.data))
         if not (resid_norm / orig_norm > float(epsilon)):
             continue
-        if parent is not None and alpha is not None:
+        if parent is not None and alpha is not None:  # no-pipeline-cover: growth gate (parent/alpha); the build does not use it
             if dictionary_explained_energy(seg.data, parent) > float(alpha):
                 continue
         pool.append(seg)
@@ -345,7 +345,7 @@ def create_dictionary(
         Optional growth gate: keep only patches with ``g_parent(x) ≤ alpha``.
     """
     if m < 1:
-        raise ValueError(f"m must be >= 1, got {m}")
+        raise ValueError(f"m must be >= 1, got {m}")  # no-pipeline-cover: learn_randomized_outer checks m_per_outer first
     if epsilon < 0.0:
         raise ValueError(f"epsilon must be >= 0, got {epsilon}")
 
@@ -353,7 +353,7 @@ def create_dictionary(
     original_stack = as_stack(original) if original is not None else stack
     unit_windows: Sequence[Window] | None = windows_for_units
     if unit_windows is None and not isinstance(residual, dict):
-        unit_windows = list(residual)  # type: ignore[arg-type]
+        unit_windows = list(residual)  # type: ignore[arg-type]  # no-pipeline-cover: the build passes windows_for_units
 
     segments = _partition_to_segments(stack, partition, unit_windows)
     pool = _pool_segments(
@@ -381,7 +381,7 @@ def create_dictionary(
     for offset, seg in enumerate(sampled):
         data = np.asarray(seg.data, dtype=np.float64)
         norm = float(np.linalg.norm(data))
-        if norm <= 0.0:
+        if norm <= 0.0:  # no-pipeline-cover: pooled crops always have energy
             continue
         dictionary.add(
             Template(
@@ -438,8 +438,8 @@ def refine_dictionary(
     if n_components < 1:
         raise ValueError(f"n_components must be >= 1, got {n_components}")
     if n_min < 1:
-        raise ValueError(f"n_min must be >= 1, got {n_min}")
-    if len(dictionary) == 0:
+        raise ValueError(f"n_min must be >= 1, got {n_min}")  # no-pipeline-cover: learn_randomized_outer checks n_min first
+    if len(dictionary) == 0:  # no-pipeline-cover: the build only refines non-empty seed sets
         stack0 = as_stack(residual)
         return RandomizedRefineResult(
             dictionary=Dictionary(),
@@ -551,7 +551,7 @@ def refine_dictionary(
     )
 
 
-def build_randomized_dictionary(
+def build_randomized_dictionary(  # no-pipeline-cover: one-shot wrapper; the CLI runs learn_randomized_outer
     residual: Sequence[Window] | dict[str, np.ndarray],
     partition: Sequence[Detection] | Sequence[Segment],
     m: int,
@@ -701,6 +701,8 @@ def learn_randomized_outer(
     post_refine_max_relative_distance: float | None = DEFAULT_OUTER_POST_REFINE_TAU,
     windows_for_units: Sequence[Window] | None = None,
     rng: np.random.Generator | int | None = None,
+    mp_mode: str | None = None,
+    n_workers: int | None = None,
     show_progress: bool | None = False,
     progress_callback: Callable[[RandomizedOuterPassLog], None] | None = None,
 ) -> RandomizedOuterResult:
@@ -718,6 +720,9 @@ def learn_randomized_outer(
     Stops when cumulative time coverage exceeds ``min_coverage``, when
     ``max_outer`` passes complete, when a pass adds no surviving atoms, or
     when the seed pool is empty.
+
+    ``mp_mode`` and ``n_workers`` are passed to every refine MP (``None``
+    falls back to ``DICT_LEARNING_MP_MODE`` / ``DICT_LEARNING_MP_WORKERS``).
 
     Default recipe (loose distance, stricter repeats, small random batches)::
 
@@ -739,7 +744,7 @@ def learn_randomized_outer(
         raise ValueError(f"n_min must be >= 1, got {n_min}")
 
     unit_windows: Sequence[Window] | None = windows_for_units
-    if unit_windows is None and not isinstance(residual, dict):
+    if unit_windows is None and not isinstance(residual, dict):  # no-pipeline-branch: the CLI always passes windows
         unit_windows = list(residual)  # type: ignore[arg-type]
 
     original = as_stack(residual)
@@ -781,6 +786,8 @@ def learn_randomized_outer(
             eps_step_fraction=eps_step_fraction,
             max_relative_distance=max_relative_distance,
             post_refine_max_relative_distance=post_refine_max_relative_distance,
+            mp_mode=mp_mode,
+            n_workers=n_workers,
             show_progress=show_progress,
         )
         if energy_start is None and refined.energies:
@@ -819,7 +826,7 @@ def learn_randomized_outer(
             energy_after=refined.energies[-1] if refined.energies else None,
         )
         outer_logs.append(log)
-        if progress_callback is not None:
+        if progress_callback is not None:  # no-pipeline-branch: the CLI always passes a callback
             progress_callback(log)
 
         residual_stack = refined.residual_after

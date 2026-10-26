@@ -28,7 +28,7 @@ from analysis.bands import FREQ_MAX_HZ, N_BANDS
 from ..io import stitch_whitened_spectrogram
 from ..core import coverage_from_matchings, patch_template_relative_distance
 from ..mp import refit_and_deflate
-from .learn_dictionary import NoMatchingPatchesError, refine_dictionary_by_averaging
+from .refine import NoMatchingPatchesError, refine_dictionary_by_averaging
 
 WINDOW_ID = "band_profile"
 LENGTHS_S = (5, 10)

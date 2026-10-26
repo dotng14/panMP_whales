@@ -10,7 +10,7 @@ from typing import Any, Iterable, Sequence
 
 import numpy as np
 
-from .core import Window
+from .core import Segment, Window
 
 
 @dataclass(frozen=True)
@@ -36,13 +36,13 @@ def load_window(
     window_id: str | None = None,
 ) -> Window:
     npy_path = Path(npy_path)
-    if json_path is None:
+    if json_path is None:  # no-pipeline-cover: discover_windows passes the sidecar path
         json_path = npy_path.with_suffix(".json")
     json_path = Path(json_path)
     meta = load_sidecar(json_path)
     data = np.load(npy_path)
     if data.ndim != 2:
-        raise ValueError(f"Expected 2-D spectrogram in {npy_path}, got {data.shape}")
+        raise ValueError(f"Expected 2-D spectrogram in {npy_path}, got {data.shape}")  # no-pipeline-cover: GPL windows are always 2-D
     wid = window_id or npy_path.stem
     return Window(
         window_id=wid,
@@ -108,8 +108,8 @@ def global_samples_to_time_bins(
 ) -> tuple[int, int] | None:
     """Map file-global 1-based sample interval to window-local ``[t0, t1)``."""
     if overlap <= 0:
-        raise ValueError(f"overlap must be positive, got {overlap}")
-    if global_end < global_start:
+        raise ValueError(f"overlap must be positive, got {overlap}")  # no-pipeline-cover: GPL sidecars always have a positive hop
+    if global_end < global_start:  # no-pipeline-cover: GPL detections end after they start
         return None
     local_start_1 = global_start - win_start_sample + 1
     local_end_1 = global_end - win_start_sample + 1
@@ -124,7 +124,52 @@ def detection_overlaps_window(det: Detection, window: Window) -> bool:
     return not (det.end_time < window.start_sample or det.start_time > window.end_sample)
 
 
-def load_windows_from_paths(paths: Sequence[Path | str]) -> list[Window]:
+def detections_to_segments(
+    windows: Sequence[Window],
+    detections: Sequence[Detection],
+) -> list[Segment]:
+    """One spectrogram patch per overlapping (window, detection) pair.
+
+    Maps each detection's global sample interval into window-local time bins,
+    crops ``window.data[:, t0:t1]``, and skips empty / zero-energy patches.
+    """
+    segments: list[Segment] = []
+    idx = 0
+    for window in windows:
+        for det in detections:
+            if not detection_overlaps_window(det, window):
+                continue
+            bins = global_samples_to_time_bins(
+                det.start_time,
+                det.end_time,
+                win_start_sample=window.start_sample,
+                overlap=window.overlap,
+                n_cols=window.n_time,
+            )
+            if bins is None:
+                continue
+            t0, t1 = bins
+            patch = np.array(window.data[:, t0:t1], copy=True)
+            if patch.size == 0 or patch.shape[1] == 0 or float(np.sum(patch ** 2)) <= 0.0:
+                continue
+            segments.append(
+                Segment(
+                    segment_id=f"{window.window_id}::det{det.index}::{idx}",
+                    data=patch,
+                    window_id=window.window_id,
+                    t_start=t0,
+                    t_end=t1,
+                    global_start_sample=det.start_time,
+                    global_end_sample=det.end_time,
+                    detection_index=det.index,
+                    boundary_cross_flag=det.boundary_cross_flag,
+                )
+            )
+            idx += 1
+    return segments
+
+
+def load_windows_from_paths(paths: Sequence[Path | str]) -> list[Window]:  # no-pipeline-cover: library entry point; the CLIs discover windows
     return [load_window(Path(p)) for p in paths]
 
 
@@ -147,7 +192,7 @@ class WhitenedSpectrogram:
     hop_samples: int
 
 
-def stitch_whitened_spectrogram(gpl_dir: Path | str) -> WhitenedSpectrogram:
+def stitch_whitened_spectrogram(gpl_dir: Path | str) -> WhitenedSpectrogram:  # no-pipeline-cover: used by learn_from_motifs, not the baseline CLIs
     """Load ``spwhiten_*.npy`` windows and join them in time order.
 
     ``gpl_dir`` is a GPL output directory or its ``spectrogram_npy`` folder.
@@ -185,7 +230,7 @@ def stitch_whitened_spectrogram(gpl_dir: Path | str) -> WhitenedSpectrogram:
     )
 
 
-def load_gpl_inputs(
+def load_gpl_inputs(  # no-pipeline-cover: library entry point (GPL_Python/preprocess.py); the CLIs load windows directly
     *,
     window_paths: Sequence[Path | str] | None = None,
     npy_dir: Path | str | None = None,

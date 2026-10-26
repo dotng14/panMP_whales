@@ -1,0 +1,46 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "panmp-whales"
+version = "0.1.0"
+description = "Whale song analysis (analysis.*): GPL detector, pan matrix profile, dictionary learning, song HMM"
+requires-python = ">=3.11"
+dependencies = [
+    # analysis / GPL_Python / dict_learning / matrix_profile
+    "numpy",
+    "scipy",
+    "matplotlib",
+    "numba",
+    "tqdm",
+    # backend webserver
+    "fastapi",
+    "uvicorn[standard]",
+    "python-multipart",
+    "python-dotenv",
+    "websockets",
+]
+
+[project.optional-dependencies]
+gpu = [
+    "cupy-cuda12x>=14.0.0",
+]
+test = [
+    "pytest>=8",
+    "pytest-cov>=5",
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["analysis"]
+
+[tool.pytest.ini_options]
+# Put this checkout first on sys.path, so `import analysis` never resolves to
+# another checkout installed into the same environment.
+pythonpath = ["."]
+# Test files are imported by path, so same-named files in different folders
+# never collide and no test needs to edit sys.path.
+addopts = "--import-mode=importlib"
+markers = [
+    "gpu: needs a CUDA device and CuPy",
+]

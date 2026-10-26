@@ -1,101 +1,38 @@
-"""Elementary dictionary-learning tools with optional catalog persistence.
+"""Elementary dictionary-learning tools.
 
 Tools
 -----
 A  :func:`matching_pursuit` — Mallat MP on a dictionary + residual
-B  :func:`average_templates` / :func:`average_patches` — pure 1–1 averaging
-   (:func:`pca_templates` / :func:`pca_patches` — leading-PC variant)
-C  :func:`build_dictionary_from_detections` — greedy GPL single-atom growth
-D  :func:`remove_template` — membership edit (append-only new dictionary)
-E  :func:`merge_templates` — average detections of two atoms into one
+B  :func:`average_templates` / :func:`rebuild_template_from_matchings` —
+   rebuild atoms from their matched patches (mean, leading PC, or top-k PCA)
 """
 
 from __future__ import annotations
 
-import sqlite3
 from dataclasses import dataclass, field
-from pathlib import Path
-from typing import Any, Sequence
+from typing import Sequence
 
 import numpy as np
 
-from database import catalog
-
-from .io import Detection, load_gpl_inputs
-from .mp import (
-    IntervalMap,
-    MpLoopResult,
-    copy_residual_stack,
-    residual_energy,
-    run_mp_loop,
-    single_template_dictionary,
-)
-from .core import Dictionary, Matching, Segment, Template, Window
-from .learn.seed_from_gpl import Seed, detections_to_segments, mean_center
+from .mp import IntervalMap, MpLoopResult, run_mp_loop
+from .core import Dictionary, Matching, Template, Window
 
 
 @dataclass
-class ToolResult:
-    """Common optional catalog ids attached to tool outputs."""
-
-    tool_run_id: int | None = None
-    output_dictionary_id: int | None = None
-    input_dictionary_id: int | None = None
-
-
-@dataclass
-class MatchingPursuitResult(ToolResult):
+class MatchingPursuitResult:
     loop: MpLoopResult = field(default_factory=lambda: MpLoopResult({}, [], [], ""))
     dictionary: Dictionary = field(default_factory=Dictionary)
 
 
 @dataclass
-class AverageTemplatesResult(ToolResult):
+class AverageTemplatesResult:
     dictionary: Dictionary = field(default_factory=Dictionary)
     parent_template_ids: list[int] = field(default_factory=list)
-    new_template_pks: list[int] = field(default_factory=list)
-
-
-@dataclass
-class EditDictionaryResult(ToolResult):
-    dictionary: Dictionary = field(default_factory=Dictionary)
-    removed_template_ids: list[int] = field(default_factory=list)
-    merged_template_id: int | None = None
-    merged_template_pk: int | None = None
 
 
 from .core import as_stack as _as_stack
 from .core import copy_dictionary as _copy_dictionary
 from .core import filter_matchings_by_relative_distance
-
-
-def _matching_rows(matchings: Sequence[Matching]) -> list[dict[str, Any]]:
-    rows: list[dict[str, Any]] = []
-    for m in matchings:
-        row: dict[str, Any] = {
-            "template_id": m.template_id,
-            "window_id": m.window_id,
-            "t_start": m.t_start,
-            "amplitude": float(m.amplitude),
-        }
-        coeffs = np.asarray(m.coeffs, dtype=np.float64).reshape(-1)
-        if coeffs.size > 1:
-            row["coeffs"] = coeffs.tolist()
-        rows.append(row)
-    return rows
-
-
-def _save_template_npy(
-    out_dir: Path,
-    template: Template,
-    *,
-    prefix: str = "template",
-) -> Path:
-    out_dir.mkdir(parents=True, exist_ok=True)
-    path = out_dir / f"{prefix}_{template.template_id:03d}.npy"
-    # Persist the stored array (F,W or k,F,W) as-is.
-    np.save(path, template.data)
-    return path
 
 
 def _extract_patches(
@@ -113,37 +50,37 @@ def _extract_patches(
     """
     stack = _as_stack(signal)
     if width < 1:
-        raise ValueError(f"width must be >= 1, got {width}")
+        raise ValueError(f"width must be >= 1, got {width}")  # no-pipeline-cover: atoms always have a width
     patches: list[np.ndarray] = []
     for matching in matchings:
         arr = stack.get(matching.window_id)
-        if arr is None:
+        if arr is None:  # no-pipeline-cover: matchings always point into the stack
             continue
         freq = int(n_freq) if n_freq is not None else int(arr.shape[0])
         raw = arr[:freq, matching.t_start : matching.t_start + width]
-        if raw.shape[1] == width and raw.shape[0] == freq:
-            patches.append(np.asarray(raw, dtype=np.float64))
+        if raw.shape[1] != width or raw.shape[0] != freq:  # no-pipeline-cover: MP places whole atoms
+            # Center-align into fixed canvas (supports merge of unequal widths).
+            canvas = np.zeros((freq, width), dtype=np.float64)
+            src = arr[:freq, matching.t_start :]
+            take = min(src.shape[1], width)
+            if take <= 0:
+                continue
+            # Prefer the matching's intended span when available.
+            intended = arr[:freq, matching.t_start : matching.t_start + max(width, 1)]
+            src_w = intended.shape[1]
+            if src_w == 0:
+                continue
+            if src_w == width:
+                canvas[:, :] = intended
+            elif src_w < width:
+                left = (width - src_w) // 2
+                canvas[:, left : left + src_w] = intended
+            else:
+                left = (src_w - width) // 2
+                canvas[:, :] = intended[:, left : left + width]
+            patches.append(canvas)
             continue
-        # Center-align into fixed canvas (supports merge of unequal widths).
-        canvas = np.zeros((freq, width), dtype=np.float64)
-        src = arr[:freq, matching.t_start :]
-        take = min(src.shape[1], width)
-        if take <= 0:
-            continue
-        # Prefer the matching's intended span when available.
-        intended = arr[:freq, matching.t_start : matching.t_start + max(width, 1)]
-        src_w = intended.shape[1]
-        if src_w == 0:
-            continue
-        if src_w == width:
-            canvas[:, :] = intended
-        elif src_w < width:
-            left = (width - src_w) // 2
-            canvas[:, left : left + src_w] = intended
-        else:
-            left = (src_w - width) // 2
-            canvas[:, :] = intended[:, left : left + width]
-        patches.append(canvas)
+        patches.append(np.asarray(raw, dtype=np.float64))
     return patches
 
 
@@ -161,7 +98,7 @@ def _filtered_matchings(
     used = list(matchings)
     if max_relative_distance is None:
         return used
-    if reference_template is None:
+    if reference_template is None:  # no-pipeline-cover: rebuilds always pass the atom
         raise ValueError(
             "max_relative_distance requires reference_template "
             "(the template used to score patch distances)"
@@ -177,7 +114,7 @@ def _filtered_matchings(
     )
 
 
-def average_patches(
+def average_patches(  # no-pipeline-cover: averaging rebuild; the randomized build uses PCA
     signal: Sequence[Window] | dict[str, np.ndarray],
     matchings: Sequence[Matching],
     *,
@@ -239,7 +176,7 @@ def pca_basis(
     matrix (see :func:`filter_matchings_by_relative_distance`).
     """
     if n_components < 1:
-        raise ValueError(f"n_components must be >= 1, got {n_components}")
+        raise ValueError(f"n_components must be >= 1, got {n_components}")  # no-pipeline-cover: the build checks n_components first
     used = _filtered_matchings(
         signal,
         matchings,
@@ -251,7 +188,7 @@ def pca_basis(
     )
     patches = _extract_patches(signal, used, width=width, n_freq=n_freq)
     if not patches:
-        raise ValueError("no matched patches could be extracted from the signal")
+        raise ValueError("no matched patches could be extracted from the signal")  # no-pipeline-cover: atoms are only rebuilt from their placements
     freq, w = patches[0].shape
     data = np.stack([p.reshape(-1) for p in patches], axis=0)  # (n, D)
     n = data.shape[0]
@@ -281,7 +218,7 @@ def pca_basis(
     variances = np.zeros(k, dtype=np.float64)
     for i, idx in enumerate(order):
         lam = float(eigvals[idx])
-        if lam <= 0.0:
+        if lam <= 0.0:  # no-pipeline-cover: degenerate patch sets with no variance
             # No variance left along this / further components: pad with the
             # (normalized) mean direction for slot 0, zeros otherwise.
             if i == 0:
@@ -343,7 +280,7 @@ def combine_patches(
     max_relative_distance: float | None = None,
 ) -> np.ndarray:
     """Dispatch to :func:`average_patches` or :func:`pca_patches` by ``method``."""
-    if method == "average":
+    if method == "average":  # no-pipeline-cover: the randomized build rebuilds with PCA
         return average_patches(
             signal,
             matchings,
@@ -361,7 +298,7 @@ def combine_patches(
             reference_template=reference_template,
             max_relative_distance=max_relative_distance,
         )
-    raise ValueError(
+    raise ValueError(  # no-pipeline-cover: the randomized build rebuilds with PCA
         f"unknown template method: {method!r} (expected 'average' or 'pca')"
     )
 
@@ -380,29 +317,14 @@ def matching_pursuit(
     mp_mode: str | None = None,
     n_workers: int | None = None,
     max_relative_distance: float | None = None,
-    algorithm: str = "greedy",
-    lambda_fraction: float = 0.2,
-    conn: sqlite3.Connection | None = None,
-    input_dictionary_id: int | None = None,
-    out_dir: Path | str | None = None,
-    parent_tool_run_id: int | None = None,
-    learning_run_id: int | None = None,
-    segmentation_id: int | None = None,
-    name: str | None = None,
-    params: dict[str, Any] | None = None,
 ) -> MatchingPursuitResult:
-    """A: Mallat matching pursuit. Optionally persist matchings on a dict snapshot.
+    """A: Mallat matching pursuit.
 
     ``max_relative_distance`` rejects placements that leave more than that
     fraction of the patch energy unexplained by the atom.
-
-    ``algorithm='dp'`` runs the exact non-overlapping solver instead of the
-    greedy loop, with ``lambda_fraction`` controlling sparsity.
     """
-    resid = _as_stack(residual)
-    e0 = residual_energy(resid)
     loop = run_mp_loop(
-        resid,
+        _as_stack(residual),
         dictionary,
         energy_floor=energy_floor,
         eps_step_fraction=eps_step_fraction,
@@ -415,48 +337,8 @@ def matching_pursuit(
         mp_mode=mp_mode,
         n_workers=n_workers,
         max_relative_distance=max_relative_distance,
-        algorithm=algorithm,
-        lambda_fraction=lambda_fraction,
     )
-    result = MatchingPursuitResult(
-        loop=loop,
-        dictionary=_copy_dictionary(dictionary),
-        input_dictionary_id=input_dictionary_id,
-    )
-    if conn is not None:
-        if input_dictionary_id is None:
-            raise ValueError("input_dictionary_id required when conn is set")
-        tool_params = {
-            "eps_step_fraction": eps_step_fraction,
-            "max_repeats": max_repeats,
-            "normalize": normalize,
-            "disallow_overlap": disallow_overlap,
-            "mp_mode": mp_mode,
-            "n_workers": n_workers,
-            "max_relative_distance": max_relative_distance,
-            "algorithm": algorithm,
-            "lambda_fraction": lambda_fraction,
-            **(params or {}),
-        }
-        window_ids = sorted({m.window_id for m in loop.matchings if m.window_id})
-        tool_run_id, output_dictionary_id = catalog.persist_matching_pursuit_result(
-            conn,
-            input_dictionary_id=input_dictionary_id,
-            matchings=_matching_rows(loop.matchings),
-            window_ids=window_ids,
-            name=name,
-            learning_run_id=learning_run_id,
-            segmentation_id=segmentation_id,
-            params=tool_params,
-            energy_before=e0,
-            energy_after=loop.energies[-1] if loop.energies else e0,
-            stop_reason=loop.stopped_reason,
-            out_dir=out_dir,
-            parent_tool_run_id=parent_tool_run_id,
-        )
-        result.tool_run_id = tool_run_id
-        result.output_dictionary_id = output_dictionary_id
-    return result
+    return MatchingPursuitResult(loop=loop, dictionary=_copy_dictionary(dictionary))
 
 
 def rebuild_template_from_matchings(
@@ -478,13 +360,13 @@ def rebuild_template_from_matchings(
     dropped before the rebuild — for averaging as well as PCA.
     """
     if n_components < 1:
-        raise ValueError(f"n_components must be >= 1, got {n_components}")
+        raise ValueError(f"n_components must be >= 1, got {n_components}")  # no-pipeline-cover: the build checks n_components first
     patches = [m for m in matchings if m.template_id == template.template_id]
-    if not patches:
+    if not patches:  # no-pipeline-cover: callers pass the atom's own placements
         # Callers may pass already-filtered matchings without template_id set
         # consistently; fall back to all provided matchings.
         patches = list(matchings)
-    if not patches:
+    if not patches:  # no-pipeline-cover: callers pass the atom's own placements
         raise ValueError(
             f"template_id {template.template_id} has no matchings to rebuild"
         )
@@ -527,7 +409,7 @@ def rebuild_template_from_matchings(
     )
 
 
-def average_templates(
+def average_templates(  # no-pipeline-cover: used by refine_dictionary_by_averaging (learn_from_motifs)
     signal: Sequence[Window] | dict[str, np.ndarray],
     dictionary: Dictionary,
     matchings: Sequence[Matching],
@@ -535,15 +417,6 @@ def average_templates(
     method: str = "pca",
     n_components: int = 1,
     max_relative_distance: float | None = None,
-    conn: sqlite3.Connection | None = None,
-    input_dictionary_id: int | None = None,
-    input_template_pks: Sequence[int] | None = None,
-    out_dir: Path | str | None = None,
-    parent_tool_run_id: int | None = None,
-    learning_run_id: int | None = None,
-    segmentation_id: int | None = None,
-    name: str | None = None,
-    params: dict[str, Any] | None = None,
 ) -> AverageTemplatesResult:
     """B: Rebuild every atom from its matched patches (no re-MP).
 
@@ -558,10 +431,6 @@ def average_templates(
         raise ValueError("dictionary must contain at least one atom")
     if n_components < 1:
         raise ValueError(f"n_components must be >= 1, got {n_components}")
-    if conn is not None and n_components > 1:
-        raise ValueError(
-            "catalog persistence for average_templates requires n_components=1"
-        )
     by_template: dict[int, list[Matching]] = {}
     for matching in matchings:
         by_template.setdefault(matching.template_id, []).append(matching)
@@ -585,521 +454,6 @@ def average_templates(
         averaged.add(rebuilt)
         parent_ids.append(template.template_id)
 
-    result = AverageTemplatesResult(
-        dictionary=averaged,
-        parent_template_ids=parent_ids,
-        input_dictionary_id=input_dictionary_id,
-    )
-    if conn is not None:
-        if input_dictionary_id is None:
-            raise ValueError("input_dictionary_id required when conn is set")
-        parent_pks = list(input_template_pks or [])
-        if not parent_pks:
-            parent_pks = catalog._dictionary_template_pks(conn, input_dictionary_id)
-        if len(parent_pks) != len(averaged):
-            raise ValueError(
-                "input_template_pks length must match dictionary membership"
-            )
-        stamp = Path(out_dir) if out_dir is not None else None
-        prefix = "pca" if method == "pca" or n_components > 1 else "avg"
-        template_rows: list[dict[str, Any]] = []
-        for template in averaged:
-            if stamp is not None:
-                npy_path = _save_template_npy(stamp, template, prefix=prefix)
-            else:
-                raise ValueError("out_dir required when persisting average_templates")
-            template_rows.append(
-                {
-                    "template_id": template.template_id,
-                    "npy_path": npy_path,
-                    "n_freq": template.n_freq,
-                    "width": template.width,
-                    "source_segment_id": template.source_segment_id,
-                }
-            )
-        tool_run_id, output_dictionary_id, new_pks = (
-            catalog.persist_average_templates_result(
-                conn,
-                input_dictionary_id=input_dictionary_id,
-                templates=template_rows,
-                parent_template_pks=parent_pks,
-                name=name,
-                learning_run_id=learning_run_id,
-                segmentation_id=segmentation_id,
-                params=params,
-                out_dir=out_dir,
-                parent_tool_run_id=parent_tool_run_id,
-            )
-        )
-        result.tool_run_id = tool_run_id
-        result.output_dictionary_id = output_dictionary_id
-        result.new_template_pks = new_pks
-    return result
+    return AverageTemplatesResult(dictionary=averaged, parent_template_ids=parent_ids)
 
 
-def pca_templates(
-    signal: Sequence[Window] | dict[str, np.ndarray],
-    dictionary: Dictionary,
-    matchings: Sequence[Matching],
-    **kwargs: Any,
-) -> AverageTemplatesResult:
-    """B (PCA variant): rebuild each atom from its patches' leading PC.
-
-    Thin wrapper over :func:`average_templates` with ``method="pca"``; accepts
-    the same keyword arguments (including catalog persistence).
-    """
-    if "method" in kwargs:
-        raise TypeError("pca_templates does not accept a 'method' argument")
-    return average_templates(signal, dictionary, matchings, method="pca", **kwargs)
-
-
-from .core import crop_candidates_from_residual as _crop_candidates_from_residual
-
-
-def build_dictionary_from_detections(
-    signal: Sequence[Window] | dict[str, np.ndarray],
-    detections: Sequence[Detection] | Sequence[Segment],
-    *,
-    windows_for_units: Sequence[Window] | None = None,
-    eps_step_fraction: float = 0.5,
-    min_repeats: int = 1,
-    n_rounds: int | None = None,
-    max_templates: int | None = None,
-    min_seed_delta_fraction: float = 0.0,
-    normalize: bool = True,
-    disallow_overlap: bool = False,
-    show_progress: bool | None = None,
-    mp_mode: str | None = None,
-    n_workers: int | None = None,
-    max_relative_distance: float | None = None,
-    conn: sqlite3.Connection | None = None,
-    segmentation_id: int | None = None,
-    out_dir: Path | str | None = None,
-    learning_run_id: int | None = None,
-    parent_tool_run_id: int | None = None,
-    name: str | None = None,
-    params: dict[str, Any] | None = None,
-) -> Seed | Any:
-    """C: Greedy GPL seeding via single-atom MP (uses A for each peel).
-
-    When ``conn`` is set, persists each accepted round as a seed/refinement
-    dictionary with matchings. Returns a :class:`~.learn_dictionary.LearnedDictionary`
-    (imported lazily to avoid cycles).
-    """
-    from .learn.learn_dictionary import LearnedDictionary
-    from .mp import range_progress
-
-    rounds_cap = n_rounds if n_rounds is not None else max_templates
-    if rounds_cap is not None and rounds_cap < 1:
-        raise ValueError(f"n_rounds/max_templates must be >= 1, got {rounds_cap}")
-
-    if isinstance(signal, dict):
-        residual = {k: np.asarray(v, dtype=np.float64) for k, v in signal.items()}
-        unit_windows = list(windows_for_units or [])
-    else:
-        residual = {w.window_id: mean_center(w.data) for w in signal}
-        unit_windows = (
-            list(windows_for_units) if windows_for_units is not None else list(signal)
-        )
-
-    energy_before = residual_energy(residual)
-    if detections and isinstance(detections[0], Segment):
-        base_segments = list(detections)  # type: ignore[arg-type]
-    elif detections:
-        if not unit_windows:
-            raise ValueError(
-                "windows_for_units (or Window stack) required with Detection inputs"
-            )
-        base_segments = detections_to_segments(unit_windows, detections)  # type: ignore[arg-type]
-    else:
-        base_segments = []
-
-    seeds: list[Seed] = []
-    first_delta: float | None = None
-    parent_dictionary_id: int | None = None
-    stamp = Path(out_dir) if out_dir is not None else None
-    root_tool_run_id: int | None = None
-    if conn is not None:
-        root_tool_run_id = catalog.insert_tool_run(
-            conn,
-            tool="build_dictionary_from_detections",
-            parent_tool_run_id=parent_tool_run_id,
-            segmentation_id=segmentation_id,
-            learning_run_id=learning_run_id,
-            params={
-                "eps_step_fraction": eps_step_fraction,
-                "min_repeats": min_repeats,
-                "n_rounds": rounds_cap,
-                "min_seed_delta_fraction": min_seed_delta_fraction,
-                **(params or {}),
-            },
-            energy_before=energy_before,
-            out_dir=out_dir,
-        )
-
-    from .mp import allocate_nested_workers, map_parallel, resolve_mp_mode, resolve_mp_workers
-    from .mp import (
-        CandidateTrialPayload,
-        init_trial_worker_shared,
-        payload_by_segment_id,
-        rematerialize_candidate_trial,
-        run_candidate_trial,
-        slim_payloads_for_process_pool,
-        trial_sort_key_energy_then_segment,
-    )
-
-    mode = resolve_mp_mode(mp_mode)
-    cand_workers = resolve_mp_workers(n_workers)
-
-    stop_reason = "completed"
-    for template_id in range_progress(
-        rounds_cap, desc="from_det rounds", show_progress=show_progress, unit="round"
-    ):
-        candidates = _crop_candidates_from_residual(base_segments, residual)
-        if not candidates:
-            stop_reason = "no_candidates"
-            break
-        # Trial all candidates by energy (same spirit as Seed.from_gpl).
-        ordered = sorted(candidates, key=lambda s: s.energy, reverse=True)
-        outer_workers, inner_workers = allocate_nested_workers(
-            len(ordered), total_workers=cand_workers
-        )
-        payloads = [
-            CandidateTrialPayload(
-                segment_id=seg.segment_id,
-                template_id=template_id,
-                template_data=np.array(seg.data, copy=True),
-                residual=residual,
-                eps_step_fraction=eps_step_fraction,
-                normalize=normalize,
-                disallow_overlap=disallow_overlap,
-                occupied_intervals=None,
-                mp_mode=mode,
-                n_workers=inner_workers,
-                max_relative_distance=max_relative_distance,
-            )
-            for seg in ordered
-        ]
-        trial_results = map_parallel(
-            run_candidate_trial,
-            slim_payloads_for_process_pool(payloads)
-            if outer_workers > 1 and len(payloads) > 1
-            else payloads,
-            n_workers=outer_workers,
-            prefer_threads=False,
-            initializer=init_trial_worker_shared
-            if outer_workers > 1 and len(payloads) > 1
-            else None,
-            initargs=(residual, None)
-            if outer_workers > 1 and len(payloads) > 1
-            else (),
-        )
-        best_tr = None
-        best_key = None
-        for tr in trial_results:
-            if tr.n_matchings < min_repeats:
-                continue
-            key = trial_sort_key_energy_then_segment(tr)
-            if best_tr is None or key < best_key:
-                best_tr = tr
-                best_key = key
-        if best_tr is None:
-            stop_reason = "below_min_repeats"
-            break
-        winner = rematerialize_candidate_trial(
-            payload_by_segment_id(payloads, best_tr.segment_id)  # type: ignore[arg-type]
-        )
-        tmpl = Template(
-            template_id=winner.template_id,
-            data=np.array(winner.template_data, copy=True),
-            source_segment_id=winner.segment_id,
-        )
-        best = Seed(
-            template=tmpl,
-            matchings=winner.matchings,
-            residual_after=winner.residual_stack,
-            energy_before=residual_energy(residual),
-            energy_after=winner.energy_after,
-            n_candidates_tried=1,
-            selected_segment_id=winner.segment_id,
-            candidates=candidates,
-            mp_energies=list(winner.energies),
-        )
-        if not best.is_selected() or not winner.residual_stack:
-            stop_reason = "missing_residual" if not winner.residual_stack else "below_min_repeats"
-            break
-        delta = best.get_delta_energy_total()
-        if delta <= 0.0:
-            stop_reason = "no_improvement"
-            break
-        if first_delta is None:
-            first_delta = delta
-        elif min_seed_delta_fraction > 0 and delta < min_seed_delta_fraction * first_delta:
-            stop_reason = "min_seed_delta_fraction"
-            break
-        seeds.append(best)
-        tmpl = best.get_template()
-        assert tmpl is not None
-        next_residual = best.get_residual_after()
-        if next_residual is None:
-            stop_reason = "missing_residual"
-            break
-
-        if conn is not None and stamp is not None:
-            npy_path = _save_template_npy(stamp / f"round_{template_id:03d}", tmpl)
-            _tr, out_dict_id, _pks = catalog.persist_build_from_detections_result(
-                conn,
-                templates=[
-                    {
-                        "template_id": tmpl.template_id,
-                        "npy_path": npy_path,
-                        "n_freq": tmpl.n_freq,
-                        "width": tmpl.width,
-                        "source_segment_id": tmpl.source_segment_id,
-                        "round_index": template_id,
-                        "n_matchings": len(best.get_matchings()),
-                    }
-                ],
-                matchings=_matching_rows(best.get_matchings()),
-                window_ids=sorted({m.window_id for m in best.get_matchings()}),
-                name=(name or "from_detections") + f"#r{template_id:03d}",
-                parent_dictionary_id=parent_dictionary_id,
-                learning_run_id=learning_run_id,
-                segmentation_id=segmentation_id,
-                params=params,
-                energy_before=best.get_energy_before(),
-                energy_after=best.get_energy_after(),
-                out_dir=stamp / f"round_{template_id:03d}",
-                parent_tool_run_id=root_tool_run_id,
-                round_index=template_id,
-            )
-            parent_dictionary_id = out_dict_id
-
-        residual = next_residual
-    else:
-        if rounds_cap is not None:
-            stop_reason = "max_rounds"
-
-    energy_after = residual_energy(residual)
-    if conn is not None and root_tool_run_id is not None:
-        catalog.finish_tool_run(
-            conn,
-            root_tool_run_id,
-            output_dictionary_id=parent_dictionary_id,
-            energy_before=energy_before,
-            energy_after=energy_after,
-            stop_reason=stop_reason,
-            out_dir=out_dir,
-        )
-
-    return LearnedDictionary(
-        seeds=seeds,
-        energy_before=energy_before,
-        energy_after=energy_after,
-        residual_after=residual,
-        stop_reason=stop_reason,
-        tool_run_id=root_tool_run_id,
-        output_dictionary_id=parent_dictionary_id,
-    )
-
-
-def remove_template(
-    dictionary: Dictionary,
-    template_id: int | None = None,
-    *,
-    template_pk: int | None = None,
-    conn: sqlite3.Connection | None = None,
-    input_dictionary_id: int | None = None,
-    parent_tool_run_id: int | None = None,
-    learning_run_id: int | None = None,
-    segmentation_id: int | None = None,
-    name: str | None = None,
-    params: dict[str, Any] | None = None,
-) -> EditDictionaryResult:
-    """D: New dictionary = input membership minus one atom (meta-dict unchanged)."""
-    removed_pk: int | None = template_pk
-    removed_tid = template_id
-    if conn is not None and input_dictionary_id is not None and removed_pk is None:
-        if removed_tid is None:
-            raise ValueError("template_id or template_pk required")
-        for pk in catalog._dictionary_template_pks(conn, input_dictionary_id):
-            row = catalog.get_template_by_pk(conn, pk)
-            if row and int(row["template_id"]) == int(removed_tid):
-                removed_pk = pk
-                break
-        if removed_pk is None:
-            raise ValueError(
-                f"template_id {removed_tid} not in dictionary {input_dictionary_id}"
-            )
-
-    if removed_tid is None and removed_pk is not None and conn is not None:
-        row = catalog.get_template_by_pk(conn, removed_pk)
-        if row is None:
-            raise KeyError(f"template_pk {removed_pk} not found")
-        removed_tid = int(row["template_id"])
-    if removed_tid is None:
-        raise ValueError("template_id or template_pk required")
-
-    new_dict = Dictionary()
-    found = False
-    for template in dictionary:
-        if template.template_id == removed_tid:
-            found = True
-            continue
-        new_dict.add(
-            Template(
-                template_id=template.template_id,
-                data=np.array(template.data, dtype=np.float64, copy=True),
-                source_segment_id=template.source_segment_id,
-            )
-        )
-    if not found and conn is None:
-        raise ValueError(f"template_id {removed_tid} not in dictionary")
-
-    result = EditDictionaryResult(
-        dictionary=new_dict,
-        removed_template_ids=[removed_tid],
-        input_dictionary_id=input_dictionary_id,
-    )
-    if conn is not None:
-        if input_dictionary_id is None or removed_pk is None:
-            raise ValueError(
-                "input_dictionary_id and resolvable template_pk required when conn set"
-            )
-        tool_run_id, output_dictionary_id = catalog.persist_remove_template_result(
-            conn,
-            input_dictionary_id=input_dictionary_id,
-            removed_template_pk=removed_pk,
-            name=name,
-            learning_run_id=learning_run_id,
-            segmentation_id=segmentation_id,
-            params=params,
-            parent_tool_run_id=parent_tool_run_id,
-        )
-        result.tool_run_id = tool_run_id
-        result.output_dictionary_id = output_dictionary_id
-    return result
-
-
-def merge_templates(
-    signal: Sequence[Window] | dict[str, np.ndarray],
-    dictionary: Dictionary,
-    matchings: Sequence[Matching],
-    template_a: int,
-    template_b: int,
-    *,
-    conn: sqlite3.Connection | None = None,
-    input_dictionary_id: int | None = None,
-    out_dir: Path | str | None = None,
-    parent_tool_run_id: int | None = None,
-    learning_run_id: int | None = None,
-    segmentation_id: int | None = None,
-    name: str | None = None,
-    params: dict[str, Any] | None = None,
-    new_template_id: int | None = None,
-) -> EditDictionaryResult:
-    """E: Merge two atoms by averaging all of their detections into one new atom."""
-    if template_a == template_b:
-        raise ValueError("template_a and template_b must differ")
-    by_id = {t.template_id: t for t in dictionary}
-    if template_a not in by_id or template_b not in by_id:
-        raise ValueError("both templates must be members of dictionary")
-    ta, tb = by_id[template_a], by_id[template_b]
-    pooled = [
-        m for m in matchings if m.template_id in (template_a, template_b)
-    ]
-    if not pooled:
-        raise ValueError("no matchings for either template to merge")
-    out_width = max(ta.width, tb.width)
-    n_freq = ta.n_freq if ta.n_freq == tb.n_freq else max(ta.n_freq, tb.n_freq)
-    avg = average_patches(signal, pooled, width=out_width, n_freq=n_freq)
-    merged_id = (
-        new_template_id
-        if new_template_id is not None
-        else max(dictionary.order, default=-1) + 1
-    )
-    merged = Template(
-        template_id=merged_id,
-        data=avg,
-        source_segment_id=f"merge:{template_a}+{template_b}",
-    )
-    new_dict = Dictionary()
-    for template in dictionary:
-        if template.template_id in (template_a, template_b):
-            continue
-        new_dict.add(
-            Template(
-                template_id=template.template_id,
-                data=np.array(template.data, dtype=np.float64, copy=True),
-                source_segment_id=template.source_segment_id,
-            )
-        )
-    new_dict.add(merged)
-
-    result = EditDictionaryResult(
-        dictionary=new_dict,
-        removed_template_ids=[template_a, template_b],
-        merged_template_id=merged_id,
-        input_dictionary_id=input_dictionary_id,
-    )
-    if conn is not None:
-        if input_dictionary_id is None:
-            raise ValueError("input_dictionary_id required when conn is set")
-        if out_dir is None:
-            raise ValueError("out_dir required when persisting merge_templates")
-        stamp = Path(out_dir)
-        npy_path = _save_template_npy(stamp, merged, prefix="merged")
-        # Resolve parent pks from input membership order.
-        parent_pks: list[int] = []
-        remaining: list[int] = []
-        for pk in catalog._dictionary_template_pks(conn, input_dictionary_id):
-            row = catalog.get_template_by_pk(conn, pk)
-            if row is None:
-                continue
-            tid = int(row["template_id"])
-            if tid in (template_a, template_b):
-                parent_pks.append(pk)
-            else:
-                remaining.append(pk)
-        if len(parent_pks) != 2:
-            raise ValueError(
-                f"expected both templates in dictionary membership, found {parent_pks}"
-            )
-        # Stable parent order matching template_a, template_b.
-        ordered_parents: list[int] = []
-        for want in (template_a, template_b):
-            for pk in parent_pks:
-                row = catalog.get_template_by_pk(conn, pk)
-                if row and int(row["template_id"]) == want:
-                    ordered_parents.append(pk)
-                    break
-        tool_run_id, output_dictionary_id, merged_pk = (
-            catalog.persist_merge_templates_result(
-                conn,
-                input_dictionary_id=input_dictionary_id,
-                merged_template={
-                    "template_id": merged_id,
-                    "npy_path": npy_path,
-                    "n_freq": merged.n_freq,
-                    "width": merged.width,
-                    "source_segment_id": merged.source_segment_id,
-                    "n_matchings": len(pooled),
-                },
-                parent_template_pks=ordered_parents,
-                remaining_template_pks=remaining,
-                name=name,
-                learning_run_id=learning_run_id,
-                segmentation_id=segmentation_id,
-                params={
-                    "template_a": template_a,
-                    "template_b": template_b,
-                    **(params or {}),
-                },
-                out_dir=out_dir,
-                parent_tool_run_id=parent_tool_run_id,
-            )
-        )
-        result.tool_run_id = tool_run_id
-        result.output_dictionary_id = output_dictionary_id
-        result.merged_template_pk = merged_pk
-    return result
