@@ -44,3 +44,8 @@ export function phraseColor(phraseId: number): string {
 export function songColor(song: number): string {
   return SONG_PALETTE[Math.abs(song) % SONG_PALETTE.length];
 }
+
+/** Atoms share the motif palette, keyed by atom id. */
+export function atomColor(templateId: number): string {
+  return MOTIF_PALETTE[Math.abs(templateId) % MOTIF_PALETTE.length];
+}

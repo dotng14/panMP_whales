@@ -7,8 +7,10 @@ baseline for combining panMP with MP (see
 
 The other builders (greedy seed trials, `build_dictionary`, `extend_dictionary`,
 `match_to_dictionary`, `split_template`, the similarity tools, the DP and
-subspace MP solvers, catalog persistence) were removed on 2026-10-25; see
-[Removed](#removed). Git history keeps them.
+subspace MP solvers, the old catalog persistence) were removed on 2026-10-25;
+see [Removed](#removed). Git history keeps them. A new catalog came back on
+2026-10-26: `--catalog DB` registers a run in
+[`../../database/`](../../database/README.md).
 
 ## Layout
 
@@ -34,7 +36,12 @@ Tests live in [`../test/`](../test/README.md): `unit/dict_learning/` and
 ## Command line
 
 Both commands read a GPL output folder (`spectrogram_npy/` with whitened
-windows and JSON sidecars, plus `CSV_*.csv` detections). No catalog database.
+windows and JSON sidecars, plus `CSV_*.csv` detections). With `--catalog DB`,
+either command also registers its output folder in the SQLite catalog after
+writing it (a matching-pursuit run registers its dictionary folder first if
+needed). `summary.json` records absolute `gpl_dir` / `dictionary` paths and the
+`window_ids` used, so a folder can be registered later with
+`python -m database register`.
 
 ### `randomized-build`
 
@@ -151,8 +158,9 @@ Removed on 2026-10-25 to make the randomized build the starting point:
   `refine_dictionary_by_averaging` moved to `refine.py`), `match_to_dictionary.py`,
   `seed_from_gpl.py` (`detections_to_segments` moved to `io.py`),
   `split_template.py`, `similarity.py`.
-- `code/catalog.py` and every `database.catalog` call (this repo has no catalog;
-  the import had been resolving to another checkout).
+- `code/catalog.py` and every `database.catalog` call (the import had been
+  resolving to another checkout). Replaced on 2026-10-26 by this repo's own
+  [`database/`](../../database/README.md), written through `--catalog`.
 - From `mp.py`: candidate and seed-average trial machinery, the DP solver
   (`algorithm="dp"`), the subspace MP loop, and unused helpers.
 - From `tools.py`: `build_dictionary_from_detections`, `remove_template`,

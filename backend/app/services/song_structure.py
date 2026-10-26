@@ -1,7 +1,8 @@
-"""Load motif / song / theme / phrase structure from a repo-local CSV.
+"""Load motif / song / theme / phrase structure from a song-structure CSV.
 
-CSV files live under ``backend/data/song_structure/<wav_stem>.motif_segments.csv``
-and are looked up by WAV stem only (no machine-local paths).
+A CSV is picked from the catalog (``load_song_structure_csv``), or, when the
+viewer asks without one, looked up by WAV stem under
+``backend/data/song_structure/<wav_stem>.motif_segments.csv``.
 """
 
 from __future__ import annotations
@@ -47,7 +48,11 @@ def load_song_structure(stem: str) -> dict[str, Any] | None:
     path = song_structure_csv_path(stem)
     if not path.is_file():
         return None
+    return load_song_structure_csv(path, stem)
 
+
+def load_song_structure_csv(path: Path, stem: str) -> dict[str, Any]:
+    """Units + song spans from one CSV; times are relative to the start parsed from ``stem``."""
     start_unix0 = wav_start_unix(stem)
     if start_unix0 is None:
         raise ValueError(f"cannot parse recording start time from stem {stem!r}")

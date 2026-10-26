@@ -29,15 +29,17 @@ gpu = [
 test = [
     "pytest>=8",
     "pytest-cov>=5",
+    "httpx2>=2",          # starlette.testclient, for the API tests
 ]
 
 [tool.hatch.build.targets.wheel]
-packages = ["analysis"]
+packages = ["analysis", "database"]
 
 [tool.pytest.ini_options]
-# Put this checkout first on sys.path, so `import analysis` never resolves to
-# another checkout installed into the same environment.
-pythonpath = ["."]
+# Put this checkout first on sys.path, so `import analysis` / `import database`
+# never resolve to another checkout installed into the same environment.
+# `backend` makes the FastAPI app importable as `app` for the API tests.
+pythonpath = [".", "backend"]
 # Test files are imported by path, so same-named files in different folders
 # never collide and no test needs to edit sys.path.
 addopts = "--import-mode=importlib"

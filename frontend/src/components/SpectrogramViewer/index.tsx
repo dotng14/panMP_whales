@@ -3,6 +3,7 @@ import { API_BASE } from '../../api/base';
 import type { SpectrogramViewerProps } from './types';
 import { announcePlayback, subscribeToPlayback } from '../../utils/audioCoordinator';
 import { fetchSongStructure, type SongStructure } from '../../api/songStructure';
+import { fetchDictionaryPlacements, type Placement } from '../../api/catalog';
 import { SPEC_TARGET_H, SpectrogramCanvas } from './SpectrogramCanvas';
 import { ColorScaleBar } from './ColorScaleBar';
 import { PlayButton } from './PlayButton';
@@ -12,6 +13,8 @@ import { ScaleControls } from './ScaleControls';
 import { HorizontalScrollbar } from './HorizontalScrollbar';
 import { useSpectrogramScale, type SpectrogramScale } from './useSpectrogramScale';
 import {
+  ATOM_LANES,
+  buildAtomLane,
   buildLanes,
   LANE_ORDER,
   mergeAdjacent,
@@ -19,9 +22,10 @@ import {
   SongStructureLanes,
   secToCol,
   type LaneName,
+  type LaneSeg,
 } from './SongStructureLanes';
 
-const ALL_LINES_VISIBLE: Record<LaneName, boolean> = { motif: true, phrase: true, theme: true, song: true };
+const ALL_LINES_VISIBLE: Record<LaneName, boolean> = { motif: true, phrase: true, theme: true, song: true, atom: true };
 
 export function SpectrogramViewer({
   magnitude,
@@ -35,6 +39,7 @@ export function SpectrogramViewer({
   jobId,
   freqLo,
   freqHi,
+  analysis,
   scale: sharedScale,
 }: SpectrogramViewerProps & { scale?: SpectrogramScale }) {
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -48,6 +53,8 @@ export function SpectrogramViewer({
   const [followPlayhead, setFollowPlayhead] = useState(true);
   const followPlayheadRef = useRef(true);
   const [songStructure, setSongStructure] = useState<SongStructure | null>(null);
+  /** MP placements of the chosen dictionary (atom lane); null when a CSV or nothing is shown. */
+  const [placements, setPlacements] = useState<Placement[] | null>(null);
   const [songIndex, setSongIndex] = useState(0);
   const [songNavActive, setSongNavActive] = useState(false);
   /** Clicked lane segment (or cleared); drawn on the lanes themselves. */
@@ -63,33 +70,32 @@ export function SpectrogramViewer({
   const scale = sharedScale ?? ownScale;
   const { pxPerSec, maxFreqHz, hasFreqRange, freqCropFraction } = scale;
 
-  // Fetch motif/song/theme/phrase boundaries for this job — independent of the
-  // GPL pipeline, so this can resolve even if no CSV exists for the file (404).
+  // Fetch the overlay for this job: a catalog CSV's song structure, a catalog
+  // dictionary's placements, or (no choice made) the CSV named after the WAV.
+  // Independent of the GPL pipeline, so a missing CSV (404) just shows nothing.
+  const analysisKind = analysis === undefined ? undefined : (analysis?.kind ?? null);
+  const analysisId = analysis?.id;
   useEffect(() => {
-    if (!jobId) {
-      setSongStructure(null);
-      return;
-    }
+    setSongStructure(null);
+    setPlacements(null);
+    setSongIndex(0);
+    setSongNavActive(false);
+    setLaneHighlight(null);
+    if (!jobId || analysisKind === null) return;
     let cancelled = false;
-    fetchSongStructure(jobId)
-      .then(data => {
-        if (!cancelled) {
-          setSongStructure(data);
-          setSongIndex(0);
-          setSongNavActive(false);
-          setLaneHighlight(null);
-        }
-      })
-      .catch(() => {
-        if (!cancelled) {
-          setSongStructure(null);
-          setLaneHighlight(null);
-        }
-      });
+    if (analysisKind === 'dictionary' && analysisId !== undefined) {
+      fetchDictionaryPlacements(analysisId)
+        .then(data => { if (!cancelled) setPlacements(data.placements); })
+        .catch(() => { if (!cancelled) setPlacements(null); });
+    } else {
+      fetchSongStructure(jobId, analysisKind === 'csv' ? analysisId : undefined)
+        .then(data => { if (!cancelled) setSongStructure(data); })
+        .catch(() => { if (!cancelled) setSongStructure(null); });
+    }
     return () => {
       cancelled = true;
     };
-  }, [jobId]);
+  }, [jobId, analysisKind, analysisId]);
 
   const spectrogramH = SPEC_TARGET_H;
 
@@ -246,11 +252,13 @@ export function SpectrogramViewer({
 
   const structureHighlight = laneHighlight ?? activeSongRange;
 
-  // Built once per structure/zoom change (not per toggle) and shared with the
+  // Built once per overlay/zoom change (not per toggle) and shared with the
   // lane rows below — this full-file scan is the expensive part, so toggling
   // a checkbox should only filter already-built segments, not rebuild them.
-  const mergedLanes = useMemo(() => {
-    if (!songStructure || !audioDurationSec) return null;
+  const mergedLanes = useMemo((): Partial<Record<LaneName, LaneSeg[]>> | null => {
+    if (!audioDurationSec) return null;
+    if (placements) return { atom: buildAtomLane(placements, audioDurationSec, timeCols) };
+    if (!songStructure) return null;
     const raw = buildLanes(songStructure.units, songStructure.songs, audioDurationSec, timeCols);
     return {
       motif: mergeAdjacent(raw.motif),
@@ -258,21 +266,23 @@ export function SpectrogramViewer({
       theme: mergeAdjacent(raw.theme),
       song: mergeAdjacent(raw.song),
     };
-  }, [songStructure, audioDurationSec, timeCols]);
+  }, [songStructure, placements, audioDurationSec, timeCols]);
+  const laneOrder: readonly LaneName[] = placements ? ATOM_LANES : LANE_ORDER;
+  const laneSongs = songStructure?.songs ?? [];
 
   // Boundary markers drawn directly on the spectrogram, colored to match each
   // category's lane row; gated per-category by the toggle switches in the gutter.
   const structureLines = useMemo(() => {
     if (!mergedLanes) return [];
     const lines: { col: number; color: string }[] = [];
-    for (const name of LANE_ORDER) {
+    for (const name of laneOrder) {
       if (!lineVisibility[name]) continue;
-      for (const seg of mergedLanes[name]) {
+      for (const seg of mergedLanes[name] ?? []) {
         lines.push({ col: seg.startCol, color: seg.color });
       }
     }
     return lines;
-  }, [mergedLanes, lineVisibility]);
+  }, [mergedLanes, laneOrder, lineVisibility]);
 
   const jumpToColRange = useCallback((range: { startCol: number; endCol: number }) => {
     const el = scrollRef.current;
@@ -426,8 +436,8 @@ export function SpectrogramViewer({
             {/* Y-axis column */}
             <div style={{ display: 'flex', flexDirection: 'column', flexShrink: 0 }}>
               <YAxis freqBins={freqBins} height={spectrogramH} freqLo={freqLo} freqHi={hasFreqRange ? maxFreqHz : freqHi} />
-              {songStructure && audioDurationSec != null && audioDurationSec > 0 && (
-                <SongStructureLaneLabels visibility={lineVisibility} onToggle={toggleLineVisibility} />
+              {mergedLanes && (
+                <SongStructureLaneLabels laneOrder={laneOrder} visibility={lineVisibility} onToggle={toggleLineVisibility} />
               )}
               {/* Spacer matching XAxis + label height */}
               <div style={{ height: XAXIS_H + 20 }} />
@@ -465,9 +475,10 @@ export function SpectrogramViewer({
                     willChange: 'transform', // hint browser to promote to compositor layer
                   }}
                 />
-                {songStructure && mergedLanes && audioDurationSec != null && audioDurationSec > 0 && (
+                {mergedLanes && audioDurationSec != null && audioDurationSec > 0 && (
                   <SongStructureLanes
-                    structure={songStructure}
+                    laneOrder={laneOrder}
+                    songs={laneSongs}
                     lanes={mergedLanes}
                     timeCols={timeCols}
                     audioDurationSec={audioDurationSec}

@@ -10,7 +10,8 @@ windows plus JSON sidecars) and ``CSV_*.csv`` (detections)::
 ``randomized-build`` writes ``atoms/template_*.npy``, ``summary.json``,
 ``matchings.json`` and ``outer_logs.jsonl``. ``matching-pursuit`` places the
 atoms listed in a dictionary's ``summary.json`` and writes ``summary.json`` and
-``matchings.json``.
+``matchings.json``. With ``--catalog DB`` either command also registers its
+output folder in the SQLite catalog (``database/``).
 """
 
 from __future__ import annotations
@@ -128,6 +129,23 @@ def _run_with_stats(enabled: bool, out_dir: Path, fn):
     return result
 
 
+def _register(catalog_db: Path | None, out_dir: Path) -> None:
+    """Add the output folder to the catalog when ``--catalog`` was given."""
+    if catalog_db is None:
+        return
+    from contextlib import closing
+
+    from database import catalog
+
+    with closing(catalog.connect(catalog_db)) as conn:
+        try:
+            with conn:
+                result = catalog.register_run_dir(conn, out_dir)
+        except catalog.CatalogError as exc:
+            raise CliError(f"could not register {out_dir} in {catalog_db}: {exc}") from exc
+    print(json.dumps({"catalog": str(catalog_db), **result}))
+
+
 def _probability(name: str, value: float | None) -> float | None:
     if value is not None and not 0.0 <= value <= 1.0:
         raise CliError(f"{name} must be in [0, 1], got {value}")
@@ -207,9 +225,10 @@ def run_randomized_build(args: argparse.Namespace) -> int:
     )
     summary = {
         "command": "randomized-build",
-        "gpl_dir": str(args.gpl_dir),
-        "wav": str(args.gpl_dir),
+        "gpl_dir": str(args.gpl_dir.resolve()),
+        "wav": str(args.gpl_dir.resolve()),
         "n_windows": len(windows),
+        "window_ids": [window.window_id for window in windows],
         "window_offset": args.window_offset,
         "n_detections": len(detections),
         "sec_per_bin": _sec_per_bin(windows[0]),
@@ -251,6 +270,7 @@ def run_randomized_build(args: argparse.Namespace) -> int:
     if result.n_atoms == 0:
         print(f"no atoms survived (stop reason: {result.stop_reason})", file=sys.stderr)
         return 1
+    _register(args.catalog, args.out)
     return 0
 
 
@@ -318,9 +338,10 @@ def run_matching_pursuit(args: argparse.Namespace) -> int:
     _write_json(args.out / "matchings.json", _matching_rows(loop.matchings))
     summary = {
         "command": "matching-pursuit",
-        "gpl_dir": str(args.gpl_dir),
-        "dictionary": str(args.dictionary),
+        "gpl_dir": str(args.gpl_dir.resolve()),
+        "dictionary": str(args.dictionary.resolve()),
         "n_windows": len(windows),
+        "window_ids": [window.window_id for window in windows],
         "window_offset": args.window_offset,
         "n_atoms": len(dictionary),
         "n_matchings": len(loop.matchings),
@@ -339,6 +360,7 @@ def run_matching_pursuit(args: argparse.Namespace) -> int:
             }
         )
     )
+    _register(args.catalog, args.out)
     return 0
 
 
@@ -360,6 +382,10 @@ def _add_input_args(parser: argparse.ArgumentParser) -> None:
         "--n-windows", type=int, default=None, help="Number of windows to use (default: all)"
     )
     parser.add_argument("--window-offset", type=int, default=0, help="First window to use")
+    parser.add_argument(
+        "--catalog", type=Path, default=None,
+        help="Also register the output folder in this catalog SQLite file",
+    )
 
 
 def _add_mp_args(parser: argparse.ArgumentParser) -> None:

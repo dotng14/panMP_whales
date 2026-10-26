@@ -76,6 +76,9 @@ analysis/
 └── test/               # unit/ and integration/ tests; see test/README.md
 ```
 
+The catalog of runs and CSVs lives beside this tree, in
+[`../database/`](../database/README.md).
+
 | Directory                            | Language | Role                                                                                     |
 | ------------------------------------ | -------- | ---------------------------------------------------------------------------------------- |
 | [`GPL_Python/`](GPL_Python/)         | Python   | Reference detector (STFT, whitening, detect, exports); CLI + tests                       |
@@ -105,8 +108,11 @@ When detector math or exports change for correctness, land and validate them in 
 
 ## Baseline pipelines
 
-Three commands, each reading files directly (no catalog database). Tests and
-the coverage gate: [`test/README.md`](test/README.md).
+Three commands, each reading files directly. The two dict_learning commands
+can also register their output in the SQLite catalog with `--catalog DB` (see
+[`../database/README.md`](../database/README.md)), which the web viewer lists
+next to the song-structure CSVs. Tests and the coverage gate:
+[`test/README.md`](test/README.md).
 
 ### Randomized dictionary build
 

@@ -4,7 +4,7 @@ import json
 import uuid
 from pathlib import Path
 
-from fastapi import APIRouter, HTTPException, UploadFile, WebSocket, WebSocketDisconnect
+from fastapi import APIRouter, HTTPException, Query, UploadFile, WebSocket, WebSocketDisconnect
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
 
@@ -134,14 +134,22 @@ async def get_job_audio(job_id: str) -> FileResponse:
 
 
 @router.get("/api/jobs/{job_id}/song-structure")
-async def get_song_structure(job_id: str) -> dict:
-    """Motif / song / theme / phrase units for the job's WAV stem, if a CSV exists."""
-    from app.services.song_structure import load_song_structure  # noqa: PLC0415
+async def get_song_structure(job_id: str, csvId: int | None = Query(None)) -> dict:
+    """Motif / song / theme / phrase units: from catalog CSV ``csvId``, else the CSV named after the WAV."""
+    from app.services import catalog_service  # noqa: PLC0415
+    from app.services.song_structure import load_song_structure, load_song_structure_csv  # noqa: PLC0415
 
     job = _require_job(job_id)
     stem = Path(job.filename).stem
     try:
-        payload = load_song_structure(stem)
+        if csvId is None:
+            payload = load_song_structure(stem)
+        else:
+            row = catalog_service.get_csv(csvId)
+            path = Path(row["csv_path"])
+            if not path.is_file():
+                raise HTTPException(status_code=404, detail=f"CSV file missing: {path}")
+            payload = load_song_structure_csv(path, row["wav_stem"])
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     if payload is None:

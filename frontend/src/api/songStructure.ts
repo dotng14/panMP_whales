@@ -22,9 +22,11 @@ export interface SongStructure {
   songs: SongStructureSong[];
 }
 
-/** Motif / song / theme / phrase lanes for one job; null when no CSV exists. */
-export async function fetchSongStructure(jobId: string): Promise<SongStructure | null> {
-  const res = await fetch(`${API_BASE}/api/jobs/${jobId}/song-structure`);
+/** Motif / song / theme / phrase lanes for one job; null when no CSV exists.
+ *  `csvId` picks a catalog CSV; without it the CSV named after the WAV is used. */
+export async function fetchSongStructure(jobId: string, csvId?: number): Promise<SongStructure | null> {
+  const query = csvId === undefined ? '' : `?csvId=${csvId}`;
+  const res = await fetch(`${API_BASE}/api/jobs/${jobId}/song-structure${query}`);
   if (res.status === 404) return null;
   if (!res.ok) throw new Error(`Song structure fetch failed: ${res.status}`);
   return res.json() as Promise<SongStructure>;
