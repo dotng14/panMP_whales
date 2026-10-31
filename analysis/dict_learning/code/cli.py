@@ -421,7 +421,7 @@ def build_parser() -> argparse.ArgumentParser:
     build.add_argument("--m-per-outer", type=int, default=rd.DEFAULT_OUTER_M)
     build.add_argument("--min-coverage", type=float, default=rd.DEFAULT_OUTER_MIN_COVERAGE)
     build.add_argument("--max-outer", type=int, default=rd.DEFAULT_OUTER_MAX_OUTER)
-    build.add_argument("--refine-iters", type=int, default=rd.DEFAULT_REFINE_ITERS)
+    build.add_argument("--refine-iters", type=int, default=rd.DEFAULT_OUTER_REFINE_ITERS)
     build.add_argument("--n-components", type=int, default=rd.defaults.N_COMPONENTS)
     build.add_argument("--n-min", type=int, default=rd.DEFAULT_OUTER_N_MIN)
     build.add_argument("--epsilon", type=float, default=rd.DEFAULT_CREATE_EPSILON)

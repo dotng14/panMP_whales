@@ -50,11 +50,17 @@ needed). `summary.json` records absolute `gpl_dir` / `dictionary` paths and the
 ### `randomized-build`
 
 ```bash
+# Recipe defaults are enough; override only what you need.
 python -m analysis.dict_learning randomized-build \
-  --gpl-dir GPL_OUT --out DICT_DIR \
-  --m-per-outer 5 --n-min 10 --min-coverage 0.5 --max-outer 100 \
-  --refine-iters 3 --post-refine-max-relative-distance 0.9 --seed 0 --verbose
+  --gpl-dir GPL_OUT --out DICT_DIR --seed 0 --verbose
+# e.g. override coverage / outer cap:
+#   ... --min-coverage 0.5 --max-outer 20 --epsilon 0.5
 ```
+
+Defaults: `eps-step-fraction=0.01`, `epsilon=0.9`, `m-per-outer=5`,
+`max-outer=10`, `min-coverage=0.2`, template widths `10`–`20`,
+`n-components=1`, `n-min=10`, `post-refine-max-relative-distance=0.9`,
+`refine-iters=1`, `n-windows=all`.
 
 Writes, in the layout the `reports/randomized_*` folders and
 `notebooks/randomized_leidata_wav3_014845_results.ipynb` read:
@@ -120,8 +126,8 @@ from analysis.dict_learning import learn_randomized_outer
 
 result = learn_randomized_outer(
     windows, detections,
-    m_per_outer=5, n_min=10, post_refine_max_relative_distance=0.9,
-    min_coverage=0.5, max_outer=100, refine_iters=3, n_components=1,
+    # defaults: m_per_outer=5, n_min=10, post_refine=0.9, min_coverage=0.2,
+    # max_outer=10, refine_iters=1, epsilon=0.9, eps_step_fraction=0.01, …
     rng=0, mp_mode="per_window", n_workers=8,
     progress_callback=lambda log: print(log.outer, log.n_atoms, log.time_coverage_fraction),
 )

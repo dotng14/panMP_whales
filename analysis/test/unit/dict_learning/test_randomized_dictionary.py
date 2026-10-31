@@ -367,10 +367,34 @@ def test_learn_randomized_outer_defaults():
     assert sig.parameters["m_per_outer"].default == 5
     assert sig.parameters["n_min"].default == 10
     assert sig.parameters["post_refine_max_relative_distance"].default == 0.9
-    assert sig.parameters["min_coverage"].default == 0.5
-    assert sig.parameters["epsilon"].default == 0.1
+    assert sig.parameters["min_coverage"].default == 0.2
+    assert sig.parameters["max_outer"].default == 10
+    assert sig.parameters["refine_iters"].default == 1
+    assert sig.parameters["epsilon"].default == 0.9
+    assert sig.parameters["eps_step_fraction"].default == 0.01
+    assert sig.parameters["n_components"].default == 1
     assert sig.parameters["min_template_width"].default == 10
     assert sig.parameters["max_template_width"].default == 20
+
+
+def test_randomized_builder_cli_defaults():
+    from analysis.dict_learning.code.cli import build_parser
+
+    args = build_parser().parse_args(
+        ["randomized-build", "--gpl-dir", "gpl", "--out", "out"]
+    )
+    assert args.eps_step_fraction == 0.01
+    assert args.epsilon == 0.9
+    assert args.m_per_outer == 5
+    assert args.max_outer == 10
+    assert args.max_template_width == 20
+    assert args.min_coverage == 0.2
+    assert args.min_template_width == 10
+    assert args.n_components == 1
+    assert args.n_min == 10
+    assert args.post_refine_max_relative_distance == 0.9
+    assert args.refine_iters == 1
+    assert args.n_windows is None
 
 
 if __name__ == "__main__":
@@ -385,4 +409,5 @@ if __name__ == "__main__":
     test_default_refine_iters_is_three()
     test_learn_randomized_outer_coverage_stop()
     test_learn_randomized_outer_defaults()
+    test_randomized_builder_cli_defaults()
     print("ok")

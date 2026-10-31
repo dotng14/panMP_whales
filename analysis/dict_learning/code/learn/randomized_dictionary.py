@@ -19,13 +19,16 @@ Typical use::
     d0 = create_dictionary(stack, detections, m=10)
     result = refine_dictionary(stack, d0, n_components=1)  # default: 3 iters
 
-    # Coverage-gated residual outer loop:
+    # Coverage-gated residual outer loop (CLI defaults):
     outer = learn_randomized_outer(
         windows, detections,
         m_per_outer=5,
         n_min=10,
         post_refine_max_relative_distance=0.9,
-        min_coverage=0.5,
+        min_coverage=0.2,
+        max_outer=10,
+        refine_iters=1,
+        epsilon=0.9,
     )
 """
 
@@ -56,9 +59,10 @@ DEFAULT_REFINE_ITERS = 3
 DEFAULT_OUTER_M = 5
 DEFAULT_OUTER_N_MIN = 10
 DEFAULT_OUTER_POST_REFINE_TAU = 0.9
-DEFAULT_OUTER_MIN_COVERAGE = 0.5
-DEFAULT_OUTER_MAX_OUTER = 100
-DEFAULT_CREATE_EPSILON = 0.1
+DEFAULT_OUTER_MIN_COVERAGE = 0.2
+DEFAULT_OUTER_MAX_OUTER = 10
+DEFAULT_OUTER_REFINE_ITERS = 1
+DEFAULT_CREATE_EPSILON = 0.9
 DEFAULT_MIN_TEMPLATE_WIDTH: int | None = 10
 DEFAULT_MAX_TEMPLATE_WIDTH: int | None = 20
 
@@ -690,7 +694,7 @@ def learn_randomized_outer(
     m_per_outer: int = DEFAULT_OUTER_M,
     min_coverage: float = DEFAULT_OUTER_MIN_COVERAGE,
     max_outer: int = DEFAULT_OUTER_MAX_OUTER,
-    refine_iters: int = DEFAULT_REFINE_ITERS,
+    refine_iters: int = DEFAULT_OUTER_REFINE_ITERS,
     n_components: int = defaults.N_COMPONENTS,
     n_min: int = DEFAULT_OUTER_N_MIN,
     epsilon: float = DEFAULT_CREATE_EPSILON,
@@ -724,14 +728,18 @@ def learn_randomized_outer(
     ``mp_mode`` and ``n_workers`` are passed to every refine MP (``None``
     falls back to ``DICT_LEARNING_MP_MODE`` / ``DICT_LEARNING_MP_WORKERS``).
 
-    Default recipe (loose distance, stricter repeats, small random batches)::
+    Default recipe (CLI ``randomized-build``)::
 
         learn_randomized_outer(
             windows, detections,
             m_per_outer=5,
             n_min=10,
             post_refine_max_relative_distance=0.9,
-            min_coverage=0.5,
+            min_coverage=0.2,
+            max_outer=10,
+            refine_iters=1,
+            epsilon=0.9,
+            eps_step_fraction=0.01,
         )
     """
     if m_per_outer < 1:
