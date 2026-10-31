@@ -129,7 +129,9 @@ def _run_with_stats(enabled: bool, out_dir: Path, fn):
     return result
 
 
-def _register(catalog_db: Path | None, out_dir: Path) -> None:
+def _register(
+    catalog_db: Path | None, out_dir: Path, *, label: str | None = None
+) -> None:
     """Add the output folder to the catalog when ``--catalog`` was given."""
     if catalog_db is None:
         return
@@ -140,7 +142,7 @@ def _register(catalog_db: Path | None, out_dir: Path) -> None:
     with closing(catalog.connect(catalog_db)) as conn:
         try:
             with conn:
-                result = catalog.register_run_dir(conn, out_dir)
+                result = catalog.register_run_dir(conn, out_dir, label=label)
         except catalog.CatalogError as exc:
             raise CliError(f"could not register {out_dir} in {catalog_db}: {exc}") from exc
     print(json.dumps({"catalog": str(catalog_db), **result}))
@@ -225,6 +227,7 @@ def run_randomized_build(args: argparse.Namespace) -> int:
     )
     summary = {
         "command": "randomized-build",
+        "method": "randomized-build",
         "gpl_dir": str(args.gpl_dir.resolve()),
         "wav": str(args.gpl_dir.resolve()),
         "n_windows": len(windows),
@@ -270,7 +273,7 @@ def run_randomized_build(args: argparse.Namespace) -> int:
     if result.n_atoms == 0:
         print(f"no atoms survived (stop reason: {result.stop_reason})", file=sys.stderr)
         return 1
-    _register(args.catalog, args.out)
+    _register(args.catalog, args.out, label=args.label)
     return 0
 
 
@@ -360,11 +363,12 @@ def run_matching_pursuit(args: argparse.Namespace) -> int:
             }
         )
     )
-    _register(args.catalog, args.out)
+    _register(args.catalog, args.out, label=args.label)
     return 0
 
 
 # ── parser ───────────────────────────────────────────────────────────────────
+
 
 
 def _optional_int(text: str) -> int | None:
@@ -385,6 +389,11 @@ def _add_input_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument(
         "--catalog", type=Path, default=None,
         help="Also register the output folder in this catalog SQLite file",
+    )
+    parser.add_argument(
+        "--label",
+        default=None,
+        help="User label stored on the catalog dictionary (shown in the picker)",
     )
 
 

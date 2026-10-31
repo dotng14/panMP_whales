@@ -23,6 +23,8 @@ def test_writes_dictionary_in_report_layout(gpl_dir, tmp_path, capsys):
                  "--verbose", "--loop-stats")
     assert code == 0
     summary = read_json(out / "summary.json")
+    assert summary["command"] == "randomized-build"
+    assert summary["method"] == "randomized-build"
     assert summary["stop_reason"] == "max_outer"
     assert summary["n_outer_completed"] == 2
     assert summary["n_windows"] == 3

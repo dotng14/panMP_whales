@@ -368,31 +368,69 @@ DEFAULT_GPL_DIR = (
 )
 
 
-def _write_result(result: MotifLearnResult, out_dir: Path) -> None:
+def _write_result(
+    result: MotifLearnResult,
+    out_dir: Path,
+    *,
+    gpl_dir: Path | None = None,
+) -> None:
+    """Write detection map, atoms, matchings, and a catalog-shaped summary.
+
+    Atoms live under ``atoms/`` with a ``summary.json`` ``atoms`` list so
+    ``database.catalog.register_run_dir`` can ingest the folder. ``command`` is
+    temporarily ``randomized-build`` for registrar compatibility; the real
+    builder id is ``method: learn_from_motifs``.
+    """
     out_dir.mkdir(parents=True, exist_ok=True)
     np.save(out_dir / "detection_map.npy", result.detection_map)
     np.save(out_dir / "residual.npy", result.residual)
+    atoms_dir = out_dir / "atoms"
+    atoms_dir.mkdir(exist_ok=True)
+    counts: dict[int, int] = {}
+    for matching in result.matchings:
+        counts[int(matching.template_id)] = counts.get(int(matching.template_id), 0) + 1
+    atoms: list[dict] = []
     for template in result.dictionary:
-        np.save(out_dir / f"template_{template.template_id:03d}.npy", template.data)
+        rel = f"atoms/template_{template.template_id:03d}.npy"
+        np.save(out_dir / rel, template.data)
+        atoms.append(
+            {
+                "template_id": int(template.template_id),
+                "width": int(template.width),
+                "n_freq": int(template.n_freq),
+                "n_components": int(template.n_components),
+                "n_patches": counts.get(int(template.template_id), 0),
+                "source_segment_id": template.source_segment_id,
+                "path": rel,
+            }
+        )
     matchings = [
         {
             "template_id": matching.template_id,
             "window_id": matching.window_id,
             "t_start": matching.t_start,
             "amplitude": matching.amplitude,
+            "energy": matching.energy,
         }
         for matching in result.matchings
     ]
     (out_dir / "matchings.json").write_text(json.dumps(matchings, indent=2))
     summary = {
+        # Temporary: register_run_dir only accepts randomized-build / matching-pursuit.
+        "command": "randomized-build",
+        "method": "learn_from_motifs",
+        "gpl_dir": str(gpl_dir.resolve()) if gpl_dir is not None else None,
         "stop_reason": result.stop_reason,
         "coverage": result.coverage,
+        "time_coverage_fraction": result.coverage,
         "max_relative_distance": result.max_relative_distance,
         "sec_per_bin": result.sec_per_bin,
         "start_freq": result.start_freq,
         "end_freq": result.end_freq,
         "n_atoms": len(result.dictionary),
         "n_matchings": len(result.matchings),
+        "window_ids": [WINDOW_ID],
+        "atoms": atoms,
         "rounds": [
             {
                 "length_s": round_.length_s,
@@ -441,7 +479,35 @@ def _build_arg_parser() -> argparse.ArgumentParser:
     parser.add_argument("--nthreads", type=int, default=8, help="Matrix-profile threads")
     parser.add_argument("--max-rounds", type=int, default=100)
     parser.add_argument("--no-progress", action="store_true")
+    parser.add_argument(
+        "--catalog",
+        type=Path,
+        default=None,
+        help="Also register the output folder in this catalog SQLite file",
+    )
+    parser.add_argument(
+        "--label",
+        default="learn_from_motifs",
+        help="User label stored on the catalog dictionary (shown in the picker)",
+    )
     return parser
+
+
+def _register(catalog_db: Path | None, out_dir: Path, *, label: str | None) -> None:
+    if catalog_db is None:
+        return
+    from contextlib import closing
+
+    from database import catalog
+
+    with closing(catalog.connect(catalog_db)) as conn:
+        try:
+            with conn:
+                result = catalog.register_run_dir(conn, out_dir, label=label)
+        except catalog.CatalogError as exc:
+            print(f"error: could not register {out_dir} in {catalog_db}: {exc}", file=sys.stderr)
+            raise SystemExit(2) from exc
+    print(json.dumps({"catalog": str(catalog_db), **result}))
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -465,7 +531,7 @@ def main(argv: list[str] | None = None) -> int:
     )
     result.start_freq = spectrogram.start_freq
     result.end_freq = spectrogram.end_freq
-    _write_result(result, args.out)
+    _write_result(result, args.out, gpl_dir=args.gpl_dir)
     print(
         json.dumps(
             {
@@ -478,6 +544,12 @@ def main(argv: list[str] | None = None) -> int:
             indent=2,
         )
     )
+    if len(result.dictionary) == 0:
+        return 0
+    try:
+        _register(args.catalog, args.out, label=args.label)
+    except SystemExit as exc:
+        return int(exc.code or 2)
     return 0
 
 @dataclass(frozen=True)

@@ -33,6 +33,18 @@ def copy_run(src: Path, dst: Path) -> Path:
     return dst
 
 
+def test_cli_label_sets_dictionary_display_name(catalog_runs, tmp_path):
+    """``--label`` on randomized-build becomes dictionaries.label (picker displayName)."""
+    r = catalog_runs
+    db = tmp_path / "labeled.sqlite"
+    out = tmp_path / "labeled_build"
+    assert build(r.gpl, out, "--catalog", str(db), "--label", "randomized-build") == 0
+    dictionaries = query(db, catalog.list_dictionaries)
+    assert len(dictionaries) == 1
+    assert dictionaries[0]["label"] == "randomized-build"
+    assert read_json(out / "summary.json")["method"] == "randomized-build"
+
+
 def test_cli_registers_build_and_mp(catalog_runs):
     r = catalog_runs
     found = query(r.db, catalog.list_analyses_for_stem, CATALOG_STEM)

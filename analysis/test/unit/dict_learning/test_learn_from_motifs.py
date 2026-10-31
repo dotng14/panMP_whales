@@ -130,6 +130,63 @@ def test_cli_writes_detection_map_and_dictionary(tmp_path):
     assert (out / "detection_map.npy").is_file()
     assert (out / "summary.json").is_file()
     assert (out / "matchings.json").is_file()
+    summary = json.loads((out / "summary.json").read_text())
+    assert summary["method"] == "learn_from_motifs"
+    assert summary["command"] == "randomized-build"
+    assert summary["atoms"] == []
+    assert (out / "atoms").is_dir()
     labels = np.load(out / "detection_map.npy")
     assert labels.shape == (40,)
     assert np.all(labels == -1)
+
+
+def test_cli_registers_with_method_label(tmp_path):
+    """Repeated motifs produce atoms/ and register with label learn_from_motifs."""
+    from contextlib import closing
+
+    from database import catalog
+
+    npy_dir = tmp_path / "spectrogram_npy"
+    npy_dir.mkdir()
+    profile = np.zeros((N_BANDS, 80), dtype=np.float32)
+    motif = (np.arange(N_BANDS, dtype=np.float32)[:, None] + np.linspace(1.0, 2.0, 5)).astype(
+        np.float32
+    )
+    for start in (0, 20, 40, 60):
+        profile[:, start : start + 5] = motif
+    _write_window(npy_dir, "spwhiten_motif.npy", profile, start_sample=1)
+    # Minimal CSV so register_run_dir's GPL index can succeed if it looks for detections.
+    (tmp_path / "CSV_motif.csv").write_text(
+        "detection,start_sample,end_sample,peak_sample\n1,1,80,40\n"
+    )
+    out = tmp_path / "out"
+    db = tmp_path / "catalog.sqlite"
+    code = main(
+        [
+            "--gpl-dir",
+            str(tmp_path),
+            "--out",
+            str(out),
+            "--lengths",
+            "5,10",
+            "--min-coverage",
+            "0.05",
+            "--nthreads",
+            "1",
+            "--no-progress",
+            "--catalog",
+            str(db),
+            "--label",
+            "learn_from_motifs",
+        ]
+    )
+    assert code == 0
+    summary = json.loads((out / "summary.json").read_text())
+    assert summary["method"] == "learn_from_motifs"
+    assert summary["n_atoms"] == len(summary["atoms"]) > 0
+    for atom in summary["atoms"]:
+        assert (out / atom["path"]).is_file()
+    with closing(catalog.connect(db, read_only=True)) as conn:
+        dictionaries = catalog.list_dictionaries(conn)
+    assert len(dictionaries) == 1
+    assert dictionaries[0]["label"] == "learn_from_motifs"
