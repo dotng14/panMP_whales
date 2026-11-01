@@ -29,6 +29,8 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
+import numpy as np
+
 SCHEMA_PATH = Path(__file__).with_name("schema.sql")
 
 DICT_SOURCES = ("seed", "refinement", "matching", "edit")
@@ -340,6 +342,48 @@ def list_windows_for_segmentation(
     return _all(
         conn,
         "SELECT * FROM windows WHERE segmentation_id = ? ORDER BY start_sample ASC, window_id ASC",
+        (segmentation_id,),
+    )
+
+
+def get_segmentation(conn: sqlite3.Connection, segmentation_id: int) -> dict[str, Any] | None:
+    """One GPL segmentation row, or None."""
+    return _one(conn, "SELECT * FROM gpl_segmentations WHERE segmentation_id = ?", (segmentation_id,))
+
+
+def find_wav_file(conn: sqlite3.Connection, ref: str | Path) -> dict[str, Any] | None:
+    """A WAV row by absolute path, else by stem (``ref`` may be a path or a bare stem)."""
+    text = str(ref)
+    row = _one(conn, "SELECT * FROM wav_files WHERE abs_path = ?", (text,))
+    if row is not None:
+        return row
+    try:
+        resolved = str(Path(text).resolve())
+    except OSError:
+        resolved = text
+    if resolved != text:
+        row = _one(conn, "SELECT * FROM wav_files WHERE abs_path = ?", (resolved,))
+        if row is not None:
+            return row
+    stem = Path(text).stem
+    return _one(conn, "SELECT * FROM wav_files WHERE stem = ? ORDER BY wav_id ASC LIMIT 1", (stem,))
+
+
+def load_template_array(npy_path: Path | str) -> np.ndarray:
+    """Load a template / window ``.npy`` array."""
+    return np.load(str(npy_path))
+
+
+def get_dictionary_for_segmentation(
+    conn: sqlite3.Connection, segmentation_id: int
+) -> dict[str, Any] | None:
+    """The newest dictionary registered against a segmentation, or None."""
+    return _one(
+        conn,
+        f"""
+        SELECT d.*, {_DICTIONARY_COUNTS} FROM dictionaries d
+        WHERE d.segmentation_id = ? ORDER BY d.dictionary_id DESC LIMIT 1
+        """,
         (segmentation_id,),
     )
 
@@ -1114,3 +1158,86 @@ def list_analyses_for_stem(conn: sqlite3.Connection, stem: str) -> dict[str, lis
         "dictionaries": list_dictionaries_for_stem(conn, stem),
         "csvs": list_annotation_csvs_for_stem(conn, stem),
     }
+
+# ── Action history ───────────────────────────────────────────────────────────
+
+
+def record_action_start(
+    conn: sqlite3.Connection,
+    *,
+    segmentation_id: int | None,
+    stem: str,
+    action: str,
+    params: dict[str, Any] | None = None,
+    input_dictionary_id: int | None = None,
+) -> int:
+    """Record that a user-initiated action has started. The caller commits."""
+    cur = conn.execute(
+        """
+        INSERT INTO action_history (
+            segmentation_id, stem, action, params_json, input_dictionary_id,
+            status, created_at
+        ) VALUES (?, ?, ?, ?, ?, 'running', ?)
+        """,
+        (
+            segmentation_id,
+            stem,
+            action,
+            json.dumps(params or {}, sort_keys=True) if params is not None else None,
+            input_dictionary_id,
+            _now(),
+        ),
+    )
+    return int(cur.lastrowid)
+
+
+def record_action_finish(
+    conn: sqlite3.Connection,
+    action_id: int,
+    *,
+    status: str,
+    output_dictionary_id: int | None = None,
+    summary: str | None = None,
+    duration_sec: float | None = None,
+) -> None:
+    """Update an action_history entry with its final status and summary. The caller commits."""
+    conn.execute(
+        """
+        UPDATE action_history SET
+            status = ?,
+            output_dictionary_id = ?,
+            summary = ?,
+            finished_at = ?,
+            duration_sec = ?
+        WHERE action_id = ?
+        """,
+        (status, output_dictionary_id, summary, _now(), duration_sec, action_id),
+    )
+
+
+def list_action_history(
+    conn: sqlite3.Connection,
+    *,
+    segmentation_id: int | None = None,
+    stem: str | None = None,
+    limit: int = 100,
+) -> list[dict[str, Any]]:
+    """Historical actions, oldest first. Empty when the table does not exist yet."""
+    clauses: list[str] = []
+    args: list[Any] = []
+    if segmentation_id is not None:
+        clauses.append("segmentation_id = ?")
+        args.append(segmentation_id)
+    elif stem is not None:
+        clauses.append("stem = ?")
+        args.append(stem)
+    where = f"WHERE {' AND '.join(clauses)}" if clauses else ""
+    args.append(int(limit))
+    try:
+        rows = conn.execute(
+            f"SELECT * FROM action_history {where} ORDER BY action_id ASC LIMIT ?",
+            args,
+        ).fetchall()
+        return [dict(r) for r in rows]
+    except sqlite3.OperationalError:
+        return []

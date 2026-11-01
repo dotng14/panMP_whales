@@ -1,5 +1,16 @@
 import type { AnalysisChoice } from '../../api/catalog';
 
+/** One matched repeat chunk drawn as a colored box over the main spectrogram. */
+export interface RepeatOverlay {
+  startCol: number;
+  endCol: number;
+  /** 0-based color index. */
+  templateIndex: number;
+  templateNumber: number;
+  /** Stable React key. */
+  chunkId: string;
+}
+
 export interface SpectrogramViewerProps {
   /** Row-major magnitude; uint8 (v2 panel) or float32 (legacy). */
   magnitude: Float32Array | Uint8Array;
@@ -27,4 +38,6 @@ export interface SpectrogramViewerProps {
   /** Overlays picked in the catalog: a dictionary's atom lane and/or a CSV's
    *  song structure (neither: none). Omitted: the CSV named after the WAV, if any. */
   analysis?: AnalysisChoice;
+  /** Repeat matches for the chosen dictionary; when set, chunks are boxed over the spectrogram. */
+  repeats?: import('../../api/repeats').RepeatMatches | null;
 }

@@ -3,7 +3,9 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import re
 import uuid
+from contextlib import closing
 from pathlib import Path
 
 from fastapi import APIRouter, HTTPException, Query, UploadFile, WebSocket, WebSocketDisconnect
@@ -11,6 +13,13 @@ from fastapi.responses import FileResponse
 from pydantic import BaseModel
 
 from app.config import MAX_UPLOAD_MB, TMP_DIR
+from app.services.command_service import (
+    CommandContext,
+    action_catalog,
+    get_run,
+    start_run,
+    terminate_run,
+)
 from app.services.gpl_cache import cache_dir_for, is_gpl_cached, register_gpl_in_catalog
 from app.services.job_store import (
     JobState,
@@ -167,6 +176,176 @@ def get_song_structure(job_id: str, csvId: int | None = Query(None)) -> dict:
     if payload is None:
         raise HTTPException(status_code=404, detail="No song-structure CSV for this WAV")
     return payload
+
+
+class RepeatReviewRequest(BaseModel):
+    chunkId: str
+    targetTemplateId: int
+
+
+class TemplateLabelRequest(BaseModel):
+    label: str | None = None
+
+
+_CHUNK_ID_RE = re.compile(r"^template-(\d+):")
+
+
+def _review_dir(job: JobState, dictionary_id: int) -> Path:
+    """Where this job keeps relabel reviews for one dictionary (chunk ids are per-dictionary)."""
+    return job.job_dir / "output" / "repeat_reviews" / f"dictionary_{dictionary_id}"
+
+
+@router.get("/api/jobs/{job_id}/repeats")
+def get_repeats(job_id: str, dictionaryId: int = Query(...)) -> dict:
+    """RepeatMatches for a catalog dictionary, with this job's staged relabels stamped on."""
+    from app.services import catalog_service, repeat_reviews  # noqa: PLC0415
+
+    job = _require_job(job_id)
+    raw = catalog_service.build_repeats(dictionaryId)
+    reviews = repeat_reviews.load_reviews(_review_dir(job, dictionaryId))
+    return repeat_reviews.stamp_reviews_onto_templates(raw.get("templates", []), reviews)
+
+
+@router.put("/api/jobs/{job_id}/repeat-reviews")
+def put_repeat_review(
+    job_id: str, body: RepeatReviewRequest, dictionaryId: int = Query(...)
+) -> dict:
+    """Stage a chunk's reassignment to another template number (no rebuild)."""
+    from app.services import catalog_service, repeat_reviews  # noqa: PLC0415
+
+    job = _require_job(job_id)
+    if body.targetTemplateId < 0:
+        raise HTTPException(status_code=400, detail="targetTemplateId must be non-negative")
+    match = _CHUNK_ID_RE.match(body.chunkId)
+    if match is None:
+        raise HTTPException(status_code=400, detail=f"Malformed chunkId: {body.chunkId}")
+    original = int(match.group(1)) + catalog_service.template_number_offset(dictionaryId)
+    review_dir = _review_dir(job, dictionaryId)
+    review_dir.mkdir(parents=True, exist_ok=True)
+    repeat_reviews.save_review(review_dir, body.chunkId, body.targetTemplateId, original)
+    return {"chunkId": body.chunkId, "targetTemplateId": body.targetTemplateId}
+
+
+@router.patch("/api/jobs/{job_id}/templates/{template_number}")
+def patch_template_label(
+    job_id: str,
+    template_number: int,
+    body: TemplateLabelRequest,
+    dictionaryId: int = Query(...),
+) -> dict:
+    """Rename a template (catalog alias); ``template_number`` is the UI number."""
+    from app.services import catalog_service  # noqa: PLC0415
+    from database import catalog  # noqa: PLC0415
+
+    _require_job(job_id)
+    template_id = template_number - catalog_service.template_number_offset(dictionaryId)
+    result = catalog_service.set_dictionary_template_label(dictionaryId, template_id, body.label)
+    return {"label": result["label"], "named": catalog.is_named(result["label"])}
+
+
+@router.post("/api/jobs/{job_id}/review-submit")
+def post_review_submit(job_id: str) -> dict:
+    """Submit-rebuild of a reviewed dictionary is not ported yet."""
+    _require_job(job_id)
+    raise HTTPException(
+        status_code=501,
+        detail="Submit-rebuild is not implemented yet; relabels are saved but not applied.",
+    )
+
+
+class TerminalActionRequest(BaseModel):
+    action: str
+    params: dict = {}
+    # Template the reviewer is viewing (kept for parity with gplrev3's form).
+    currentTemplate: int | None = None
+    # Catalog dictionary the reviewer is looking at; resolves the GPL segmentation.
+    dictionaryId: int | None = None
+
+
+def _source_wav(job: JobState) -> Path:
+    link = job.job_dir / "input.wav"
+    try:
+        return link.resolve()
+    except OSError:
+        return link
+
+
+def _terminal_context(job: JobState, body: TerminalActionRequest) -> CommandContext:
+    """Resolve the job's stem / GPL segmentation (from the dictionary, else the WAV) for an action."""
+    from app.config import CATALOG_DB  # noqa: PLC0415
+    from database import catalog  # noqa: PLC0415
+
+    source_wav = _source_wav(job)
+    stem = Path(job.filename).stem
+    segmentation_id: int | None = None
+    try:
+        conn = catalog.connect(CATALOG_DB, read_only=True)
+    except FileNotFoundError:
+        conn = None
+    if conn is not None:
+        with closing(conn):
+            if body.dictionaryId is not None:
+                dictionary = catalog.get_dictionary(conn, body.dictionaryId)
+                if dictionary is None:
+                    raise HTTPException(status_code=404, detail=f"Dictionary {body.dictionaryId} not found")
+                if dictionary.get("segmentation_id") is not None:
+                    segmentation_id = int(dictionary["segmentation_id"])
+                if dictionary.get("wav_stem"):
+                    stem = str(dictionary["wav_stem"])
+            if segmentation_id is None:
+                wav = catalog.find_wav_file(conn, source_wav) or catalog.find_wav_file(conn, job.filename)
+                if wav is not None:
+                    stem = wav.get("stem") or stem
+                    segs = catalog.list_gpl_segmentations_for_wav(conn, int(wav["wav_id"]))
+                    # Prefer a segmentation whose windows are indexed (usable for a build).
+                    chosen = next((s for s in segs if s.get("n_windows")), segs[0] if segs else None)
+                    if chosen is not None:
+                        segmentation_id = int(chosen["segmentation_id"])
+    return CommandContext(
+        stem=stem,
+        segmentation_id=segmentation_id,
+        dictionary_id=body.dictionaryId,
+        current_template=body.currentTemplate,
+        source_wav=str(source_wav),
+    )
+
+
+@router.get("/api/jobs/{job_id}/terminal")
+async def get_terminal_info(job_id: str) -> dict:
+    """Action catalog (history + randomized_builder) for the repeat Actions form."""
+    _require_job(job_id)
+    return {"commands": action_catalog()}
+
+
+@router.post("/api/jobs/{job_id}/terminal")
+def post_terminal_command(job_id: str, body: TerminalActionRequest) -> dict:
+    # Start the action in a child process and return its id immediately: a build
+    # can run for minutes. The client polls the run endpoint below.
+    job = _require_job(job_id)
+    ctx = _terminal_context(job, body)
+    run_id = start_run(ctx, body.action, body.params)
+    return {"runId": run_id, "status": "running"}
+
+
+@router.get("/api/jobs/{job_id}/terminal/runs/{run_id}")
+def get_terminal_run(job_id: str, run_id: str) -> dict:
+    _require_job(job_id)
+    run = get_run(run_id)
+    if run is None:
+        raise HTTPException(status_code=404, detail="Command run not found or already collected")
+    return run
+
+
+@router.delete("/api/jobs/{job_id}/terminal/runs/{run_id}")
+def delete_terminal_run(job_id: str, run_id: str) -> dict:
+    _require_job(job_id)
+    return {"ok": True, "terminated": terminate_run(run_id)}
+
+
+@router.post("/api/jobs/{job_id}/terminal/runs/{run_id}/terminate")
+def post_terminate_terminal_run(job_id: str, run_id: str) -> dict:
+    _require_job(job_id)
+    return {"ok": True, "terminated": terminate_run(run_id)}
 
 
 @router.websocket("/api/jobs/{job_id}/events")

@@ -232,6 +232,50 @@ def get_csv(csv_id: int) -> dict[str, Any]:
         return _found(catalog.get_annotation_csv(conn, csv_id), "CSV")
 
 
+# ── repeats (review UI) ──────────────────────────────────────────────────────
+
+
+def _segmentation_id_for_dictionary(conn, dictionary: dict[str, Any]) -> int | None:
+    """The dictionary's segmentation, falling back to the one its MP windows belong to."""
+    if dictionary.get("segmentation_id") is not None:
+        return int(dictionary["segmentation_id"])
+    for window in catalog.list_dictionary_windows(conn, int(dictionary["dictionary_id"])):
+        if window.get("segmentation_id") is not None:
+            return int(window["segmentation_id"])
+    return None
+
+
+def template_number_offset(dictionary_id: int) -> int:
+    """UI template number minus catalog ``template_id`` (1 for 0-based seeds, else 0).
+
+    Mirrors the numbering in ``build_repeats_payload_from_catalog``.
+    """
+    members = list_dictionary_templates(dictionary_id)
+    ids = [int(m["template_id"]) for m in members]
+    return 1 if ids and min(ids) == 0 else 0
+
+
+def build_repeats(dictionary_id: int) -> dict[str, Any]:
+    """Raw (un-reviewed) RepeatMatches payload for one dictionary."""
+    from analysis.dict_learning.code.catalog.repeats_from_catalog import (  # noqa: PLC0415
+        build_repeats_payload_from_catalog,
+    )
+
+    with closing(_read_conn()) as conn:
+        dictionary = _found(catalog.get_dictionary(conn, dictionary_id), "Dictionary")
+        segmentation_id = _segmentation_id_for_dictionary(conn, dictionary)
+        if segmentation_id is None:
+            raise HTTPException(
+                status_code=404, detail=f"Dictionary {dictionary_id} has no GPL segmentation"
+            )
+        try:
+            return build_repeats_payload_from_catalog(
+                conn, segmentation_id=segmentation_id, dictionary_id=dictionary_id
+            )
+        except (KeyError, FileNotFoundError) as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from None
+
+
 # ── writes ───────────────────────────────────────────────────────────────────
 
 

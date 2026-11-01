@@ -1,5 +1,9 @@
 import { useEffect, useState } from 'react';
 import { SpectrogramViewer } from './components/SpectrogramViewer';
+import { RepeatSpectrogram } from './components/RepeatSpectrogram';
+import { useSpectrogramScale } from './components/SpectrogramViewer/useSpectrogramScale';
+import type { SpectrogramViewerProps } from './components/SpectrogramViewer/types';
+import { fetchRepeats, type RepeatMatches } from './api/repeats';
 import { WavFileUpload } from './components/WavFileUpload';
 import { WavLibraryPicker } from './components/WavLibraryPicker';
 import { AnalysisPicker } from './components/AnalysisPicker';
@@ -28,6 +32,97 @@ function isAnalysisChoice(value: unknown): value is AnalysisChoice {
   if (typeof value !== 'object' || value === null) return false;
   const v = value as Record<string, unknown>;
   return 'dictionary' in v && 'csv' in v && isOverlayRef(v.dictionary) && isOverlayRef(v.csv);
+}
+
+/**
+ * One spectrogram panel. With a job and a chosen dictionary, the repeat-review
+ * strip is shown under it; both share one zoom scale so a single set of controls drives them.
+ */
+function PanelSection({
+  panel,
+  analysis,
+  jobId,
+  showRepeats,
+  onDictionaryChanged,
+  onCatalogRefresh,
+}: {
+  panel: SpectrogramViewerProps;
+  analysis: AnalysisChoice | undefined;
+  jobId: string | null;
+  showRepeats: boolean;
+  /** An Actions run produced a dictionary: switch the analysis onto it. */
+  onDictionaryChanged?: (newDictionaryId: number) => void;
+  /** The catalog gained a dictionary: refresh pickers that list it. */
+  onCatalogRefresh?: () => void;
+}) {
+  const [actionNotice, setActionNotice] = useState<string | null>(null);
+  const scale = useSpectrogramScale({
+    audioDurationSec: panel.audioDurationSec,
+    freqLo: panel.freqLo,
+    freqHi: panel.freqHi,
+  });
+  const [matches, setMatches] = useState<RepeatMatches | null>(null);
+  const [repeatsError, setRepeatsError] = useState<string | null>(null);
+  const [highlightedRange, setHighlightedRange] = useState<{ startCol: number; endCol: number } | null>(null);
+  const dictionaryId = analysis?.dictionary?.id;
+  const effectiveJobId = panel.jobId ?? jobId;
+  const repeatsWanted = showRepeats && effectiveJobId != null && dictionaryId !== undefined;
+
+  useEffect(() => {
+    setMatches(null);
+    setRepeatsError(null);
+    setHighlightedRange(null);
+    if (!repeatsWanted || effectiveJobId == null || dictionaryId === undefined) return;
+    let cancelled = false;
+    fetchRepeats(effectiveJobId, dictionaryId)
+      .then(data => { if (!cancelled) setMatches(data); })
+      .catch(err => { if (!cancelled) setRepeatsError(err instanceof Error ? err.message : String(err)); });
+    return () => {
+      cancelled = true;
+    };
+  }, [repeatsWanted, effectiveJobId, dictionaryId]);
+
+  // Switching dictionaries refetches the repeats (the effect above), which
+  // remounts the review strip and its Actions form; keep a note of what happened.
+  const handleDictionaryChanged = (newDictionaryId: number) => {
+    setActionNotice(`Actions built dictionary ${newDictionaryId}; now showing its repeats.`);
+    onDictionaryChanged?.(newDictionaryId);
+  };
+
+  return (
+    <>
+      <SpectrogramViewer
+        {...panel}
+        analysis={analysis}
+        scale={scale}
+        highlightedRange={highlightedRange}
+        repeats={repeatsWanted ? matches : null}
+      />
+      {repeatsWanted && actionNotice && (
+        <p role="status" style={{ color: '#166534', fontSize: 12, marginTop: 8 }}>{actionNotice}</p>
+      )}
+      {repeatsWanted && repeatsError && (
+        <p role="alert" style={{ color: '#b91c1c', fontSize: 12, marginTop: 8 }}>
+          Repeated matches unavailable: {repeatsError}
+        </p>
+      )}
+      {repeatsWanted && matches && effectiveJobId != null && dictionaryId !== undefined && (
+        <div style={{ marginTop: 16 }}>
+          <RepeatSpectrogram
+            jobId={effectiveJobId}
+            dictionaryId={dictionaryId}
+            source={panel}
+            matches={matches}
+            scale={scale}
+            onShowOriginal={setHighlightedRange}
+            onMatchesChange={setMatches}
+            onDictionaryChanged={handleDictionaryChanged}
+            onCatalogRefresh={onCatalogRefresh}
+          />
+        </div>
+      )}
+    </>
+  );
 }
 
 export default function App() {
@@ -82,7 +177,7 @@ export default function App() {
   const [running, setRunning] = useState<{ fileName: string; overlay: string } | null>(
     restoredUi?.running ?? null,
   );
-  const { status, progress, panels, error, upload, processLibraryFile, reset } = useGplJob({
+  const { status, jobId, progress, panels, error, upload, processLibraryFile, reset } = useGplJob({
     onLibraryJobComplete: fileId =>
       setLibraryCacheRefresh({ fileId, nonce: Date.now() }),
     onSessionExpired: () => {
@@ -125,6 +220,19 @@ export default function App() {
     setRunning({ fileName: selectedFile.name, overlay: describeChoice(choice) });
     setPickerCollapsed(true);
     processLibraryFile(selectedFile.fileId);
+  };
+  // An Actions run built a new dictionary: make it the chosen overlay (keeping the
+  // CSV), which refetches the repeats, and refresh the picker's catalog list.
+  const handleDictionaryChanged = (newDictionaryId: number) => {
+    const next: AnalysisChoice = {
+      csv: analysis?.csv ?? null,
+      dictionary: { id: newDictionaryId, label: `dictionary ${newDictionaryId}` },
+    };
+    setAnalysis(next);
+    setRunning(prev => (prev ? { ...prev, overlay: describeChoice(next) } : prev));
+  };
+  const handleCatalogRefresh = () => {
+    if (selectedFile) setLibraryCacheRefresh({ fileId: selectedFile.fileId, nonce: Date.now() });
   };
   // Re-expand once the user resets, so they can pick another file.
   const handleReset = () => {
@@ -202,7 +310,14 @@ export default function App() {
       ) : (
         panels.map((panel, i) => (
           <section key={panel.title ?? i} className="mb-10">
-            <SpectrogramViewer {...panel} analysis={INPUT_MODE === 'upload' ? undefined : analysis} />
+            <PanelSection
+              panel={panel}
+              analysis={INPUT_MODE === 'upload' ? undefined : analysis}
+              jobId={jobId}
+              showRepeats={i === 0}
+              onDictionaryChanged={handleDictionaryChanged}
+              onCatalogRefresh={handleCatalogRefresh}
+            />
           </section>
         ))
       )}

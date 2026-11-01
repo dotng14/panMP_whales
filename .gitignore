@@ -3,6 +3,7 @@ __pycache__/
 *.pyc
 backend/tmp/
 analysis/HMM/work/
+analysis/dict_learning/runs/
 .coverage
 .coverage.*
 backend/data/catalog.sqlite*

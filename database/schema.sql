@@ -231,6 +231,23 @@ CREATE TABLE IF NOT EXISTS annotation_csvs (
     indexed_at  TEXT NOT NULL
 );
 
+-- 9. Action history ----------------------------------------------------------
+-- User-initiated dictionary actions run from the repeat-review form
+-- (randomized_builder) and their outcome.
+CREATE TABLE IF NOT EXISTS action_history (
+    action_id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    segmentation_id      INTEGER REFERENCES gpl_segmentations(segmentation_id) ON DELETE SET NULL,
+    stem                 TEXT NOT NULL,
+    action               TEXT NOT NULL,
+    params_json          TEXT,
+    input_dictionary_id  INTEGER REFERENCES dictionaries(dictionary_id) ON DELETE SET NULL,
+    output_dictionary_id INTEGER REFERENCES dictionaries(dictionary_id) ON DELETE SET NULL,
+    status               TEXT NOT NULL CHECK (status IN ('running', 'completed', 'terminated', 'failed', 'rejected')),
+    summary              TEXT,
+    created_at           TEXT NOT NULL,
+    finished_at          TEXT,
+    duration_sec         REAL
+);
 CREATE INDEX IF NOT EXISTS idx_windows_segmentation  ON windows(segmentation_id);
 CREATE INDEX IF NOT EXISTS idx_windows_wav           ON windows(wav_id, window_index);
 CREATE INDEX IF NOT EXISTS idx_templates_run         ON templates(run_id);
@@ -245,3 +262,5 @@ CREATE INDEX IF NOT EXISTS idx_matchings_dict        ON matchings(dictionary_id)
 CREATE INDEX IF NOT EXISTS idx_matchings_dict_tmpl   ON matchings(dictionary_id, template_pk);
 CREATE INDEX IF NOT EXISTS idx_matchings_window      ON matchings(window_id);
 CREATE INDEX IF NOT EXISTS idx_annotation_csvs_stem  ON annotation_csvs(wav_stem);
+CREATE INDEX IF NOT EXISTS idx_action_history_seg  ON action_history(segmentation_id, action_id);
+CREATE INDEX IF NOT EXISTS idx_action_history_dict ON action_history(input_dictionary_id, output_dictionary_id);

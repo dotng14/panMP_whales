@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, useCallback, useId, useMemo } from 'react';
 import { API_BASE } from '../../api/base';
-import type { SpectrogramViewerProps } from './types';
+import type { RepeatOverlay, SpectrogramViewerProps } from './types';
 import { announcePlayback, subscribeToPlayback } from '../../utils/audioCoordinator';
 import { fetchSongStructure, type SongStructure } from '../../api/songStructure';
 import { fetchDictionaryPlacements, type Placement } from '../../api/catalog';
@@ -41,7 +41,13 @@ export function SpectrogramViewer({
   freqHi,
   analysis,
   scale: sharedScale,
-}: SpectrogramViewerProps & { scale?: SpectrogramScale }) {
+  highlightedRange = null,
+  repeats = null,
+}: SpectrogramViewerProps & {
+  scale?: SpectrogramScale;
+  /** Column range to outline and scroll into view (e.g. the repeat chunk being reviewed). */
+  highlightedRange?: { startCol: number; endCol: number } | null;
+}) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const lineRef = useRef<HTMLDivElement>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
@@ -98,6 +104,27 @@ export function SpectrogramViewer({
       cancelled = true;
     };
   }, [jobId, overlayChosen, dictionaryId, csvId]);
+
+  // Flatten every template's chunks into one draw list colored by template; later
+  // templates are appended last so they paint on top where chunks overlap. Color
+  // follows the template's (stable) number so it matches across rebuilds/reorders.
+  const repeatOverlays = useMemo<RepeatOverlay[]>(() => {
+    if (!repeats) return [];
+    const overlays: RepeatOverlay[] = [];
+    repeats.templates.forEach(template => {
+      template.chunks.forEach(chunk => {
+        if (chunk.sourceEndCol <= chunk.sourceStartCol) return;
+        overlays.push({
+          templateIndex: Math.max(0, template.templateNumber - 1),
+          templateNumber: template.templateNumber,
+          chunkId: chunk.id,
+          startCol: chunk.sourceStartCol,
+          endCol: chunk.sourceEndCol,
+        });
+      });
+    });
+    return overlays;
+  }, [repeats]);
 
   const spectrogramH = SPEC_TARGET_H;
 
@@ -324,6 +351,17 @@ export function SpectrogramViewer({
     jumpToColRange(range);
   }, [songStructure, audioDurationSec, timeCols, jumpToColRange]);
 
+  // Scroll (without moving the playhead) to an externally highlighted range.
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!el || !highlightedRange || timeCols <= 0) return;
+    const centerCol = (highlightedRange.startCol + highlightedRange.endCol) / 2;
+    el.scrollTo({
+      left: (centerCol / timeCols) * displayWidth - el.clientWidth / 2,
+      behavior: 'smooth',
+    });
+  }, [highlightedRange, timeCols, displayWidth]);
+
   const onLaneSelect = useCallback((range: { startCol: number; endCol: number } | null) => {
     setLaneHighlight(range);
     setSongNavActive(false);
@@ -459,6 +497,8 @@ export function SpectrogramViewer({
                   freqBins={freqBins}
                   timeCols={timeCols}
                   structureLines={structureLines}
+                  highlightedRange={highlightedRange}
+                  repeatOverlays={repeatOverlays}
                   scrollRef={scrollRef}
                   brightness={brightness}
                   normMax={normMax}
