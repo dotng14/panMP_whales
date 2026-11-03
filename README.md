@@ -156,6 +156,10 @@ The suites, the coverage gate and the parameters the CLI tests use:
 ## Notes
 
 Deploying
+
+To deploy first commit the code to branch `main` in the github repository.
+
+Then use the command 
 ```bash
 sudo deploy-webserver --pmp
 ```
