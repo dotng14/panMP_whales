@@ -156,6 +156,23 @@ def test_gpl_windows_with_different_rows_exit_2(gpl_variant, tmp_path, capsys):
     assert "different frequency rows" in capsys.readouterr().err
 
 
+def test_progress_and_disallow_overlap(series_files, tmp_path):
+    out = tmp_path / "pan"
+    assert pan(out, "--series", str(series_files["1d"]), *LENGTHS,
+               "--progress", "--disallow-overlap") == 0
+    meta = read_json(out / "pan.json")
+    assert meta["disallow_overlap"] is True
+    spans = []
+    for pair in read_json(out / "pairs.json"):
+        width = pair["length"]
+        assert pair["start_b"] >= pair["start_a"] + width
+        spans.append((pair["start_a"], pair["start_a"] + width))
+        spans.append((pair["start_b"], pair["start_b"] + width))
+    spans.sort()
+    for (a0, a1), (b0, _b1) in zip(spans, spans[1:]):
+        assert a1 <= b0
+
+
 def test_python_dash_m_entry_point(series_files, tmp_path):
     out = tmp_path / "pan"
     proc = run_module("analysis.matrix_profile", "pan", "--series", str(series_files["1d"]),

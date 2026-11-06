@@ -60,6 +60,12 @@ def build_parser() -> argparse.ArgumentParser:
     pan.add_argument("--top-k", type=int, default=10)
     pan.add_argument("--engine", choices=ENGINES, default="fast")
     pan.add_argument("--threads", type=int, default=1)
+    pan.add_argument(
+        "--disallow-overlap",
+        action="store_true",
+        help="The two copies of a motif cannot overlap",
+    )
+    pan.add_argument("--progress", action="store_true", help="Progress bar over motif lengths")
     pan.add_argument("--plot", action="store_true", help="Also write pan.png")
     pan.add_argument("--out", type=Path, required=True)
     pan.set_defaults(func=run_pan)
@@ -108,8 +114,15 @@ def run_pan(args: argparse.Namespace) -> int:
     if args.top_k < 1:
         raise ValueError(f"--top-k must be >= 1, got {args.top_k}")
     lengths = pan_lengths(args.min_len, args.max_len, args.step)
-    profile = pan_profile(signal.data, lengths, engine=args.engine, nthreads=args.threads)
-    pairs = pan_top_pairs(profile, args.top_k)
+    profile = pan_profile(
+        signal.data,
+        lengths,
+        engine=args.engine,
+        nthreads=args.threads,
+        disallow_overlap=args.disallow_overlap,
+        show_progress=args.progress,
+    )
+    pairs = pan_top_pairs(profile, args.top_k, disallow_overlap=args.disallow_overlap)
     args.out.mkdir(parents=True, exist_ok=True)
     np.save(args.out / "pan.npy", profile.surface)
     (args.out / "pairs.json").write_text(json.dumps(pairs, indent=2))
@@ -119,6 +132,7 @@ def run_pan(args: argparse.Namespace) -> int:
         "n_samples": int(signal.data.shape[1]),
         "rate": signal.rate,
         "engine": args.engine,
+        "disallow_overlap": bool(args.disallow_overlap),
         "signal": signal.info,
     }
     (args.out / "pan.json").write_text(json.dumps(meta, indent=2))

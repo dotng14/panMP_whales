@@ -19,6 +19,7 @@ The dictionary stages use the same rectangle: the spectrogram's frequency rows b
 analysis/
 ├── bands.py                 five bands of 100 Hz, 0–500 Hz
 ├── matrix_profile/          matrix profile, pan matrix profile, motif pairs, `pan` CLI
+│   └── replicate_report/    193500 motif-length scan and its PDF
 ├── GPL_Python/              whitened spectrogram and detections
 │   ├── gpl_signal.py
 │   ├── gpl_detector.py
@@ -34,16 +35,17 @@ analysis/
 │   │   ├── io.py            load and stitch GPL spectrograms
 │   │   ├── mp.py            matching pursuit
 │   │   ├── tools.py         MP, rebuild atoms from their patches
-│   │   ├── cli.py           randomized-build, matching-pursuit
+│   │   ├── cli.py           randomized-build, matching-pursuit, `--catalog`
+│   │   ├── catalog/         repeat-match payload for the viewer
 │   │   └── learn/           grow a dictionary
 │   ├── experiments/
 │   └── notebooks/
 └── test/                    unit/ and integration/ (see test/README.md)
 ```
 
-Inside `dict_learning/code`, `learn` and `cli` use `tools`, `tools` uses `mp`, and `mp` uses `io` and `core`. `learn_from_motifs` turns a motif rectangle into a seed atom.
+Inside `dict_learning/code`, `learn` and `cli` use `tools`, `tools` uses `mp`, and `mp` uses `io` and `core`. `learn_from_motifs` turns a motif rectangle into a seed atom. `catalog` reads the SQLite catalog and the GPL panel.
 
-The other dictionary builders (`build_dictionary`, `extend_dictionary`, `match_to_dictionary`, `split_template`, the seed trials and similarity tools) were removed on 2026-10-25. The randomized build is the starting point; see `dict_learning/README.md`.
+The other dictionary builders (`build_dictionary`, `extend_dictionary`, `match_to_dictionary`, `split_template`, the seed trials and similarity tools) were removed on 2026-10-25. The randomized build is the starting point. `--catalog DB` registers a run in `database/`. Scripts under `experiments/` that import the removed builders no longer run. See `dict_learning/README.md`.
 
 ## Modules
 
@@ -53,6 +55,7 @@ The other dictionary builders (`build_dictionary`, `extend_dictionary`, `match_t
 - `matrix_profile/__init__.py` — matrix profile for one series or many frequency rows, the pan matrix profile over a sweep of motif lengths (`panMP`, `pan_profile`), and the most unusual pairs.
 - `matrix_profile/signals.py` — the signals `pan` runs on: a `.npy` series, a WAV (RMS or bands), or a GPL folder (energy, bands, or every frequency row).
 - `matrix_profile/cli.py` — `python -m analysis.matrix_profile pan`.
+- `matrix_profile/replicate_report/` — the 193500 song-structure length scan, and the PDF `panmp_193500_length_scan.pdf`.
 
 ### `GPL_Python/`
 
@@ -62,7 +65,7 @@ The other dictionary builders (`build_dictionary`, `extend_dictionary`, `match_t
 - `process_v4.py` — run the detector on each window of a recording.
 - `gpl_parity.py` — compare the Python detector with the MATLAB export.
 - `decimate_wav.py` — resample a 200 kHz WAV to 10 kHz.
-- `preprocess.py` — run detection, then register an averaged-template dictionary in the catalog. Broken since 2026-10-25: it calls the removed greedy builder and the catalog.
+- `preprocess.py` — run detection, then register an averaged-template dictionary. Broken: it still calls the removed greedy builder (`build_dictionary`, `learn_dictionary`).
 
 ### `dict_learning/`
 
@@ -72,7 +75,8 @@ The other dictionary builders (`build_dictionary`, `extend_dictionary`, `match_t
 - `code/io.py` — load GPL windows and detections, cut detections into patches, and stitch the whitened spectrogram into one array.
 - `code/mp.py` — place dictionary atoms on a spectrogram and subtract them.
 - `code/tools.py` — matching pursuit, and rebuild atoms from their matched patches.
-- `code/cli.py` — `randomized-build` and `matching-pursuit` commands.
+- `code/cli.py` — `randomized-build` and `matching-pursuit`. `--catalog DB` registers the output folder in the SQLite catalog.
+- `code/catalog/repeats_from_catalog.py` — the repeat-match payload the viewer reads from catalog rows and `panel.bin`.
 - `code/learn/randomized_dictionary.py` — sample unexplained patches as atoms and refine until coverage.
 - `code/learn/refine.py` — average every atom's patches, then re-run MP.
 - `code/learn/learn_from_motifs.py` — grow a dictionary from 5 s and 10 s motifs until half the frames are covered.
