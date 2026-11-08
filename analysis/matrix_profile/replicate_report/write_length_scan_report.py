@@ -21,17 +21,18 @@ from matplotlib.gridspec import GridSpec
 from analysis.matrix_profile.replicate_report import report_193500 as R
 
 HERE = Path(__file__).resolve().parent
-OUT = HERE / "panmp_193500_length_scan.pdf"
+OUT = HERE / "panmp_193500_length_scan_6_10.pdf"
 FIGDIR = HERE / "cache_193500" / "figures"
 
-LENGTHS = (5, 6, 7, 8, 9)
-PAIRS = ((5, 6), (6, 7), (7, 8), (8, 9))
+# Official experiment_193500_v2 page 3 uses 6–10 min (see write_experiment_193500_report).
+LENGTHS = (6, 7, 8, 9, 10)
+PAIRS = ((6, 7), (7, 8), (8, 9), (9, 10))
 COLORS = {
-    5: "#1f77b4",
-    6: "#ff7f0e",
-    7: "#bcbd22",
+    6: "#2ca02c",
+    7: "#d62728",
     8: "#9467bd",
-    9: "#2ca02c",
+    9: "#8c564b",
+    10: "#e377c2",
     1: "#17becf",
 }
 
@@ -387,7 +388,7 @@ def write_pdf(
     most = min(pairs, key=lambda r: (r["ks"], r["w_min"]))
     with PdfPages(out) as pdf:
         rep = Report(pdf)
-        rep.new_page("Figure: Start-to-start intervals, 5–9 min")
+        rep.new_page("Figure: Start-to-start intervals, 6–10 min")
         rep.text(
             "One motif group per length on the 2 kHz, 10-hour 193500 recording "
             "(MFCC coefficient 2 / c1 at 10 Hz). Seed is the best non-overlapping "
@@ -400,7 +401,7 @@ def write_pdf(
         rep.image(fig_intervals, height=min(0.78, rep.y - 0.04))
         rep.close()
 
-        rep.new_page("Summary tables: 5–9 min length scan")
+        rep.new_page("Summary tables: 6–10 min length scan")
         rep.heading("Per length")
         headers = ["Length", "Occurrences", "Copy threshold", "Median interval (IQR)", "Intervals < 10 min"]
         rows = [
