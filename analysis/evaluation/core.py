@@ -144,21 +144,49 @@ def _local_maxima(dots: np.ndarray) -> np.ndarray:
     return np.flatnonzero(keep).astype(np.int64) + 1
 
 
-def _drop_ratio(dots: np.ndarray, t_star: int, k: int) -> float:
-    """Smaller relative drop at ``t* + k`` and ``t* - k``."""
-    if k < 0:
-        raise ValueError(f"k must be >= 0, got {k}")
-    peak = float(dots[t_star])
-    if not np.isfinite(peak) or peak == 0.0:
-        return float("nan")
-    drops: list[float] = []
-    for step in (k, -k):
-        index = t_star + step
-        if 0 <= index < dots.size and np.isfinite(dots[index]):
-            drops.append((peak - float(dots[index])) / peak)
-    if not drops:
-        return float("nan")
-    return float(min(drops))
+def _centered_convolve(signal: np.ndarray, kernel: np.ndarray) -> np.ndarray:
+    """Convolve and keep the length of ``signal``. ``kernel`` has odd length."""
+    full = np.convolve(signal, kernel, mode="full")
+    start = (kernel.size - 1) // 2
+    return full[start : start + signal.size]
+
+
+def _gaussian_smooth(dots: np.ndarray, sigma: float) -> np.ndarray:
+    """Convolve ``dots`` with a Gaussian of standard deviation ``sigma``.
+
+    Missing samples are left out of the kernel and the remaining weights are
+    renormalized, so a NaN does not spread into the finite columns.
+    """
+    values = np.asarray(dots, dtype=np.float64)
+    if sigma < 0.0:
+        raise ValueError(f"k must be >= 0, got {sigma}")
+    if sigma == 0.0:
+        return values.copy()
+    finite = np.isfinite(values)
+    radius = max(1, int(np.ceil(4.0 * sigma)))
+    offsets = np.arange(-radius, radius + 1, dtype=np.float64)
+    kernel = np.exp(-0.5 * (offsets / sigma) ** 2)
+    kernel /= kernel.sum()
+    numer = _centered_convolve(np.where(finite, values, 0.0), kernel)
+    denom = _centered_convolve(finite.astype(np.float64), kernel)
+    smoothed = np.full(values.shape, np.nan, dtype=np.float64)
+    good = finite & (denom > 0.0)
+    smoothed[good] = numer[good] / denom[good]
+    return smoothed
+
+
+def _peak_ratios(dots: np.ndarray, sigma: float) -> np.ndarray:
+    """``dot(t*) / smoothed(t*)`` at each local maximum."""
+    smoothed = _gaussian_smooth(dots, sigma)
+    peaks = _local_maxima(dots)
+    ratios = np.full(peaks.shape, np.nan, dtype=np.float64)
+    if peaks.size == 0:
+        return ratios
+    original = dots[peaks]
+    baseline = smoothed[peaks]
+    valid = np.isfinite(original) & np.isfinite(baseline) & (baseline != 0.0)
+    ratios[valid] = original[valid] / baseline[valid]
+    return ratios
 
 
 def _filter_ratios(ratios: np.ndarray, m: float) -> tuple[np.ndarray, float]:
@@ -180,12 +208,16 @@ def _filter_ratios(ratios: np.ndarray, m: float) -> tuple[np.ndarray, float]:
     return kept, float(np.median(kept))
 
 
-def _shift(motif_id: int, width: int, k: int | Mapping[int, int] | None) -> int:
+def _sigma(
+    motif_id: int,
+    width: int,
+    k: int | float | Mapping[int, int | float] | None,
+) -> float:
     if k is None:
-        return width // 2
-    if isinstance(k, int):
-        return int(k)
-    return int(k[motif_id])
+        return float(width // 2)
+    if isinstance(k, Mapping):
+        return float(k[motif_id])
+    return float(k)
 
 
 def _measures(
@@ -193,7 +225,7 @@ def _measures(
     widths: Mapping[int, int],
     dots_by_motif: Sequence[tuple[int, np.ndarray]],
     n_time: int,
-    k: int | Mapping[int, int] | None,
+    k: int | float | Mapping[int, int | float] | None,
     m: float,
 ) -> dict[str, object]:
     matchings = [
@@ -212,15 +244,11 @@ def _measures(
             placed += hi - lo
     specificity: dict[int, np.ndarray] = {}
     specificity_median: dict[int, float] = {}
-    shifts: dict[int, int] = {}
+    sigmas: dict[int, float] = {}
     for motif_id, dots in dots_by_motif:
-        shift = _shift(motif_id, int(widths[motif_id]), k)
-        shifts[motif_id] = shift
-        ratios = np.array(
-            [_drop_ratio(dots, int(t_star), shift) for t_star in _local_maxima(dots)],
-            dtype=np.float64,
-        )
-        kept, median = _filter_ratios(ratios, m)
+        sigma = _sigma(motif_id, int(widths[motif_id]), k)
+        sigmas[motif_id] = sigma
+        kept, median = _filter_ratios(_peak_ratios(dots, sigma), m)
         specificity[motif_id] = kept
         specificity_median[motif_id] = median
     return {
@@ -229,7 +257,7 @@ def _measures(
         "n_bins_covered": int(n_covered),
         "n_bins_total": int(n_total),
         "placed_length": int(placed),
-        "k": shifts,
+        "k": sigmas,
         "m": float(m),
         "specificity": specificity,
         "specificity_median": specificity_median,
@@ -239,20 +267,21 @@ def _measures(
 def evaluate_dictionary(
     dictionary_id: int = DEFAULT_DICTIONARY_ID,
     wav: Path | str = DEFAULT_WAV,
-    k: int | Mapping[int, int] | None = None,
+    k: int | float | Mapping[int, int | float] | None = None,
     m: float = 2.0,
     *,
     catalog: Path | str = DEFAULT_CATALOG,
 ) -> dict[str, object]:
     """Evaluate ``dictionary_id`` on the GPL whitened spectrogram of ``wav``.
 
-    ``k`` is the specificity shift in spectrogram columns. ``None`` uses half
-    the width of each motif. ``m`` filters each motif's specificity distribution:
-    ratios smaller than its largest ratio divided by ``m`` are removed, and the
-    largest ratio is kept. Coverage is the fraction of columns covered by at
-    least one kept placement. Over-coverage is the total placed length divided
-    by the covered length. The specificity summary is the median of the filtered
-    ratios at the local maxima of the motif's dot product.
+    ``k`` is the standard deviation, in spectrogram columns, of the Gaussian
+    applied to each motif's dot product. ``None`` uses half the width of each
+    motif. At a local maximum ``t*`` the specificity ratio is the original dot
+    product divided by the smoothed dot product. ``m`` removes ratios smaller
+    than the largest ratio divided by ``m``, and the largest ratio is kept.
+    Coverage is the fraction of columns covered by at least one kept placement.
+    Over-coverage is the total placed length divided by the covered length.
+    The specificity summary is the median of the filtered ratios.
     """
     catalog = Path(catalog)
     wav = Path(wav)
