@@ -1,0 +1,24 @@
+{
+  "source_wav": "C:\\Users\\hoang\\Downloads\\SOCAL_H_76_230426_193500_df100.x.x.wav",
+  "sample_rate": 2000,
+  "clips": {
+    "clip1": {
+      "file": "clip1.wav",
+      "offset_s": 25200,
+      "duration_s": 1800,
+      "csv_song_starts_s": [
+        25505.0,
+        26271.0
+      ]
+    },
+    "clip2": {
+      "file": "clip2.wav",
+      "offset_s": 30600,
+      "duration_s": 1800,
+      "csv_song_starts_s": [
+        31113.0,
+        31807.0
+      ]
+    }
+  }
+}

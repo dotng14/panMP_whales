@@ -1,0 +1,290 @@
+{
+ "S1_N1": {
+  "S": "S1",
+  "N": "N1",
+  "n_units": 44214,
+  "k_types": 20,
+  "units_per_min_loud": 51.3,
+  "units_per_min_quiet": 92.5,
+  "duration_pct": {
+   "10": 0.15,
+   "25": 0.25,
+   "50": 0.55,
+   "75": 1.1,
+   "90": 2.1
+  },
+  "time_covered": 0.9581805555555556,
+  "type_window": {
+   "repeat_hit": 0.11,
+   "repeat_chance": 0.05145988187113981,
+   "repeat_lift": 2.1375874953512315,
+   "far_share": 0.986,
+   "csv_same": 0.432,
+   "csv_same_chance": 0.27531169408626055
+  }
+ },
+ "S1_N2": {
+  "S": "S1",
+  "N": "N2",
+  "n_units": 16520,
+  "k_types": 18,
+  "units_per_min_loud": 45.391666666666666,
+  "units_per_min_quiet": 4.366666666666666,
+  "duration_pct": {
+   "10": 0.15,
+   "25": 0.2,
+   "50": 0.35,
+   "75": 0.8,
+   "90": 1.45
+  },
+  "time_covered": 0.2824833333333333,
+  "type_window": {
+   "repeat_hit": 0.136,
+   "repeat_chance": 0.05145988187113981,
+   "repeat_lift": 2.6428354487978867,
+   "far_share": 0.97,
+   "csv_same": 0.466,
+   "csv_same_chance": 0.27531169408626055
+  }
+ },
+ "S1_N3": {
+  "S": "S1",
+  "N": "N3",
+  "n_units": 19944,
+  "k_types": 20,
+  "units_per_min_loud": 39.71666666666667,
+  "units_per_min_quiet": 23.4,
+  "duration_pct": {
+   "10": 0.15,
+   "25": 0.2,
+   "50": 0.4,
+   "75": 0.9,
+   "90": 1.7
+  },
+  "time_covered": 0.3750222222222222,
+  "type_window": {
+   "repeat_hit": 0.136,
+   "repeat_chance": 0.05145988187113981,
+   "repeat_lift": 2.6428354487978867,
+   "far_share": 0.98,
+   "csv_same": 0.466,
+   "csv_same_chance": 0.27531169408626055
+  }
+ },
+ "S1_N4": {
+  "S": "S1",
+  "N": "N4",
+  "n_units": 64747,
+  "k_types": 20,
+  "units_per_min_loud": 105.43333333333334,
+  "units_per_min_quiet": 109.66666666666667,
+  "duration_pct": {
+   "10": 0.15,
+   "25": 0.15,
+   "50": 0.25,
+   "75": 0.4,
+   "90": 0.75
+  },
+  "time_covered": 0.5997638888888889,
+  "type_window": {
+   "repeat_hit": 0.122,
+   "repeat_chance": 0.05145988187113981,
+   "repeat_lift": 2.370778858480457,
+   "far_share": 0.988,
+   "csv_same": 0.468,
+   "csv_same_chance": 0.27531169408626055
+  }
+ },
+ "S2_N1": {
+  "S": "S2",
+  "N": "N1",
+  "n_units": 55823,
+  "k_types": 18,
+  "units_per_min_loud": 58.24166666666667,
+  "units_per_min_quiet": 123.00833333333334,
+  "duration_pct": {
+   "10": 0.1,
+   "25": 0.175,
+   "50": 0.35,
+   "75": 0.825,
+   "90": 1.75
+  },
+  "time_covered": 0.96395,
+  "type_window": {
+   "repeat_hit": 0.096,
+   "repeat_chance": 0.05145988187113981,
+   "repeat_lift": 1.8655309050338023,
+   "far_share": 0.982,
+   "csv_same": 0.396,
+   "csv_same_chance": 0.27531169408626055
+  }
+ },
+ "S2_N2": {
+  "S": "S2",
+  "N": "N2",
+  "n_units": 19458,
+  "k_types": 20,
+  "units_per_min_loud": 58.18333333333333,
+  "units_per_min_quiet": 4.808333333333334,
+  "duration_pct": {
+   "10": 0.075,
+   "25": 0.125,
+   "50": 0.225,
+   "75": 0.575,
+   "90": 1.2
+  },
+  "time_covered": 0.24270833333333333,
+  "type_window": {
+   "repeat_hit": 0.174,
+   "repeat_chance": 0.05145988187113981,
+   "repeat_lift": 3.381274765373766,
+   "far_share": 0.972,
+   "csv_same": 0.46,
+   "csv_same_chance": 0.27531169408626055
+  }
+ },
+ "S2_N3": {
+  "S": "S2",
+  "N": "N3",
+  "n_units": 22794,
+  "k_types": 20,
+  "units_per_min_loud": 48.30833333333333,
+  "units_per_min_quiet": 24.775,
+  "duration_pct": {
+   "10": 0.075,
+   "25": 0.125,
+   "50": 0.25,
+   "75": 0.625,
+   "90": 1.325
+  },
+  "time_covered": 0.31230833333333335,
+  "type_window": {
+   "repeat_hit": 0.19,
+   "repeat_chance": 0.05145988187113981,
+   "repeat_lift": 3.6921965828794,
+   "far_share": 0.962,
+   "csv_same": 0.426,
+   "csv_same_chance": 0.27531169408626055
+  }
+ },
+ "S2_N4": {
+  "S": "S2",
+  "N": "N4",
+  "n_units": 100084,
+  "k_types": 18,
+  "units_per_min_loud": 145.14166666666668,
+  "units_per_min_quiet": 185.35,
+  "duration_pct": {
+   "10": 0.075,
+   "25": 0.1,
+   "50": 0.175,
+   "75": 0.3,
+   "90": 0.55
+  },
+  "time_covered": 0.670975,
+  "type_window": {
+   "repeat_hit": 0.128,
+   "repeat_chance": 0.05145988187113981,
+   "repeat_lift": 2.4873745400450695,
+   "far_share": 0.976,
+   "csv_same": 0.424,
+   "csv_same_chance": 0.27531169408626055
+  }
+ },
+ "S3_N1": {
+  "S": "S3",
+  "N": "N1",
+  "n_units": 53622,
+  "k_types": 20,
+  "units_per_min_loud": 57.34166666666667,
+  "units_per_min_quiet": 116.975,
+  "duration_pct": {
+   "10": 0.125,
+   "25": 0.2,
+   "50": 0.425,
+   "75": 0.925,
+   "90": 1.85
+  },
+  "time_covered": 0.9796972222222222,
+  "type_window": {
+   "repeat_hit": 0.092,
+   "repeat_chance": 0.05145988187113981,
+   "repeat_lift": 1.7878004506573937,
+   "far_share": 0.994,
+   "csv_same": 0.428,
+   "csv_same_chance": 0.27531169408626055
+  }
+ },
+ "S3_N2": {
+  "S": "S3",
+  "N": "N2",
+  "n_units": 20209,
+  "k_types": 20,
+  "units_per_min_loud": 60.275,
+  "units_per_min_quiet": 4.825,
+  "duration_pct": {
+   "10": 0.1,
+   "25": 0.125,
+   "50": 0.225,
+   "75": 0.575,
+   "90": 1.175
+  },
+  "time_covered": 0.2520472222222222,
+  "type_window": {
+   "repeat_hit": 0.13,
+   "repeat_chance": 0.05145988187113981,
+   "repeat_lift": 2.5262397672332737,
+   "far_share": 0.968,
+   "csv_same": 0.402,
+   "csv_same_chance": 0.27531169408626055
+  }
+ },
+ "S3_N3": {
+  "S": "S3",
+  "N": "N3",
+  "n_units": 23465,
+  "k_types": 20,
+  "units_per_min_loud": 49.075,
+  "units_per_min_quiet": 27.141666666666666,
+  "duration_pct": {
+   "10": 0.1,
+   "25": 0.125,
+   "50": 0.25,
+   "75": 0.625,
+   "90": 1.325
+  },
+  "time_covered": 0.324125,
+  "type_window": {
+   "repeat_hit": 0.136,
+   "repeat_chance": 0.05145988187113981,
+   "repeat_lift": 2.6428354487978867,
+   "far_share": 0.972,
+   "csv_same": 0.442,
+   "csv_same_chance": 0.27531169408626055
+  }
+ },
+ "S3_N4": {
+  "S": "S3",
+  "N": "N4",
+  "n_units": 107478,
+  "k_types": 20,
+  "units_per_min_loud": 157.80833333333334,
+  "units_per_min_quiet": 198.51666666666668,
+  "duration_pct": {
+   "10": 0.075,
+   "25": 0.1,
+   "50": 0.175,
+   "75": 0.3,
+   "90": 0.525
+  },
+  "time_covered": 0.7090194444444444,
+  "type_window": {
+   "repeat_hit": 0.108,
+   "repeat_chance": 0.05145988187113981,
+   "repeat_lift": 2.0987222681630273,
+   "far_share": 0.988,
+   "csv_same": 0.392,
+   "csv_same_chance": 0.27531169408626055
+  }
+ }
+}

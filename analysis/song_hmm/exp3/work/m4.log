@@ -1,0 +1,33 @@
+window input S2_N1_X2_20s; frames from S2_N1; units S2_N3
+M4 ...
+  theme 1: 28 segments, isolated loglik -13,935 -> -12,839
+  theme 2: 28 segments, isolated loglik -327,368 -> -311,153
+  theme 3: 27 segments, isolated loglik -424,166 -> -394,613
+  theme 4: 25 segments, isolated loglik -23,719 -> -21,837
+  theme 5: 25 segments, isolated loglik -522,033 -> -484,840
+  theme 6: 24 segments, isolated loglik -795,742 -> -751,014
+    iter  0 loglik -1,959,917.8
+    iter  1 loglik -1,949,858.7
+    iter  2 loglik -1,946,040.5
+    iter  3 loglik -1,943,206.0
+    iter  4 loglik -1,940,852.0
+    iter  5 loglik -1,939,146.6
+    iter  6 loglik -1,937,950.4
+    iter  7 loglik -1,936,991.1
+    iter  8 loglik -1,936,197.6
+    iter  9 loglik -1,935,581.4
+    iter 10 loglik -1,934,599.3
+    iter 11 loglik -1,934,027.2
+    iter 12 loglik -1,933,550.4
+    iter 13 loglik -1,933,184.8
+    iter 14 loglik -1,932,682.3
+    iter 15 loglik -1,932,284.6
+    iter 16 loglik -1,932,082.1
+    iter 17 loglik -1,931,896.0
+    iter 18 loglik -1,931,798.6
+    iter 19 loglik -1,931,695.5
+    iter 20 loglik -1,931,604.8
+    iter 21 loglik -1,931,529.6
+    iter 22 loglik -1,931,463.4
+    iter 23 loglik -1,931,401.8
+    iter 24 loglik -1,931,184.4
