@@ -1,6 +1,6 @@
 # song_hmm
 
-An HMM that finds **song sessions** in a long humpback recording, and inside each session the **songs** (cut at the Theme 6 → Theme 1 transition, following Payne & McVay) and the theme being sung each second. Built from scratch from the wav. The design is in [plan.md](plan.md), and the results are in [report.md](report.md).
+An HMM that finds **song sessions** in a long humpback recording, and inside each session the **songs** (cut at the Theme 6 → Theme 1 transition, following Payne & McVay) and the theme being sung each second. Built from scratch from the wav. The design is in [plan.md](plan.md), and the results are in [reports/exp1_slot_hmm.md](../../reports/exp1_slot_hmm.md).
 
 ## Run
 
@@ -14,7 +14,7 @@ python -m analysis.song_hmm.train
 python -m analysis.song_hmm.report
 ```
 
-`train` reads `C:\Users\hoang\Downloads\SOCAL_H_76_230426_193500_df100.x.x.wav` (override with `--wav`). It builds features and caches them in `work/features.npz`, then fits on the first 5 h. It writes `song_session_hmm.npz`, and for each half (`work/train/`, `work/test/`) it writes `sessions.csv`, `songs.csv` and `posteriors.npz`. `report` writes `report.md`, `figures/` and `work/report.json`.
+`train` reads `C:\Users\hoang\Downloads\SOCAL_H_76_230426_193500_df100.x.x.wav` (override with `--wav`). It builds features and caches them in `work/features.npz`, then fits on the first 5 h. It writes `song_session_hmm.npz`, and for each half (`work/train/`, `work/test/`) it writes `sessions.csv`, `songs.csv` and `posteriors.npz`. `report` writes `reports/exp1_slot_hmm.md` (at the repository root), `figures/` and `work/report.json`.
 
 ## Model
 

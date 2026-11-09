@@ -1,0 +1,677 @@
+{
+"pairs": [
+{
+"id": "p001",
+"img": "img/p001.jpg",
+"audioA": "audio/w20632.wav",
+"audioB": "audio/w33538.wav"
+},
+{
+"id": "p002",
+"img": "img/p002.jpg",
+"audioA": "audio/w18028.wav",
+"audioB": "audio/w19418.wav"
+},
+{
+"id": "p003",
+"img": "img/p003.jpg",
+"audioA": "audio/w21560.wav",
+"audioB": "audio/w23042.wav"
+},
+{
+"id": "p004",
+"img": "img/p004.jpg",
+"audioA": "audio/w33648.wav",
+"audioB": "audio/w18522.wav"
+},
+{
+"id": "p005",
+"img": "img/p005.jpg",
+"audioA": "audio/w26160.wav",
+"audioB": "audio/w21258.wav"
+},
+{
+"id": "p006",
+"img": "img/p006.jpg",
+"audioA": "audio/w35650.wav",
+"audioB": "audio/w35162.wav"
+},
+{
+"id": "p007",
+"img": "img/p007.jpg",
+"audioA": "audio/w18028.wav",
+"audioB": "audio/w19618.wav"
+},
+{
+"id": "p008",
+"img": "img/p008.jpg",
+"audioA": "audio/w18028.wav",
+"audioB": "audio/w24562.wav"
+},
+{
+"id": "p009",
+"img": "img/p009.jpg",
+"audioA": "audio/w30462.wav",
+"audioB": "audio/w32274.wav"
+},
+{
+"id": "p010",
+"img": "img/p010.jpg",
+"audioA": "audio/w32766.wav",
+"audioB": "audio/w34030.wav"
+},
+{
+"id": "p011",
+"img": "img/p011.jpg",
+"audioA": "audio/w18028.wav",
+"audioB": "audio/w18670.wav"
+},
+{
+"id": "p012",
+"img": "img/p012.jpg",
+"audioA": "audio/w27670.wav",
+"audioB": "audio/w31082.wav"
+},
+{
+"id": "p013",
+"img": "img/p013.jpg",
+"audioA": "audio/w30462.wav",
+"audioB": "audio/w22498.wav"
+},
+{
+"id": "p014",
+"img": "img/p014.jpg",
+"audioA": "audio/w20080.wav",
+"audioB": "audio/w18350.wav"
+},
+{
+"id": "p015",
+"img": "img/p015.jpg",
+"audioA": "audio/w31686.wav",
+"audioB": "audio/w33090.wav"
+},
+{
+"id": "p016",
+"img": "img/p016.jpg",
+"audioA": "audio/w27670.wav",
+"audioB": "audio/w33094.wav"
+},
+{
+"id": "p017",
+"img": "img/p017.jpg",
+"audioA": "audio/w26910.wav",
+"audioB": "audio/w31842.wav"
+},
+{
+"id": "p018",
+"img": "img/p018.jpg",
+"audioA": "audio/w20080.wav",
+"audioB": "audio/w19546.wav"
+},
+{
+"id": "p019",
+"img": "img/p019.jpg",
+"audioA": "audio/w19456.wav",
+"audioB": "audio/w18534.wav"
+},
+{
+"id": "p020",
+"img": "img/p020.jpg",
+"audioA": "audio/w18822.wav",
+"audioB": "audio/w18186.wav"
+},
+{
+"id": "p021",
+"img": "img/p021.jpg",
+"audioA": "audio/w33648.wav",
+"audioB": "audio/w29142.wav"
+},
+{
+"id": "p022",
+"img": "img/p022.jpg",
+"audioA": "audio/w32766.wav",
+"audioB": "audio/w30342.wav"
+},
+{
+"id": "p023",
+"img": "img/p023.jpg",
+"audioA": "audio/w33648.wav",
+"audioB": "audio/w32610.wav"
+},
+{
+"id": "p024",
+"img": "img/p024.jpg",
+"audioA": "audio/w24000.wav",
+"audioB": "audio/w25474.wav"
+},
+{
+"id": "p025",
+"img": "img/p025.jpg",
+"audioA": "audio/w18822.wav",
+"audioB": "audio/w18142.wav"
+},
+{
+"id": "p026",
+"img": "img/p026.jpg",
+"audioA": "audio/w31686.wav",
+"audioB": "audio/w21590.wav"
+},
+{
+"id": "p027",
+"img": "img/p027.jpg",
+"audioA": "audio/w23178.wav",
+"audioB": "audio/w23974.wav"
+},
+{
+"id": "p028",
+"img": "img/p028.jpg",
+"audioA": "audio/w19456.wav",
+"audioB": "audio/w19014.wav"
+},
+{
+"id": "p029",
+"img": "img/p029.jpg",
+"audioA": "audio/w19456.wav",
+"audioB": "audio/w18542.wav"
+},
+{
+"id": "p030",
+"img": "img/p030.jpg",
+"audioA": "audio/w20632.wav",
+"audioB": "audio/w18462.wav"
+},
+{
+"id": "p031",
+"img": "img/p031.jpg",
+"audioA": "audio/w35650.wav",
+"audioB": "audio/w23726.wav"
+},
+{
+"id": "p032",
+"img": "img/p032.jpg",
+"audioA": "audio/w21560.wav",
+"audioB": "audio/w31846.wav"
+},
+{
+"id": "p033",
+"img": "img/p033.jpg",
+"audioA": "audio/w26160.wav",
+"audioB": "audio/w31402.wav"
+},
+{
+"id": "p034",
+"img": "img/p034.jpg",
+"audioA": "audio/w18470.wav",
+"audioB": "audio/w18966.wav"
+},
+{
+"id": "p035",
+"img": "img/p035.jpg",
+"audioA": "audio/w27670.wav",
+"audioB": "audio/w31114.wav"
+},
+{
+"id": "p036",
+"img": "img/p036.jpg",
+"audioA": "audio/w20080.wav",
+"audioB": "audio/w26134.wav"
+},
+{
+"id": "p037",
+"img": "img/p037.jpg",
+"audioA": "audio/w31686.wav",
+"audioB": "audio/w32478.wav"
+},
+{
+"id": "p038",
+"img": "img/p038.jpg",
+"audioA": "audio/w26160.wav",
+"audioB": "audio/w21714.wav"
+},
+{
+"id": "p039",
+"img": "img/p039.jpg",
+"audioA": "audio/w19456.wav",
+"audioB": "audio/w18590.wav"
+},
+{
+"id": "p040",
+"img": "img/p040.jpg",
+"audioA": "audio/w25386.wav",
+"audioB": "audio/w35570.wav"
+},
+{
+"id": "p041",
+"img": "img/p041.jpg",
+"audioA": "audio/w24668.wav",
+"audioB": "audio/w19666.wav"
+},
+{
+"id": "p042",
+"img": "img/p042.jpg",
+"audioA": "audio/w31686.wav",
+"audioB": "audio/w26198.wav"
+},
+{
+"id": "p043",
+"img": "img/p043.jpg",
+"audioA": "audio/w23178.wav",
+"audioB": "audio/w24642.wav"
+},
+{
+"id": "p044",
+"img": "img/p044.jpg",
+"audioA": "audio/w25386.wav",
+"audioB": "audio/w31710.wav"
+},
+{
+"id": "p045",
+"img": "img/p045.jpg",
+"audioA": "audio/w33648.wav",
+"audioB": "audio/w29874.wav"
+},
+{
+"id": "p046",
+"img": "img/p046.jpg",
+"audioA": "audio/w18470.wav",
+"audioB": "audio/w19410.wav"
+},
+{
+"id": "p047",
+"img": "img/p047.jpg",
+"audioA": "audio/w30462.wav",
+"audioB": "audio/w21542.wav"
+},
+{
+"id": "p048",
+"img": "img/p048.jpg",
+"audioA": "audio/w18028.wav",
+"audioB": "audio/w19906.wav"
+},
+{
+"id": "p049",
+"img": "img/p049.jpg",
+"audioA": "audio/w20080.wav",
+"audioB": "audio/w24550.wav"
+},
+{
+"id": "p050",
+"img": "img/p050.jpg",
+"audioA": "audio/w23178.wav",
+"audioB": "audio/w21510.wav"
+},
+{
+"id": "p051",
+"img": "img/p051.jpg",
+"audioA": "audio/w35650.wav",
+"audioB": "audio/w23682.wav"
+},
+{
+"id": "p052",
+"img": "img/p052.jpg",
+"audioA": "audio/w27670.wav",
+"audioB": "audio/w32458.wav"
+},
+{
+"id": "p053",
+"img": "img/p053.jpg",
+"audioA": "audio/w19456.wav",
+"audioB": "audio/w26238.wav"
+},
+{
+"id": "p054",
+"img": "img/p054.jpg",
+"audioA": "audio/w33648.wav",
+"audioB": "audio/w34266.wav"
+},
+{
+"id": "p055",
+"img": "img/p055.jpg",
+"audioA": "audio/w24000.wav",
+"audioB": "audio/w19642.wav"
+},
+{
+"id": "p056",
+"img": "img/p056.jpg",
+"audioA": "audio/w26910.wav",
+"audioB": "audio/w25390.wav"
+},
+{
+"id": "p057",
+"img": "img/p057.jpg",
+"audioA": "audio/w18470.wav",
+"audioB": "audio/w24326.wav"
+},
+{
+"id": "p058",
+"img": "img/p058.jpg",
+"audioA": "audio/w31686.wav",
+"audioB": "audio/w26942.wav"
+},
+{
+"id": "p059",
+"img": "img/p059.jpg",
+"audioA": "audio/w26160.wav",
+"audioB": "audio/w27546.wav"
+},
+{
+"id": "p060",
+"img": "img/p060.jpg",
+"audioA": "audio/w20632.wav",
+"audioB": "audio/w21354.wav"
+},
+{
+"id": "p061",
+"img": "img/p061.jpg",
+"audioA": "audio/w26910.wav",
+"audioB": "audio/w26178.wav"
+},
+{
+"id": "p062",
+"img": "img/p062.jpg",
+"audioA": "audio/w24000.wav",
+"audioB": "audio/w33102.wav"
+},
+{
+"id": "p063",
+"img": "img/p063.jpg",
+"audioA": "audio/w24000.wav",
+"audioB": "audio/w21842.wav"
+},
+{
+"id": "p064",
+"img": "img/p064.jpg",
+"audioA": "audio/w26910.wav",
+"audioB": "audio/w21262.wav"
+},
+{
+"id": "p065",
+"img": "img/p065.jpg",
+"audioA": "audio/w22198.wav",
+"audioB": "audio/w25234.wav"
+},
+{
+"id": "p066",
+"img": "img/p066.jpg",
+"audioA": "audio/w18822.wav",
+"audioB": "audio/w29986.wav"
+},
+{
+"id": "p067",
+"img": "img/p067.jpg",
+"audioA": "audio/w21560.wav",
+"audioB": "audio/w19498.wav"
+},
+{
+"id": "p068",
+"img": "img/p068.jpg",
+"audioA": "audio/w35650.wav",
+"audioB": "audio/w25838.wav"
+},
+{
+"id": "p069",
+"img": "img/p069.jpg",
+"audioA": "audio/w24000.wav",
+"audioB": "audio/w27882.wav"
+},
+{
+"id": "p070",
+"img": "img/p070.jpg",
+"audioA": "audio/w30462.wav",
+"audioB": "audio/w24770.wav"
+},
+{
+"id": "p071",
+"img": "img/p071.jpg",
+"audioA": "audio/w22198.wav",
+"audioB": "audio/w21174.wav"
+},
+{
+"id": "p072",
+"img": "img/p072.jpg",
+"audioA": "audio/w26160.wav",
+"audioB": "audio/w20450.wav"
+},
+{
+"id": "p073",
+"img": "img/p073.jpg",
+"audioA": "audio/w31686.wav",
+"audioB": "audio/w26934.wav"
+},
+{
+"id": "p074",
+"img": "img/p074.jpg",
+"audioA": "audio/w18028.wav",
+"audioB": "audio/w18694.wav"
+},
+{
+"id": "p075",
+"img": "img/p075.jpg",
+"audioA": "audio/w26910.wav",
+"audioB": "audio/w24638.wav"
+},
+{
+"id": "p076",
+"img": "img/p076.jpg",
+"audioA": "audio/w27670.wav",
+"audioB": "audio/w33238.wav"
+},
+{
+"id": "p077",
+"img": "img/p077.jpg",
+"audioA": "audio/w32766.wav",
+"audioB": "audio/w35658.wav"
+},
+{
+"id": "p078",
+"img": "img/p078.jpg",
+"audioA": "audio/w35650.wav",
+"audioB": "audio/w32754.wav"
+},
+{
+"id": "p079",
+"img": "img/p079.jpg",
+"audioA": "audio/w18822.wav",
+"audioB": "audio/w19358.wav"
+},
+{
+"id": "p080",
+"img": "img/p080.jpg",
+"audioA": "audio/w22198.wav",
+"audioB": "audio/w33726.wav"
+},
+{
+"id": "p081",
+"img": "img/p081.jpg",
+"audioA": "audio/w32766.wav",
+"audioB": "audio/w20234.wav"
+},
+{
+"id": "p082",
+"img": "img/p082.jpg",
+"audioA": "audio/w20632.wav",
+"audioB": "audio/w24874.wav"
+},
+{
+"id": "p083",
+"img": "img/p083.jpg",
+"audioA": "audio/w25386.wav",
+"audioB": "audio/w26914.wav"
+},
+{
+"id": "p084",
+"img": "img/p084.jpg",
+"audioA": "audio/w24668.wav",
+"audioB": "audio/w20482.wav"
+},
+{
+"id": "p085",
+"img": "img/p085.jpg",
+"audioA": "audio/w30462.wav",
+"audioB": "audio/w27578.wav"
+},
+{
+"id": "p086",
+"img": "img/p086.jpg",
+"audioA": "audio/w20080.wav",
+"audioB": "audio/w22794.wav"
+},
+{
+"id": "p087",
+"img": "img/p087.jpg",
+"audioA": "audio/w21560.wav",
+"audioB": "audio/w27570.wav"
+},
+{
+"id": "p088",
+"img": "img/p088.jpg",
+"audioA": "audio/w32766.wav",
+"audioB": "audio/w30658.wav"
+},
+{
+"id": "p089",
+"img": "img/p089.jpg",
+"audioA": "audio/w18822.wav",
+"audioB": "audio/w18246.wav"
+},
+{
+"id": "p090",
+"img": "img/p090.jpg",
+"audioA": "audio/w23178.wav",
+"audioB": "audio/w25294.wav"
+},
+{
+"id": "p091",
+"img": "img/p091.jpg",
+"audioA": "audio/w24668.wav",
+"audioB": "audio/w27762.wav"
+},
+{
+"id": "p092",
+"img": "img/p092.jpg",
+"audioA": "audio/w18470.wav",
+"audioB": "audio/w20246.wav"
+},
+{
+"id": "p093",
+"img": "img/p093.jpg",
+"audioA": "audio/w25386.wav",
+"audioB": "audio/w24758.wav"
+},
+{
+"id": "p094",
+"img": "img/p094.jpg",
+"audioA": "audio/w20632.wav",
+"audioB": "audio/w18926.wav"
+},
+{
+"id": "p095",
+"img": "img/p095.jpg",
+"audioA": "audio/w32766.wav",
+"audioB": "audio/w29314.wav"
+},
+{
+"id": "p096",
+"img": "img/p096.jpg",
+"audioA": "audio/w18822.wav",
+"audioB": "audio/w18198.wav"
+},
+{
+"id": "p097",
+"img": "img/p097.jpg",
+"audioA": "audio/w22198.wav",
+"audioB": "audio/w30730.wav"
+},
+{
+"id": "p098",
+"img": "img/p098.jpg",
+"audioA": "audio/w35650.wav",
+"audioB": "audio/w21010.wav"
+},
+{
+"id": "p099",
+"img": "img/p099.jpg",
+"audioA": "audio/w26160.wav",
+"audioB": "audio/w31666.wav"
+},
+{
+"id": "p100",
+"img": "img/p100.jpg",
+"audioA": "audio/w21560.wav",
+"audioB": "audio/w22170.wav"
+},
+{
+"id": "p101",
+"img": "img/p101.jpg",
+"audioA": "audio/w20632.wav",
+"audioB": "audio/w21342.wav"
+},
+{
+"id": "p102",
+"img": "img/p102.jpg",
+"audioA": "audio/w24668.wav",
+"audioB": "audio/w21814.wav"
+},
+{
+"id": "p103",
+"img": "img/p103.jpg",
+"audioA": "audio/w26910.wav",
+"audioB": "audio/w31150.wav"
+},
+{
+"id": "p104",
+"img": "img/p104.jpg",
+"audioA": "audio/w21560.wav",
+"audioB": "audio/w30462.wav"
+},
+{
+"id": "p105",
+"img": "img/p105.jpg",
+"audioA": "audio/w27670.wav",
+"audioB": "audio/w24658.wav"
+},
+{
+"id": "p106",
+"img": "img/p106.jpg",
+"audioA": "audio/w24000.wav",
+"audioB": "audio/w27630.wav"
+},
+{
+"id": "p107",
+"img": "img/p107.jpg",
+"audioA": "audio/w23178.wav",
+"audioB": "audio/w26938.wav"
+},
+{
+"id": "p108",
+"img": "img/p108.jpg",
+"audioA": "audio/w18470.wav",
+"audioB": "audio/w19770.wav"
+},
+{
+"id": "p109",
+"img": "img/p109.jpg",
+"audioA": "audio/w33648.wav",
+"audioB": "audio/w35794.wav"
+},
+{
+"id": "p110",
+"img": "img/p110.jpg",
+"audioA": "audio/w23178.wav",
+"audioB": "audio/w26186.wav"
+},
+{
+"id": "p111",
+"img": "img/p111.jpg",
+"audioA": "audio/w18470.wav",
+"audioB": "audio/w32062.wav"
+},
+{
+"id": "p112",
+"img": "img/p112.jpg",
+"audioA": "audio/w22198.wav",
+"audioB": "audio/w21362.wav"
+}
+],
+"clip_seconds": 12
+}

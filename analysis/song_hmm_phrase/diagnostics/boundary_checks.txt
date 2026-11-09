@@ -1,0 +1,27 @@
+1. CSV seconds per theme per song (median [IQR]); models' minimum theme length: Exp 1 none (≥ 3 s phrase), Exp 2 20 s
+   T1:      4 s  [3-5]   songs with < 20 s: 100%
+   T2:     77 s  [28-174]   songs with < 20 s: 21%
+   T3:     69 s  [19-191]   songs with < 20 s: 26%
+   T4:      6 s  [3-7]   songs with < 20 s: 94%
+   T5:    124 s  [32-239]   songs with < 20 s: 17%
+   T6:    240 s  [130-348]   songs with < 20 s: 15%
+
+2. decoded gaps (background runs) inside the recording, test half; a session ends only after a pause > 60 s
+   Exp 1   gaps:  20   ≤ 60 s:  15   61-120 s:   1   > 120 s:   4
+   Exp 2   gaps:  17   ≤ 60 s:  10   61-120 s:   1   > 120 s:   6
+   Exp 2b  gaps:  27   ≤ 60 s:  14   61-120 s:   7   > 120 s:   6
+
+3. song-scale repetition: mean cosine of phrase windows L minutes apart (2 s steps)
+   train: 1:0.172 3:0.059 5:0.069 7:0.051 9:0.075 10:0.078 11:0.073 12:0.055 13:0.069 14:0.075 15:0.075 17:0.060 20:0.031 25:0.045 30:0.032
+          best lag ≥ 5 min: 10 min;  CSV median song length 11.8 min
+   test: 1:0.174 3:0.090 5:0.059 7:0.076 9:0.083 10:0.092 11:0.102 12:0.114 13:0.120 14:0.103 15:0.090 17:0.075 20:0.044 25:0.076 30:0.052
+          best lag ≥ 5 min: 13 min;  CSV median song length 11.8 min
+   local song period in 40-min blocks (min): median 13.2, IQR 12.4-14.5
+
+4. oracle: CSV song boundaries given, each song split into 6 ordered segments from the phrase descriptors alone
+   train: theme accuracy with known boundaries 0.234   (equal-length ordered split 0.247)
+   test: theme accuracy with known boundaries 0.244   (equal-length ordered split 0.247)
+
+5. phase check: best offset of the next CSV song start (s), searched over +-300 s
+   pairs 51; |offset| <= 15 s: 6%;  <= 60 s: 31%;  median |offset| 110 s
+   CSV song length median 11.8 min;  audio-aligned song length median 11.2 min;  corr(CSV length, audio length) 0.80;  mean best similarity 0.252

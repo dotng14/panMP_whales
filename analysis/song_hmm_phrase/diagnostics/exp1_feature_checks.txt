@@ -1,0 +1,16 @@
+theme classification on the test half: accuracy / balanced accuracy (chance balanced 0.17)
+  16 bands, 1 s mean (Experiment 1)     1 s: 0.27/0.21  10 s: 0.26/0.20  30 s: 0.37/0.29
+  48 bands, 1 s mean + std              1 s: 0.23/0.20  10 s: 0.28/0.20  30 s: 0.35/0.30
+  16 bands x 10 frames (contour)        1 s: 0.27/0.22  10 s: 0.31/0.22  30 s: 0.38/0.29
+unit-name classification per second, labels shifted by lag (balanced accuracy; chance 0.125)
+  lag -20 s: 0.162
+  lag -10 s: 0.169
+  lag  -5 s: 0.174
+  lag  -2 s: 0.181
+  lag  -1 s: 0.179
+  lag  +0 s: 0.197
+  lag  +1 s: 0.186
+  lag  +2 s: 0.166
+  lag  +5 s: 0.182
+  lag +10 s: 0.178
+  lag +20 s: 0.151

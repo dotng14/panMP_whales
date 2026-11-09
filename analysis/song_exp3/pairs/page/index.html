@@ -1,0 +1,205 @@
+<title>Humpback Phrase Pairs</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,650&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: one working column — the pair (two stacked spectrograms + their audio) above a verdict bar, with a strip of all pairs below for jumping around. */
+:root {
+  --bg: #f3f6f7;          /* pale sea-mist ground */
+  --panel: #ffffff;
+  --ink: #12232b;         /* deep ocean ink */
+  --muted: #5b6e77;
+  --line: #d5dfe3;
+  --accent: #0f6f7c;      /* teal of the hydrophone traces */
+  --same: #1d7a4a;
+  --diff: #a8442c;
+  --unsure: #8a6d16;
+  --font-display: "Fraunces", Georgia, "Times New Roman", serif;
+  --font-body: "IBM Plex Sans", "Segoe UI", system-ui, sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0d171c; --panel: #13222a; --ink: #e3ecef; --muted: #93a7b0; --line: #24363f;
+    --accent: #4fb8c4; --same: #4fbf83; --diff: #e07a5f; --unsure: #d9b44a; color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #0d171c; --panel: #13222a; --ink: #e3ecef; --muted: #93a7b0; --line: #24363f;
+  --accent: #4fb8c4; --same: #4fbf83; --diff: #e07a5f; --unsure: #d9b44a; color-scheme: dark;
+}
+* { box-sizing: border-box; }
+body {
+  background: var(--bg); color: var(--ink); font-family: var(--font-body); font-size: 15px; line-height: 1.5;
+  padding-block: 20px 40px;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+}
+main { max-width: 860px; margin: 0 auto; display: grid; gap: 18px; }
+header { display: grid; gap: 6px; }
+h1 { font-family: var(--font-display); font-weight: 650; font-size: 1.7rem; margin: 0; text-wrap: balance; }
+.lede { color: var(--muted); margin: 0; max-width: 65ch; }
+.lede b { color: var(--ink); font-weight: 600; }
+.progress { display: flex; align-items: center; gap: 12px; font-family: var(--font-mono); font-size: 0.85rem; color: var(--muted); font-variant-numeric: tabular-nums; }
+.bar { flex: 1; height: 6px; background: var(--line); border-radius: 3px; overflow: hidden; }
+.bar > span { display: block; height: 100%; width: 0; background: var(--accent); transition: width .25s; }
+.card { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 14px; display: grid; gap: 12px; min-width: 0; }
+.card-head { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; flex-wrap: wrap; }
+.pair-id { font-family: var(--font-mono); font-size: 0.9rem; color: var(--muted); }
+.state { font-family: var(--font-mono); font-size: 0.8rem; padding: 2px 8px; border-radius: 999px; border: 1px solid var(--line); color: var(--muted); }
+.state[data-v="same"] { color: var(--same); border-color: var(--same); }
+.state[data-v="different"] { color: var(--diff); border-color: var(--diff); }
+.state[data-v="unsure"] { color: var(--unsure); border-color: var(--unsure); }
+.spec { width: 100%; height: auto; border-radius: 6px; background: #000; display: block; }
+.players { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.player { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.player b { font-family: var(--font-display); font-size: 1.1rem; width: 1.2em; }
+.player audio { width: 100%; min-width: 0; height: 36px; }
+.verdicts { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
+button { font: inherit; cursor: pointer; }
+.v { border: 1.5px solid var(--line); background: var(--panel); color: var(--ink); border-radius: 8px; padding: 12px 8px; font-weight: 600; display: grid; gap: 2px; justify-items: center; }
+.v small { font-family: var(--font-mono); font-weight: 400; color: var(--muted); font-size: 0.75rem; }
+.v[data-v="same"]:hover, .v[data-v="same"][aria-pressed="true"] { border-color: var(--same); color: var(--same); }
+.v[data-v="different"]:hover, .v[data-v="different"][aria-pressed="true"] { border-color: var(--diff); color: var(--diff); }
+.v[data-v="unsure"]:hover, .v[data-v="unsure"][aria-pressed="true"] { border-color: var(--unsure); color: var(--unsure); }
+.v[aria-pressed="true"] { background: color-mix(in srgb, currentColor 8%, var(--panel)); }
+.nav { display: flex; justify-content: space-between; gap: 10px; }
+.nav button { border: 1px solid var(--line); background: transparent; color: var(--ink); border-radius: 8px; padding: 8px 14px; }
+button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.note { font-size: 0.85rem; color: var(--muted); margin: 0; }
+.note.warn { color: var(--diff); }
+.strip { display: flex; flex-wrap: wrap; gap: 5px; }
+.dot { width: 30px; height: 26px; border-radius: 5px; border: 1px solid var(--line); background: var(--panel); color: var(--muted); font-family: var(--font-mono); font-size: 0.68rem; padding: 0; }
+.dot[data-v="same"] { background: var(--same); border-color: var(--same); color: var(--panel); }
+.dot[data-v="different"] { background: var(--diff); border-color: var(--diff); color: var(--panel); }
+.dot[data-v="unsure"] { background: var(--unsure); border-color: var(--unsure); color: var(--panel); }
+.dot[aria-current="true"] { outline: 2px solid var(--accent); outline-offset: 1px; }
+details { color: var(--muted); font-size: 0.9rem; }
+details summary { cursor: pointer; color: var(--ink); font-weight: 500; }
+details p { max-width: 65ch; }
+@media (max-width: 560px) { .players { grid-template-columns: 1fr; } h1 { font-size: 1.4rem; } }
+@media (prefers-reduced-motion: reduce) { .bar > span { transition: none; } }
+</style>
+
+<main>
+  <header>
+    <h1>Same phrase, or not?</h1>
+    <p class="lede">Each pair shows two 20-second stretches of the SOCAL humpback recording (spectrogram, 30–1000 Hz). <b>A</b> is a query; <b>B</b> was found by one of the inputs we are testing, or picked at random. Decide whether B contains the <b>same phrase type</b> as A (the same pattern of units, possibly sung louder, softer or a little faster). Keys: <span style="font-family:var(--font-mono)">1</span> same, <span style="font-family:var(--font-mono)">2</span> different, <span style="font-family:var(--font-mono)">3</span> unsure, ← → to move.</p>
+    <div class="progress"><span id="count">0 / 0 judged</span><div class="bar"><span id="fill"></span></div></div>
+  </header>
+
+  <section class="card" aria-live="polite">
+    <div class="card-head"><span class="pair-id" id="pid">Loading pairs…</span><span class="state" id="state">not judged</span></div>
+    <img class="spec" id="spec" alt="Spectrograms of the two stretches, A above B">
+    <div class="players">
+      <div class="player"><b>A</b><audio id="audioA" controls preload="none"></audio></div>
+      <div class="player"><b>B</b><audio id="audioB" controls preload="none"></audio></div>
+    </div>
+    <div class="verdicts">
+      <button class="v" data-v="same" id="v-same" aria-pressed="false">Same phrase<small>1</small></button>
+      <button class="v" data-v="different" id="v-diff" aria-pressed="false">Different<small>2</small></button>
+      <button class="v" data-v="unsure" id="v-unsure" aria-pressed="false">Unsure<small>3</small></button>
+    </div>
+    <div class="nav"><button id="prev">← Previous</button><button id="next">Next →</button></div>
+    <p class="note" id="note">Audio plays the middle 12 seconds of each stretch.</p>
+  </section>
+
+  <section class="card">
+    <div class="card-head"><span class="pair-id">All pairs</span><span class="pair-id" id="legend">green same · red different · amber unsure</span></div>
+    <div class="strip" id="strip"></div>
+  </section>
+
+  <details>
+    <summary>What this is for</summary>
+    <p>We are testing several ways of turning the recording into numbers for a song model. For each query, every method proposes the stretch it finds most similar, at least 5 minutes away. Your judgements tell us how often each method's match really is the same phrase type — a score with a known ceiling of 1, which the automatic tests lack. The page never shows which method proposed a pair, and the order is shuffled.</p>
+  </details>
+</main>
+
+<script>
+(() => {
+  const $ = (id) => document.getElementById(id);
+  let pairs = [], i = 0, verdicts = {}, db = null, myDoc = null, docExists = false, saving = Promise.resolve();
+
+  function render() {
+    if (!pairs.length) return;
+    const p = pairs[i], v = verdicts[p.id];
+    $("pid").textContent = `Pair ${i + 1} of ${pairs.length} · ${p.id}`;
+    $("state").textContent = v || "not judged";
+    $("state").dataset.v = v || "";
+    $("spec").src = p.img;
+    if ($("audioA").getAttribute("src") !== p.audioA) $("audioA").setAttribute("src", p.audioA);
+    if ($("audioB").getAttribute("src") !== p.audioB) $("audioB").setAttribute("src", p.audioB);
+    document.querySelectorAll(".v").forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.v === v)));
+    const n = pairs.filter((q) => verdicts[q.id]).length;
+    $("count").textContent = `${n} / ${pairs.length} judged`;
+    $("fill").style.width = `${(100 * n) / pairs.length}%`;
+    document.querySelectorAll(".dot").forEach((d, k) => {
+      d.dataset.v = verdicts[pairs[k].id] || "";
+      d.setAttribute("aria-current", String(k === i));
+    });
+  }
+
+  function buildStrip() {
+    const strip = $("strip");
+    strip.textContent = "";
+    pairs.forEach((p, k) => {
+      const d = document.createElement("button");
+      d.className = "dot";
+      d.id = `dot-${p.id}`;
+      d.textContent = String(k + 1);
+      d.title = p.id;
+      d.addEventListener("click", () => { i = k; render(); });
+      strip.appendChild(d);
+    });
+  }
+
+  function judge(v) {
+    if (!pairs.length) return;
+    const p = pairs[i];
+    verdicts[p.id] = v;
+    render();
+    if (myDoc) {
+      const stamp = new Date().toISOString();
+      saving = saving.then(() => (docExists
+        ? myDoc.update({ verdicts: { [p.id]: v }, updated: stamp })
+        : myDoc.set({ verdicts: Object.assign({}, verdicts), updated: stamp }).then(() => { docExists = true; })))
+        .then(() => { $("note").className = "note"; $("note").textContent = "Saved."; })
+        .catch((e) => { $("note").className = "note warn"; $("note").textContent = `Not saved (${e && e.code ? e.code : "error"}). Your choice is kept on this screen; try again in a moment.`; });
+    }
+    if (i < pairs.length - 1) setTimeout(() => { i += 1; render(); }, 180);
+  }
+
+  document.querySelectorAll(".v").forEach((b) => b.addEventListener("click", () => judge(b.dataset.v)));
+  $("prev").addEventListener("click", () => { i = Math.max(0, i - 1); render(); });
+  $("next").addEventListener("click", () => { i = Math.min(pairs.length - 1, i + 1); render(); });
+  document.addEventListener("keydown", (e) => {
+    if (e.target && (e.target.tagName === "AUDIO" || e.target.tagName === "INPUT")) return;
+    if (e.key === "1") judge("same");
+    else if (e.key === "2") judge("different");
+    else if (e.key === "3") judge("unsure");
+    else if (e.key === "ArrowRight") { i = Math.min(pairs.length - 1, i + 1); render(); }
+    else if (e.key === "ArrowLeft") { i = Math.max(0, i - 1); render(); }
+  });
+
+  fetch("pairs.json").then((r) => r.json()).then((d) => { pairs = d.pairs; buildStrip(); render(); })
+    .catch(() => { $("pid").textContent = "The pair list did not load. Reload the page."; });
+
+  (async () => {
+    if (!window.claude || !window.claude.use) { $("note").textContent = "Open this page on claude.ai to save your judgements."; return; }
+    const timer = setTimeout(() => { if (!myDoc) { $("note").className = "note warn"; $("note").textContent = "Could not reach the judgement store yet; choices stay on this screen."; } }, 10000);
+    const [dbNs, user] = await Promise.all([window.claude.use("db"), window.claude.use("user")]);
+    if (!dbNs || !user) { clearTimeout(timer); $("note").textContent = "Sign in to claude.ai to save your judgements."; return; }
+    const me = await user.id();
+    if (!me) { clearTimeout(timer); $("note").textContent = "Sign in to claude.ai to save your judgements."; return; }
+    db = dbNs;
+    myDoc = db.doc(`judgments/${me}`);
+    myDoc.onSnapshot((snap) => {
+      clearTimeout(timer);
+      if (snap.exists) docExists = true;
+      const data = snap.exists ? snap.data() : null;
+      if (data && data.verdicts) { verdicts = Object.assign({}, data.verdicts, verdicts); render(); }
+      $("note").className = "note";
+      $("note").textContent = "Your judgements save automatically. Audio plays the middle 12 seconds of each stretch.";
+    }, (err) => { clearTimeout(timer); $("note").className = "note warn"; $("note").textContent = `The judgement store stopped answering (${err && err.code ? err.code : "error"}). Reload the page.`; });
+  })();
+})();
+</script>
