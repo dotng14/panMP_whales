@@ -1,6 +1,6 @@
 """Diagnosis against Payne & McVay's song properties, and a test of the song-boundary idea.
 
-    python analysis/song_hmm_phrase/diagnostics/boundary_checks.py
+    python analysis/song_hmm/exp2_phrase_hmm/diagnostics/boundary_checks.py
 
 1. Theme lengths per song in the CSV  vs  the models' minimum theme length.
 2. Session gaps decoded by each model  vs  the rule "no pause longer than 1 min inside a session".
@@ -18,13 +18,13 @@ from pathlib import Path
 
 import numpy as np
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
-from analysis.song_hmm.labels import load_labels  # noqa: E402
-from analysis.song_hmm.train import CSV_PATH, SPLIT_S  # noqa: E402
-from analysis.song_hmm_phrase.metrics import unit_rows  # noqa: E402
-from analysis.song_hmm_phrase.train import WORK  # noqa: E402
+sys.path.insert(0, str(Path(__file__).resolve().parents[4]))
+from analysis.song_hmm.exp1_slot_hmm.labels import load_labels  # noqa: E402
+from analysis.song_hmm.exp1_slot_hmm.train import CSV_PATH, SPLIT_S  # noqa: E402
+from analysis.song_hmm.exp2_phrase_hmm.metrics import unit_rows  # noqa: E402
+from analysis.song_hmm.exp2_phrase_hmm.train import WORK  # noqa: E402
 
-EXP1_WORK = Path(__file__).resolve().parents[2] / "song_hmm" / "work"
+EXP1_WORK = Path(__file__).resolve().parents[2] / "exp1_slot_hmm" / "work"
 N = 36000
 
 
@@ -82,7 +82,7 @@ def main() -> None:
         if "session" in d:
             bg = ~d["session"]
         else:
-            from analysis.song_hmm.topology import IS_BG
+            from analysis.song_hmm.exp1_slot_hmm.topology import IS_BG
 
             bg = IS_BG[d["path"]]
         r = runs(bg)

@@ -20,7 +20,7 @@ from __future__ import annotations
 
 import numpy as np
 
-from analysis.song_hmm_phrase.decode import Decoded
+from analysis.song_hmm.exp2_phrase_hmm.decode import Decoded
 
 from .common import HALVES, N_THEMES, SESSION_GAP_S, at_times, labels, save, steps_to_seconds
 

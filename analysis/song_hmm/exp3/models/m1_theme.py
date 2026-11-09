@@ -16,7 +16,7 @@ import pickle
 
 import numpy as np
 
-from analysis.song_hmm_phrase.decode import Decoded
+from analysis.song_hmm.exp2_phrase_hmm.decode import Decoded
 
 from .common import HALVES, N_THEMES, WORK, at_times, boundaries_from_theme_steps, enforce_session_rule, labels, level_1s, save, steps_to_seconds
 from .graph import HMM, DiagGMM, Family, Graph

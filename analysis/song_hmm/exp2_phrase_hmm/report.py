@@ -1,8 +1,8 @@
 """Report for Experiment 2, with Experiment 1 reviewed and compared.
 
-    python -m analysis.song_hmm_phrase.report
+    python -m analysis.song_hmm.exp2_phrase_hmm.report
 
-Needs ``python -m analysis.song_hmm_phrase.train --seed audio`` and ``--seed csv``.
+Needs ``python -m analysis.song_hmm.exp2_phrase_hmm.train --seed audio`` and ``--seed csv``.
 Experiment 1's outputs are regenerated if missing. Writes reports/exp2_phrase_hmm.md,
 figures/ and work/report.json. The three required sections are checked
 before the file is written.
@@ -20,12 +20,12 @@ import matplotlib.pyplot as plt  # noqa: E402
 import numpy as np  # noqa: E402
 from scipy.io import wavfile  # noqa: E402
 
-from analysis.report_paths import write_report  # noqa: E402
-from analysis.song_hmm import report as exp1_report  # noqa: E402
-from analysis.song_hmm import train as exp1_train  # noqa: E402
-from analysis.song_hmm.labels import load_labels  # noqa: E402
-from analysis.song_hmm.report import diag_gauss_ll, match_events, two_state_hmm  # noqa: E402
-from analysis.song_hmm.train import CSV_PATH, SPLIT_S, WAV_PATH  # noqa: E402
+from analysis.song_hmm.report_paths import write_report  # noqa: E402
+from analysis.song_hmm.exp1_slot_hmm import report as exp1_report  # noqa: E402
+from analysis.song_hmm.exp1_slot_hmm import train as exp1_train  # noqa: E402
+from analysis.song_hmm.exp1_slot_hmm.labels import load_labels  # noqa: E402
+from analysis.song_hmm.exp1_slot_hmm.report import diag_gauss_ll, match_events, two_state_hmm  # noqa: E402
+from analysis.song_hmm.exp1_slot_hmm.train import CSV_PATH, SPLIT_S, WAV_PATH  # noqa: E402
 
 from . import report_text  # noqa: E402
 from .decode import Decoded, from_csv, from_phrase_path, from_slot_path  # noqa: E402

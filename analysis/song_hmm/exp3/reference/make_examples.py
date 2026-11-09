@@ -1,9 +1,9 @@
 """Spectrogram hint images for the labeller, one per CSV theme, from the TRAIN half.
 
-    python -m analysis.song_exp3.reference.make_examples
+    python -m analysis.song_hmm.exp3.reference.make_examples
 
 The CSV theme labels may be wrong: these images are hints, not ground truth.
-Writes PNGs into ``analysis/song_exp3/reference/examples/``.
+Writes PNGs into ``analysis/song_hmm/exp3/reference/examples/``.
 """
 
 from __future__ import annotations
@@ -18,7 +18,7 @@ import numpy as np
 from scipy.io import wavfile
 from scipy.signal import spectrogram
 
-from analysis.song_hmm.labels import load_labels
+from analysis.song_hmm.exp1_slot_hmm.labels import load_labels
 
 from .export_clips import CSV_PATH, N_SECONDS, TEST_START, WAV_PATH
 

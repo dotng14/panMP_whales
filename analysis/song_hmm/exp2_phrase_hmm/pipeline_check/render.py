@@ -43,9 +43,9 @@ def render(R: dict) -> str:
     add = L.append
     add("# Pipeline check: does wav → matrix keep the information in the recording?")
     add("")
-    add("Checks the Experiment 2 input pipeline (`analysis/song_hmm_phrase/features.py`; stages I-0 … I-6 in [../pipeline.md](../pipeline.md)). "
+    add("Checks the Experiment 2 input pipeline (`analysis/song_hmm/exp2_phrase_hmm/features.py`; stages I-0 … I-6 in [../pipeline.md](../pipeline.md)). "
         "Plan: [plan.md](plan.md). Code: `check.py` (it calls the real functions in `features.py`). Numbers: `work/results.json`. "
-        "Listening clips (Griffin–Lim rebuilds, 8 kHz wav): `work/audio/` (not committed; regenerate with `python -m analysis.song_hmm_phrase.pipeline_check.check`).")
+        "Listening clips (Griffin–Lim rebuilds, 8 kHz wav): `work/audio/` (not committed; regenerate with `python -m analysis.song_hmm.exp2_phrase_hmm.pipeline_check.check`).")
     add("")
     add("**How to read the song-repeat test (used in E, F and G).** A song repeats every ≈ 13 min. For 500 loud test-half windows, the nearest neighbour "
         "(among windows ≥ 5 min away) is found under a representation; a *hit* is a neighbour one or two song periods away (13 ± 2 or 26 ± 2 min). "
@@ -257,11 +257,11 @@ def render(R: dict) -> str:
 
 if __name__ == "__main__":
     # re-render the report from saved results, without rerunning the checks:
-    #   python -m analysis.song_hmm_phrase.pipeline_check.render
+    #   python -m analysis.song_hmm.exp2_phrase_hmm.pipeline_check.render
     import json
     from pathlib import Path
 
-    from analysis.report_paths import write_report
+    from analysis.song_hmm.report_paths import write_report
 
     here = Path(__file__).resolve().parent
     results = json.loads((here / "work" / "results.json").read_text(encoding="utf-8"))

@@ -1,6 +1,6 @@
-# song_hmm_phrase: Experiment 2
+# exp2_phrase_hmm: Experiment 2
 
-This folder holds a phrase-window theme HMM. It detects humpback song sessions, splits them into songs at the Theme 6 → Theme 1 transition, and labels the theme being sung. It is the second experiment; the first is in [`analysis/song_hmm/`](../song_hmm/README.md), and it stays unchanged so the two can be compared.
+This folder holds a phrase-window theme HMM. It detects humpback song sessions, splits them into songs at the Theme 6 → Theme 1 transition, and labels the theme being sung. It is the second experiment; the first is in [`analysis/song_hmm/exp1_slot_hmm/`](../exp1_slot_hmm/README.md), and it stays unchanged so the two can be compared.
 
 ## Documents
 
@@ -9,8 +9,8 @@ This folder holds a phrase-window theme HMM. It detects humpback song sessions, 
 | [plan.md](plan.md) | The approved plan: inputs, architecture, metrics, report layout |
 | [pipeline.md](pipeline.md) | Exactly how the wav becomes the matrix the model sees, for both experiments |
 | [metrics.md](metrics.md) | Definition and caveats of every metric |
-| [reports/exp2_phrase_hmm.md](../../reports/exp2_phrase_hmm.md) | The results. Sections: previous experiment, current experiment, comparison |
-| [reports/exp2_pipeline_check.md](../../reports/exp2_pipeline_check.md) | The check of this pipeline: is it correct, and what does it lose |
+| [reports/exp2_phrase_hmm.md](../reports/exp2_phrase_hmm.md) | The results. Sections: previous experiment, current experiment, comparison |
+| [reports/exp2_pipeline_check.md](../reports/exp2_pipeline_check.md) | The check of this pipeline: is it correct, and what does it lose |
 | [diagnostics/](diagnostics/) | `exp1_feature_checks.py` and its stored output, quoted in the report |
 
 ## Run
@@ -18,15 +18,15 @@ This folder holds a phrase-window theme HMM. It detects humpback song sessions, 
 From the repository root:
 
 ```bash
-python -m analysis.song_hmm_phrase.train --seed audio
+python -m analysis.song_hmm.exp2_phrase_hmm.train --seed audio
 ```
 
 ```bash
-python -m analysis.song_hmm_phrase.train --seed csv
+python -m analysis.song_hmm.exp2_phrase_hmm.train --seed csv
 ```
 
 ```bash
-python -m analysis.song_hmm_phrase.report
+python -m analysis.song_hmm.exp2_phrase_hmm.report
 ```
 
 - **`--seed audio`** is Experiment 2: k-means seeding, where the CSV only names Theme 1.
@@ -53,4 +53,4 @@ The default wav path is `C:\Users\hoang\Downloads\SOCAL_H_76_230426_193500_df100
 | `metrics.py` | CSV-agreement and label-free metrics |
 | `train.py`, `report.py`, `report_text.py` | Entry points and report text |
 
-Tests: `python -m pytest analysis/test/unit/song_hmm_phrase`.
+Tests: `python -m pytest analysis/test/unit/song_hmm/exp2`.

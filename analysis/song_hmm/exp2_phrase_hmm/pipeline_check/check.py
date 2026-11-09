@@ -1,6 +1,6 @@
 """Check the wav -> matrix pipeline of Experiment 2: correct, and what it keeps or loses.
 
-    python -m analysis.song_hmm_phrase.pipeline_check.check
+    python -m analysis.song_hmm.exp2_phrase_hmm.pipeline_check.check
 
 Sections follow plan.md: A file, B frequency content, C STFT framing, D resolution,
 E whitening, F windows / descriptors / PCA. Writes reports/exp2_pipeline_check.md, figures/ and
@@ -21,9 +21,9 @@ import numpy as np  # noqa: E402
 from scipy import signal  # noqa: E402
 from scipy.io import wavfile  # noqa: E402
 
-from analysis.report_paths import write_report  # noqa: E402
-from analysis.song_hmm.labels import load_labels, recording_start_unix  # noqa: E402
-from analysis.song_hmm.train import CSV_PATH, SPLIT_S, WAV_PATH  # noqa: E402
+from analysis.song_hmm.report_paths import write_report  # noqa: E402
+from analysis.song_hmm.exp1_slot_hmm.labels import load_labels, recording_start_unix  # noqa: E402
+from analysis.song_hmm.exp1_slot_hmm.train import CSV_PATH, SPLIT_S, WAV_PATH  # noqa: E402
 
 from .. import features as F  # noqa: E402
 

@@ -1,6 +1,6 @@
 """Fit the phrase-window theme HMM on the first half and decode both halves.
 
-    python -m analysis.song_hmm_phrase.train [--seed audio|csv] [--wav PATH]
+    python -m analysis.song_hmm.exp2_phrase_hmm.train [--seed audio|csv] [--wav PATH]
 
 --seed audio  Experiment 2  (k-means seeding; CSV only names Theme 1)
 --seed csv    Experiment 2b (theme Gaussians seeded from the CSV)
@@ -15,8 +15,8 @@ from pathlib import Path
 
 import numpy as np
 
-from analysis.song_hmm.labels import load_labels
-from analysis.song_hmm.train import CSV_PATH, SPLIT_S, WAV_PATH
+from analysis.song_hmm.exp1_slot_hmm.labels import load_labels
+from analysis.song_hmm.exp1_slot_hmm.train import CSV_PATH, SPLIT_S, WAV_PATH
 
 from .decode import WINDOW_CENTRE_S, from_phrase_path, write_outputs
 from .features import load_or_build

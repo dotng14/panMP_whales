@@ -1,7 +1,7 @@
 import numpy as np
 
-from analysis.song_hmm.hmm import initial_params
-from analysis.song_hmm.topology import (
+from analysis.song_hmm.exp1_slot_hmm.hmm import initial_params
+from analysis.song_hmm.exp1_slot_hmm.topology import (
     BG,
     BG_FIRST,
     IS_BG,

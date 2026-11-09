@@ -1,8 +1,8 @@
 """Model report: train vs test metrics, baselines, synthetic recovery, figures.
 
-    python -m analysis.song_hmm.report
+    python -m analysis.song_hmm.exp1_slot_hmm.report
 
-Run ``python -m analysis.song_hmm.train`` first. Writes ``reports/exp1_slot_hmm.md`` and
+Run ``python -m analysis.song_hmm.exp1_slot_hmm.train`` first. Writes ``reports/exp1_slot_hmm.md`` and
 ``figures/`` next to this file, and ``work/report.json``.
 """
 
@@ -18,7 +18,7 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt  # noqa: E402
 import numpy as np  # noqa: E402
 
-from analysis.report_paths import MOVED, REPORTS, write_report  # noqa: E402
+from analysis.song_hmm.report_paths import MOVED, REPORTS, write_report  # noqa: E402
 from .decode import segment, song_boundaries  # noqa: E402
 from .features import FEATURE_NAMES  # noqa: E402
 from .hmm import baum_welch, initial_params, viterbi  # noqa: E402

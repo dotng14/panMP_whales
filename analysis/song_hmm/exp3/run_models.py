@@ -1,6 +1,6 @@
 """Phase 2: pick the inputs from the screening and train the four models.
 
-    python -m analysis.song_exp3.run_models [--only M1,M2,M3,M4]
+    python -m analysis.song_hmm.exp3.run_models [--only M1,M2,M3,M4]
 
 Input choice (written to work/models/inputs_used.json):
   M1, M2  the window input (X1 or X2, 12 or 20 s, any S x N) with the best PCA-20 song-repeat hit
@@ -19,7 +19,7 @@ import time
 import numpy as np
 from scipy.io import wavfile
 
-from analysis.song_hmm.train import SPLIT_S, WAV_PATH
+from analysis.song_hmm.exp1_slot_hmm.train import SPLIT_S, WAV_PATH
 
 from .inputs.frames import frames
 from .inputs.spectrogram import SR, dc_removed, normalise, spectrogram

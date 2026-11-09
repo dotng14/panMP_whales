@@ -8,8 +8,8 @@ Every metric is computed the same way for:
 Each is reported for train and test; **test is the headline**.
 
 Code:
-- `analysis/song_exp3/evaluate.py`;
-- `analysis/song_hmm_phrase/metrics.py`, shared with Experiment 2 (common decoded form, groups B and C).
+- `analysis/song_hmm/exp3/evaluate.py`;
+- `analysis/song_hmm/exp2_phrase_hmm/metrics.py`, shared with Experiment 2 (common decoded form, groups B and C).
 
 ## Common decoded form
 

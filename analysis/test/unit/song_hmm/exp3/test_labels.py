@@ -3,7 +3,7 @@ import json
 import numpy as np
 import pytest
 
-from analysis.song_exp3.reference.labels import (
+from analysis.song_hmm.exp3.reference.labels import (
     load_all,
     load_clip,
     read_audacity,

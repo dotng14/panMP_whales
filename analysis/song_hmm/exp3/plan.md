@@ -38,7 +38,7 @@ Every input and metric is documented.
 
 ## Folder and documents
 
-New package `analysis/song_exp3/`, committed except `work/`:
+New package `analysis/song_hmm/exp3/`, committed except `work/`:
 
 | File | Content |
 |---|---|
@@ -52,11 +52,11 @@ New package `analysis/song_exp3/`, committed except `work/`:
 Experiments 1 and 2 and the pipeline check are left untouched.
 
 **Reused code:**
-- `analysis/song_hmm_phrase/features.py` (spectrogram, bands, whitening, descriptors; already parametrised);
-- `analysis/song_hmm/hmm.py` log-domain kernels (`_forward`, `_backward`, `_viterbi`);
-- `analysis/song_hmm/labels.py`;
-- `analysis/song_hmm_phrase/decode.py` and `metrics.py` (common decoded form, CSV and label-free metrics);
-- `analysis/song_hmm_phrase/pipeline_check/check.py` (song-repeat test, patch similarity).
+- `analysis/song_hmm/exp2_phrase_hmm/features.py` (spectrogram, bands, whitening, descriptors; already parametrised);
+- `analysis/song_hmm/exp1_slot_hmm/hmm.py` log-domain kernels (`_forward`, `_backward`, `_viterbi`);
+- `analysis/song_hmm/exp1_slot_hmm/labels.py`;
+- `analysis/song_hmm/exp2_phrase_hmm/decode.py` and `metrics.py` (common decoded form, CSV and label-free metrics);
+- `analysis/song_hmm/exp2_phrase_hmm/pipeline_check/check.py` (song-repeat test, patch similarity).
 
 ## Rules every model obeys
 
@@ -230,12 +230,12 @@ Built the way speech recognisers build sentences from word models:
 
 | Path | Purpose |
 |---|---|
-| `song_exp3/inputs/` (`spectrogram.py`, `pcen.py`, `window_features.py`, `fourier2d.py`, `frames.py`, `units.py`, `screen.py`) | Phase 1 |
-| `song_exp3/reference/` (`pairs.py`, `labels.py`, `export_clips.py`, `page/` with the pair-judging page source, `README.md`) | Phase 0 |
-| `song_exp3/models/` (`m1_theme.py`, `m2_songfirst.py`, `m3_units.py`, `m4_theme_hmms.py`, `graph.py` with shared graph and HMM helpers) | Phase 2 |
-| `song_exp3/evaluate.py`, `report.py`, `report_text.py` | Phase 3 |
-| `analysis/test/unit/song_exp3/` | Tests |
-| `.gitignore` | Add `analysis/song_exp3/work/` |
+| `exp3/inputs/` (`spectrogram.py`, `pcen.py`, `window_features.py`, `fourier2d.py`, `frames.py`, `units.py`, `screen.py`) | Phase 1 |
+| `exp3/reference/` (`pairs.py`, `labels.py`, `export_clips.py`, `page/` with the pair-judging page source, `README.md`) | Phase 0 |
+| `exp3/models/` (`m1_theme.py`, `m2_songfirst.py`, `m3_units.py`, `m4_theme_hmms.py`, `graph.py` with shared graph and HMM helpers) | Phase 2 |
+| `exp3/evaluate.py`, `report.py`, `report_text.py` | Phase 3 |
+| `analysis/test/unit/song_hmm/exp3/` | Tests |
+| `.gitignore` | Add `analysis/song_hmm/exp3/work/` |
 
 ## Order of work and checkpoints
 
@@ -256,5 +256,5 @@ Built the way speech recognisers build sentences from word models:
    - **M2:** DTW phase recovers a planted cycle with variable song lengths;
    - **M3:** discrete-emission forward and Viterbi match brute force.
 2. **Rules check** on every model's output: no session break at gaps of 60 s or less; themes always in order.
-3. **End to end:** `python -m analysis.song_exp3.report` writes `report.md` with the three required sections, every table filled for train and test, and H / P marked pending until the reference exists. After labelling, rerun and confirm H / P fill in.
+3. **End to end:** `python -m analysis.song_hmm.exp3.report` writes `report.md` with the three required sections, every table filled for train and test, and H / P marked pending until the reference exists. After labelling, rerun and confirm H / P fill in.
 4. Experiments 1 and 2 and the pipeline-check tests still pass.

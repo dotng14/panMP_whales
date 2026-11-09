@@ -3,10 +3,7 @@ __pycache__/
 *.pyc
 backend/tmp/
 analysis/HMM/work/
-analysis/song_hmm/work/
-analysis/song_hmm_phrase/work/
-analysis/song_hmm_phrase/pipeline_check/work/
-analysis/song_exp3/work/
+analysis/song_hmm/**/work/
 analysis/dict_learning/runs/
 .coverage
 .coverage.*

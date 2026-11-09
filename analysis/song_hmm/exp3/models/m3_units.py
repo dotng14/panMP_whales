@@ -15,8 +15,8 @@ from __future__ import annotations
 
 import numpy as np
 
-from analysis.song_hmm.topology import FIRST_SLOT, LAST_SLOT, N_SLOTS, SLOT_THEME
-from analysis.song_hmm_phrase.decode import Decoded
+from analysis.song_hmm.exp1_slot_hmm.topology import FIRST_SLOT, LAST_SLOT, N_SLOTS, SLOT_THEME
+from analysis.song_hmm.exp2_phrase_hmm.decode import Decoded
 
 from .common import HALVES, N_THEMES, SESSION_GAP_S, at_times, enforce_session_rule, labels, save
 from .graph import HMM, Categorical, Family, Graph

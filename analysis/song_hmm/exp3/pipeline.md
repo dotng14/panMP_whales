@@ -7,7 +7,7 @@ Experiment 3 tries several ways to process the audio and to build model inputs, 
 - what it means;
 - which models use it.
 
-Code: `analysis/song_exp3/inputs/`. The Experiment 1 and 2 pipelines are in [../song_hmm_phrase/pipeline.md](../song_hmm_phrase/pipeline.md), and the check of the Experiment 2 pipeline is in [reports/exp2_pipeline_check.md](../../reports/exp2_pipeline_check.md).
+Code: `analysis/song_hmm/exp3/inputs/`. The Experiment 1 and 2 pipelines are in [../exp2_phrase_hmm/pipeline.md](../exp2_phrase_hmm/pipeline.md), and the check of the Experiment 2 pipeline is in [reports/exp2_pipeline_check.md](../reports/exp2_pipeline_check.md).
 
 ## Recording, split and common steps
 
@@ -117,4 +117,4 @@ Each option produces `S[n, b]` = ln(power in log band b during frame n). Bands r
   - **CSV same-theme:** the share of nearest windows with the same CSV theme (a weak reference).
 - **Final choice:** pair precision from the human pair judging, once you have judged them. Until then the song-repeat hit decides which input the models use.
 
-The choice made by `run_models.py` is written to `work/models/inputs_used.json` and reported in [reports/exp3_inputs_and_models.md](../../reports/exp3_inputs_and_models.md).
+The choice made by `run_models.py` is written to `work/models/inputs_used.json` and reported in [reports/exp3_inputs_and_models.md](../reports/exp3_inputs_and_models.md).

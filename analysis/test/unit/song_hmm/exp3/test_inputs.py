@@ -1,10 +1,10 @@
 import numpy as np
 from scipy.signal import chirp
 
-from analysis.song_exp3.inputs.pcen import pcen
-from analysis.song_exp3.inputs.spectrogram import SR, normalise, spectrogram
-from analysis.song_exp3.inputs.units import detect
-from analysis.song_exp3.inputs.window_features import x2
+from analysis.song_hmm.exp3.inputs.pcen import pcen
+from analysis.song_hmm.exp3.inputs.spectrogram import SR, normalise, spectrogram
+from analysis.song_hmm.exp3.inputs.units import detect
+from analysis.song_hmm.exp3.inputs.window_features import x2
 
 
 def test_pcen_matches_librosa_after_warmup():

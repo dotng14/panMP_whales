@@ -18,8 +18,8 @@ import matplotlib.pyplot as plt
 import numpy as np
 from scipy.io import wavfile
 
-from analysis.song_hmm.labels import recording_start_unix
-from analysis.song_hmm.train import SPLIT_S, WAV_PATH
+from analysis.song_hmm.exp1_slot_hmm.labels import recording_start_unix
+from analysis.song_hmm.exp1_slot_hmm.train import SPLIT_S, WAV_PATH
 
 from .inputs.spectrogram import SR, dc_removed, normalise, spectrogram
 from .inputs.window_features import standardise_pca, x2

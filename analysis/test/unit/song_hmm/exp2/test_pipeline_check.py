@@ -1,7 +1,7 @@
 import numpy as np
 
-from analysis.song_hmm_phrase import features as F
-from analysis.song_hmm_phrase.pipeline_check.check import (
+from analysis.song_hmm.exp2_phrase_hmm import features as F
+from analysis.song_hmm.exp2_phrase_hmm.pipeline_check.check import (
     SR,
     istft_snr,
     modulation_spectrum,

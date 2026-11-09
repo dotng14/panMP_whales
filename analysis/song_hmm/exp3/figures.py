@@ -1,4 +1,4 @@
-"""Figures for the Experiment 3 report (written to analysis/song_exp3/figures/)."""
+"""Figures for the Experiment 3 report (written to analysis/song_hmm/exp3/figures/)."""
 
 from __future__ import annotations
 
@@ -11,7 +11,7 @@ import matplotlib.pyplot as plt  # noqa: E402
 import numpy as np  # noqa: E402
 from scipy.io import wavfile  # noqa: E402
 
-from analysis.song_hmm.train import SPLIT_S, WAV_PATH  # noqa: E402
+from analysis.song_hmm.exp1_slot_hmm.train import SPLIT_S, WAV_PATH  # noqa: E402
 
 from .evaluate import NAMES, load_decoded  # noqa: E402
 from .inputs.spectrogram import N_OPTIONS, S_OPTIONS, SR, normalise, spectrogram  # noqa: E402

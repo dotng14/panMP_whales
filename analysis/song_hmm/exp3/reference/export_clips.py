@@ -1,10 +1,10 @@
 """Export the two 30-minute test-half clips that get hand-labelled in Audacity.
 
-    python -m analysis.song_exp3.reference.export_clips
+    python -m analysis.song_hmm.exp3.reference.export_clips
 
 Writes ``clip1.wav``, ``clip2.wav`` (2 kHz int16, DC offset removed) and
 ``clips.json`` (recording offset of each clip) into
-``analysis/song_exp3/work/reference/``.
+``analysis/song_hmm/exp3/work/reference/``.
 """
 
 from __future__ import annotations
@@ -16,12 +16,12 @@ from pathlib import Path
 import numpy as np
 from scipy.io import wavfile
 
-from analysis.song_hmm.labels import load_labels
+from analysis.song_hmm.exp1_slot_hmm.labels import load_labels
 
-REPO = Path(__file__).resolve().parents[3]
+REPO = Path(__file__).resolve().parents[4]
 WAV_PATH = Path(r"C:\Users\hoang\Downloads\SOCAL_H_76_230426_193500_df100.x.x.wav")
 CSV_PATH = REPO / "backend/data/song_structure/SOCAL_H_76_230426_193500_df100.x.x.motif_segments.csv"
-OUT_DIR = REPO / "analysis/song_exp3/work/reference"
+OUT_DIR = REPO / "analysis/song_hmm/exp3/work/reference"
 N_SECONDS = 36000
 TEST_START = 18000
 

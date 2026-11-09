@@ -1,8 +1,8 @@
 import numpy as np
 from scipy.special import logsumexp
 
-from analysis.song_hmm.hmm import baum_welch, initial_params, log_emit, loglik, posterior, sample, viterbi
-from analysis.song_hmm.topology import N_DUR, N_STATES, build_graph
+from analysis.song_hmm.exp1_slot_hmm.hmm import baum_welch, initial_params, log_emit, loglik, posterior, sample, viterbi
+from analysis.song_hmm.exp1_slot_hmm.topology import N_DUR, N_STATES, build_graph
 
 
 def _params(seed=0, k=3):

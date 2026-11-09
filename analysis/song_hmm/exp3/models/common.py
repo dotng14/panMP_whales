@@ -8,9 +8,9 @@ import numpy as np
 from scipy import signal
 from scipy.io import wavfile
 
-from analysis.song_hmm.labels import load_labels
-from analysis.song_hmm.train import CSV_PATH, SPLIT_S, WAV_PATH
-from analysis.song_hmm_phrase.decode import Decoded, write_outputs
+from analysis.song_hmm.exp1_slot_hmm.labels import load_labels
+from analysis.song_hmm.exp1_slot_hmm.train import CSV_PATH, SPLIT_S, WAV_PATH
+from analysis.song_hmm.exp2_phrase_hmm.decode import Decoded, write_outputs
 
 HERE = Path(__file__).resolve().parents[1]
 WORK = HERE / "work"

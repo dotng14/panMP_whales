@@ -16,7 +16,7 @@ from dataclasses import dataclass
 
 import numpy as np
 
-from analysis.song_hmm_phrase import features as F
+from analysis.song_hmm.exp2_phrase_hmm import features as F
 
 from .pcen import pcen
 

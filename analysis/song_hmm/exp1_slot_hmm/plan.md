@@ -17,7 +17,7 @@ The model follows the Payne & McVay convention:
 - **Partial first song.** A session may begin at any theme. Everything before the first T1 is a partial song.
 
 **Where the work lives:**
-- New, self-contained folder `analysis/song_hmm/`, with no imports from `analysis/HMM/`.
+- New, self-contained folder `analysis/song_hmm/exp1_slot_hmm/`, with no imports from `analysis/HMM/`.
 - Branch `dat-hmm`.
 - `analysis/HMM/` stays untouched.
 
@@ -46,14 +46,14 @@ The test half is never used for fitting. The z-score stats, the initialization a
    - Broadband level above the floor: the log of summed 30–1000 Hz power minus its own rolling floor. This separates song from background.
    - Modulation: the std of the broadband frame level within the second. Song units are modulated; steady noise is not.
 6. **z-score** every column with the train-half mean and std.
-7. **Cache** to `analysis/song_hmm/work/features.npz`, together with the parameters used to build it.
+7. **Cache** to `analysis/song_hmm/exp1_slot_hmm/work/features.npz`, together with the parameters used to build it.
 
 ## Changes made while building
 
 - **Background has a minimum duration of 30 s.** It is a chain of 30 states, so the model has 176 states instead of 147. Without the chain, the model used 1-second background gaps to jump between themes outside the 1→6 order.
 - **Session on/off rates are a fixed prior, not learned.** These are P(end) = 1e-3 at a phrase end and a background mean of 1 h. Left free, they collapsed into short gap fillers, because the recording has no labeled non-song.
 - **Forward–backward runs in the log domain.** A scaled probability-domain pass lost the posterior inside the background chain.
-- **Figures are written to `analysis/song_hmm/figures/`, not `work/figures/`.** `work/` is git-ignored, and `report.md` needs its figures committed.
+- **Figures are written to `analysis/song_hmm/exp1_slot_hmm/figures/`, not `work/figures/`.** `work/` is git-ignored, and `report.md` needs its figures committed.
 
 ## Model architecture
 
@@ -146,14 +146,14 @@ Each half is decoded as its own sequence.
   - **songs** are split at each T6 → T1 transition (T6.last or P6 → T1.1);
   - the first segment is flagged `partial_start` if it does not begin at T1.1, and the last is flagged `partial_end` if it does not end in theme 6.
 - **Forward–backward.** P(song) per second (1 − P(BG)) and P(theme) per second.
-- **Written to `analysis/song_hmm/work/{train,test}/`:**
+- **Written to `analysis/song_hmm/exp1_slot_hmm/work/{train,test}/`:**
   - `sessions.csv` (session, start_s, end_s)
   - `songs.csv` (session, song, start_s, end_s, first_theme, last_theme, partial flags)
   - `posteriors.npz`
 
 ## Model report
 
-`python -m analysis.song_hmm.report` writes `analysis/song_hmm/report.md`, with its figures in `analysis/song_hmm/work/figures/` and the numbers in `analysis/song_hmm/work/report.json`. Every metric is shown for **train** and **test** side by side.
+`python -m analysis.song_hmm.exp1_slot_hmm.report` writes `analysis/song_hmm/exp1_slot_hmm/report.md`, with its figures in `analysis/song_hmm/exp1_slot_hmm/work/figures/` and the numbers in `analysis/song_hmm/exp1_slot_hmm/work/report.json`. Every metric is shown for **train** and **test** side by side.
 
 The CSV is the only reference, and it looks generated. The report therefore treats CSV agreement as *agreement with the reference*, not as accuracy. Accuracy against true labels comes from the synthetic recording (section 6).
 
@@ -194,23 +194,23 @@ The CSV is the only reference, and it looks generated. The report therefore trea
 
 | File | Purpose |
 |---|---|
-| `analysis/song_hmm/plan.md` | This plan. Written first |
-| `analysis/song_hmm/__init__.py` | Marks the folder as a package |
-| `analysis/song_hmm/labels.py` | Parses the CSV into per-second slot/theme, song spans and per-slot unit-length histograms |
-| `analysis/song_hmm/features.py` | wav → STFT → band levels → noise floor → 18-D per-second features, z-scored with train stats; caches to `work/features.npz` |
-| `analysis/song_hmm/topology.py` | Slot table; builds the 147-state sparse graph (dst, log-prob, edge kind and tie group) from the parameters |
-| `analysis/song_hmm/hmm.py` | numba log-space forward, backward/E-step and Viterbi on the sparse graph; M-step; `baum_welch`; `sample` for the synthetic check |
-| `analysis/song_hmm/decode.py` | Viterbi/posteriors → sessions, songs, CSVs |
-| `analysis/song_hmm/train.py` | `python -m analysis.song_hmm.train [--wav PATH]`: features → init → fit on train → save `song_session_hmm.npz` → decode train and test |
-| `analysis/song_hmm/report.py` | `python -m analysis.song_hmm.report`: metrics, figures, `report.md`, `work/report.json` |
-| `analysis/song_hmm/README.md` | Architecture and how to run it |
-| `analysis/test/unit/song_hmm/test_topology.py`, `test_hmm.py`, `test_features.py` | Tests |
+| `analysis/song_hmm/exp1_slot_hmm/plan.md` | This plan. Written first |
+| `analysis/song_hmm/exp1_slot_hmm/__init__.py` | Marks the folder as a package |
+| `analysis/song_hmm/exp1_slot_hmm/labels.py` | Parses the CSV into per-second slot/theme, song spans and per-slot unit-length histograms |
+| `analysis/song_hmm/exp1_slot_hmm/features.py` | wav → STFT → band levels → noise floor → 18-D per-second features, z-scored with train stats; caches to `work/features.npz` |
+| `analysis/song_hmm/exp1_slot_hmm/topology.py` | Slot table; builds the 147-state sparse graph (dst, log-prob, edge kind and tie group) from the parameters |
+| `analysis/song_hmm/exp1_slot_hmm/hmm.py` | numba log-space forward, backward/E-step and Viterbi on the sparse graph; M-step; `baum_welch`; `sample` for the synthetic check |
+| `analysis/song_hmm/exp1_slot_hmm/decode.py` | Viterbi/posteriors → sessions, songs, CSVs |
+| `analysis/song_hmm/exp1_slot_hmm/train.py` | `python -m analysis.song_hmm.exp1_slot_hmm.train [--wav PATH]`: features → init → fit on train → save `song_session_hmm.npz` → decode train and test |
+| `analysis/song_hmm/exp1_slot_hmm/report.py` | `python -m analysis.song_hmm.exp1_slot_hmm.report`: metrics, figures, `report.md`, `work/report.json` |
+| `analysis/song_hmm/exp1_slot_hmm/README.md` | Architecture and how to run it |
+| `analysis/test/unit/song_hmm/exp1/test_topology.py`, `test_hmm.py`, `test_features.py` | Tests |
 
 `work/` products should be git-ignored, following the existing `.gitignore` pattern for `analysis/HMM/work`. `report.md` and the model `.npz` are committed.
 
 ## Verification
 
-1. **Unit tests** (`pytest analysis/test/unit/song_hmm`).
+1. **Unit tests** (`pytest analysis/test/unit/song_hmm/exp1`).
    - Topology:
      - every row sums to 1;
      - no edge skips a theme or goes backward;
@@ -225,7 +225,7 @@ The CSV is the only reference, and it looks generated. The report therefore trea
      - the train z-score stats do not change when the test half is altered.
 2. **Synthetic recovery.** Run as part of the report: session boundaries within ±5 s and song boundaries within ±5 s on the sampled data.
 3. **Real run.**
-   - Run `python -m analysis.song_hmm.train`, then `python -m analysis.song_hmm.report`.
+   - Run `python -m analysis.song_hmm.exp1_slot_hmm.train`, then `python -m analysis.song_hmm.exp1_slot_hmm.report`.
    - Check that `report.md` lists every metric for train and test, and that the figures render.
    - Look over the timeline figure and `songs.csv` by hand.
    - The CSV-agreement numbers are diagnostics, not pass/fail.

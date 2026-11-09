@@ -43,7 +43,7 @@ def render(D: dict) -> str:
     add("# Song-session HMM: Experiment 3 report")
     add("")
     add("Branch `dat-hmm`. Plan: [plan.md](plan.md). Inputs: [pipeline.md](pipeline.md). Metrics: [metrics.md](metrics.md). "
-        "Numbers: `work/eval.json`, `work/models/results.json`, `work/inputs/*.json`. Regenerate with `python -m analysis.song_exp3.evaluate` then `python -m analysis.song_exp3.report`.")
+        "Numbers: `work/eval.json`, `work/models/results.json`, `work/inputs/*.json`. Regenerate with `python -m analysis.song_hmm.exp3.evaluate` then `python -m analysis.song_hmm.exp3.report`.")
     add("")
 
     # ---------------------------------------------------------------- summary
@@ -97,7 +97,7 @@ def render(D: dict) -> str:
     # ---------------------------------------------------------------- previous
     add(REQUIRED[0])
     add("")
-    add("Full reports: [Experiment 2](../song_hmm_phrase/report.md), [pipeline check](../song_hmm_phrase/pipeline_check/report.md); diagnostics in [`../song_hmm_phrase/diagnostics/`](../song_hmm_phrase/diagnostics/).")
+    add("Full reports: [Experiment 2](../exp2_phrase_hmm/report.md), [pipeline check](../exp2_phrase_hmm/pipeline_check/report.md); diagnostics in [`../exp2_phrase_hmm/diagnostics/`](../exp2_phrase_hmm/diagnostics/).")
     add("")
     add("**Experiment 2** described each 2 s step by a 12 s phrase window from a 0.256 s / 0.05 s spectrogram with a 5-minute median noise floor, summarised as 295 order-free statistics (level, variability, flux, up/down sweep per band) and reduced to 20 PCA components. "
         "An 81-state theme HMM (theme chains of ≥ 20 s, pauses, background ≥ 30 s, T6 → T1 boundary) was seeded from k-means clusters (Exp 2) or from the CSV (Exp 2b).")

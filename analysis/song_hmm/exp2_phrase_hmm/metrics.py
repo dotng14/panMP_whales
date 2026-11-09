@@ -9,7 +9,7 @@ from __future__ import annotations
 import numpy as np
 from scipy.signal import find_peaks
 
-from analysis.song_hmm.report import match_events
+from analysis.song_hmm.exp1_slot_hmm.report import match_events
 
 from .decode import WINDOW_CENTRE_S, Decoded
 from .topology import N_THEMES

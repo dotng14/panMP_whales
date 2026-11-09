@@ -1,6 +1,6 @@
 """Phase 1 screening of the window inputs: 3 S x 4 N x {X1, X2} x {12 s, 20 s} x {PCA-20, PCA-40}, plus X5.
 
-    python -m analysis.song_exp3.inputs.screen
+    python -m analysis.song_hmm.exp3.inputs.screen
 
 For every combination, on the test half (same 500 queries as the pipeline check):
   repeat_hit   nearest neighbour (>= 5 min away) lies 1 or 2 song periods away (13 +- 2, 26 +- 2 min)
@@ -18,9 +18,9 @@ from pathlib import Path
 import numpy as np
 from scipy.io import wavfile
 
-from analysis.song_hmm.labels import load_labels
-from analysis.song_hmm.train import CSV_PATH, SPLIT_S, WAV_PATH
-from analysis.song_hmm_phrase.pipeline_check.check import patch_similarity, query_set, retrieval, unit
+from analysis.song_hmm.exp1_slot_hmm.labels import load_labels
+from analysis.song_hmm.exp1_slot_hmm.train import CSV_PATH, SPLIT_S, WAV_PATH
+from analysis.song_hmm.exp2_phrase_hmm.pipeline_check.check import patch_similarity, query_set, retrieval, unit
 
 from .spectrogram import N_OPTIONS, S_OPTIONS, SR, dc_removed, normalise, spectrogram
 from .window_features import standardise_pca, x1, x2
@@ -32,7 +32,7 @@ WINDOWS = (12, 20)
 
 
 def queries() -> tuple[np.ndarray, np.ndarray]:
-    f = np.load(HERE.parent / "song_hmm_phrase" / "work" / "phrase_features.npz")
+    f = np.load(HERE.parent / "exp2_phrase_hmm" / "work" / "phrase_features.npz")
     t_q, t_c, _, _ = query_set(f["level_test"], (f["t_test"] - SPLIT_S) * 20)
     return t_q, t_c
 

@@ -1,7 +1,7 @@
-"""All experiment reports live in the repository's reports/ folder.
+"""All experiment reports live in analysis/song_hmm/reports/.
 
 Each report generator still builds its markdown with links relative to its own
-package folder (figures/, plan.md, ../song_hmm/...). ``write_report`` rewrites
+package folder (figures/, plan.md, ../exp1_slot_hmm/...). ``write_report`` rewrites
 those links so they work from reports/, and points links to an old report
 location at the report's new file.
 """
@@ -12,17 +12,16 @@ import os
 import re
 from pathlib import Path
 
-REPO = Path(__file__).resolve().parents[1]
-REPORTS = REPO / "reports"
-ANALYSIS = REPO / "analysis"
+HERE = Path(__file__).resolve().parent  # analysis/song_hmm
+REPORTS = HERE / "reports"
 
-# where each report used to be  ->  its file in reports/
+# where each generator would put its report (its own folder)  ->  its file in reports/
 MOVED = {
-    ANALYSIS / "song_hmm" / "report.md": "exp1_slot_hmm.md",
-    ANALYSIS / "song_hmm_phrase" / "report.md": "exp2_phrase_hmm.md",
-    ANALYSIS / "song_hmm_phrase" / "pipeline_check" / "report.md": "exp2_pipeline_check.md",
-    ANALYSIS / "song_exp3" / "report.md": "exp3_inputs_and_models.md",
-    ANALYSIS / "song_exp3" / "best_combination.md": "exp3_best_combination.md",
+    HERE / "exp1_slot_hmm" / "report.md": "exp1_slot_hmm.md",
+    HERE / "exp2_phrase_hmm" / "report.md": "exp2_phrase_hmm.md",
+    HERE / "exp2_phrase_hmm" / "pipeline_check" / "report.md": "exp2_pipeline_check.md",
+    HERE / "exp3" / "report.md": "exp3_inputs_and_models.md",
+    HERE / "exp3" / "best_combination.md": "exp3_best_combination.md",
 }
 
 _LINK = re.compile(r"\]\(([^)\s]+)\)")

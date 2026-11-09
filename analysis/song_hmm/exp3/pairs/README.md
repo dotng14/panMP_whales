@@ -20,7 +20,7 @@
 2. Then run:
 
 ```bash
-python -m analysis.song_exp3.report
+python -m analysis.song_hmm.exp3.report
 ```
 
 The report fills the pair-precision table (group P), reported per input.
@@ -28,7 +28,7 @@ The report fills the pair-precision table (group P), reported per input.
 ## Rebuild
 
 ```bash
-python -m analysis.song_exp3.pairs.build
+python -m analysis.song_hmm.exp3.pairs.build
 ```
 
 The seed is fixed, so it rebuilds the same pairs. Republishing the page keeps the saved judgements.

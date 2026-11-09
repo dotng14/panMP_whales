@@ -1,6 +1,6 @@
 # Song-session HMM: model report
 
-Recording `SOCAL_H_76_230426_193500_df100.x.x.wav`: 10 h at 2 kHz. **Train** = first 5 h (0–18000 s), **test** = last 5 h. Features, initialization and Baum–Welch use the train half only. Architecture and choices: [plan.md](../analysis/song_hmm/plan.md).
+Recording `SOCAL_H_76_230426_193500_df100.x.x.wav`: 10 h at 2 kHz. **Train** = first 5 h (0–18000 s), **test** = last 5 h. Features, initialization and Baum–Welch use the train half only. Architecture and choices: [plan.md](../exp1_slot_hmm/plan.md).
 
 The CSV reference covers every second of the recording with whole-second units, and some of its songs skip themes. It looks generated, so agreement with it is **agreement with the reference, not accuracy**. The synthetic section is the only score against a true path.
 
@@ -12,7 +12,7 @@ The CSV reference covers every second of the recording with whole-second units, 
 | one Gaussian for every second | -25.541 | -26.202 |
 | 2-state HMM (background + one song Gaussian) | -21.640 | -20.806 |
 
-Baum–Welch ran 30 iterations. ![](../analysis/song_hmm/figures/loglik.png)
+Baum–Welch ran 30 iterations. ![](../exp1_slot_hmm/figures/loglik.png)
 
 ## 2. Session detection
 
@@ -26,11 +26,11 @@ Baum–Welch ran 30 iterations. ![](../analysis/song_hmm/figures/loglik.png)
 | mean P(song) | 0.944 | 0.921 |
 | median / max session length (s) | 500 / 8170 | 500 / 2650 |
 
-![](../analysis/song_hmm/figures/timeline.png)
+![](../exp1_slot_hmm/figures/timeline.png)
 
 30 minutes of the test half at 1 s resolution:
 
-![](../analysis/song_hmm/figures/timeline_zoom_test.png)
+![](../exp1_slot_hmm/figures/timeline_zoom_test.png)
 
 ## 3. Song boundaries (T6 → T1)
 
@@ -43,7 +43,7 @@ Baum–Welch ran 30 iterations. ![](../analysis/song_hmm/figures/loglik.png)
 | boundary P / R / F1 at ±15 s vs CSV song starts | 0.09 / 0.11 / 0.10 (3/33 pred, 27 ref) | 0.08 / 0.08 / 0.08 (2/26 pred, 25 ref) |
 | median offset of nearest decoded boundary to each CSV start (s) | 93 | 87 |
 
-![](../analysis/song_hmm/figures/song_lengths.png)
+![](../exp1_slot_hmm/figures/song_lengths.png)
 
 ## 4. Theme labeling
 
@@ -54,9 +54,9 @@ Baum–Welch ran 30 iterations. ![](../analysis/song_hmm/figures/loglik.png)
 | mean posterior on the CSV theme | 0.332 | 0.269 |
 | always-majority-theme baseline | 0.353 | 0.326 |
 
-![](../analysis/song_hmm/figures/confusion.png)
+![](../exp1_slot_hmm/figures/confusion.png)
 
-![](../analysis/song_hmm/figures/theme_seconds.png)
+![](../exp1_slot_hmm/figures/theme_seconds.png)
 
 Phrases per complete song:
 
@@ -82,7 +82,7 @@ End-of-theme branch (from the last slot of each theme) and breath states. `end` 
 
 Session entry (background → theme): T1 0.42, T2 0.12, T3 0.18, T4 0.24, T5 0.04, T6 0.00.
 
-![](../analysis/song_hmm/figures/slot_lengths.png)
+![](../exp1_slot_hmm/figures/slot_lengths.png)
 
 ## 6. Synthetic recovery
 

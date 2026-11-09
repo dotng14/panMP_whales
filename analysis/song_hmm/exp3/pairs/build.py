@@ -1,6 +1,6 @@
 """Build the blind phrase-pair set for the judging page (Phase 0, R-pairs).
 
-    python -m analysis.song_exp3.pairs.build
+    python -m analysis.song_hmm.exp3.pairs.build
 
 20 query windows from the test half (loud, spread in time). For each query, the
 nearest window at least 5 min away under each input below, plus one random window:
@@ -29,8 +29,8 @@ import numpy as np  # noqa: E402
 from scipy import signal  # noqa: E402
 from scipy.io import wavfile  # noqa: E402
 
-from analysis.song_hmm.train import SPLIT_S, WAV_PATH  # noqa: E402
-from analysis.song_hmm_phrase.pipeline_check.check import patch_similarity, unit  # noqa: E402
+from analysis.song_hmm.exp1_slot_hmm.train import SPLIT_S, WAV_PATH  # noqa: E402
+from analysis.song_hmm.exp2_phrase_hmm.pipeline_check.check import patch_similarity, unit  # noqa: E402
 
 from ..inputs.screen import queries  # noqa: E402
 from ..inputs.spectrogram import SR, normalise, spectrogram  # noqa: E402

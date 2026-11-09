@@ -1,6 +1,6 @@
 """Experiment 3 report.
 
-    python -m analysis.song_exp3.report
+    python -m analysis.song_hmm.exp3.report
 
 Reads work/eval.json (run evaluate first), work/models/results.json, the screening
 files, and Experiment 2's and the pipeline check's saved numbers. Writes reports/exp3_inputs_and_models.md
@@ -11,14 +11,14 @@ from __future__ import annotations
 
 import json
 
-from analysis.report_paths import write_report
+from analysis.song_hmm.report_paths import write_report
 
 from .evaluate import hand_labels
 from .figures import all_figures
 from .models.common import HERE, WORK
 from .report_text import REQUIRED, render
 
-PHRASE = HERE.parent / "song_hmm_phrase"
+PHRASE = HERE.parent / "exp2_phrase_hmm"
 
 
 def load(path, default=None):
@@ -39,7 +39,7 @@ def main() -> None:
         "pairs_key": load(WORK / "pairs" / "key.json"),
     }
     if data["eval"] is None:
-        raise SystemExit("run python -m analysis.song_exp3.evaluate first")
+        raise SystemExit("run python -m analysis.song_hmm.exp3.evaluate first")
     hand = hand_labels()
     all_figures(data["eval"], data["results"], hand)
     text = render(data)

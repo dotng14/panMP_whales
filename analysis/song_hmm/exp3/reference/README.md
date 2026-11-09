@@ -17,11 +17,11 @@ shows); the parser adds the clip offset from `clips.json`.
 If you have the repository and the 10 h recording:
 
 ```bash
-python -m analysis.song_exp3.reference.export_clips
+python -m analysis.song_hmm.exp3.reference.export_clips
 ```
 
 This writes `clip1.wav`, `clip2.wav` and `clips.json` into
-`analysis/song_exp3/work/reference/` (not in git). Otherwise ask for the two wav files.
+`analysis/song_hmm/exp3/work/reference/` (not in git). Otherwise ask for the two wav files.
 
 ## 1. Install Audacity and open a clip
 
@@ -65,12 +65,12 @@ File > Export > **Export Labels…**, save as
 
 - `clip1_labels.txt` for clip1, `clip2_labels.txt` for clip2
 
-into `analysis/song_exp3/reference/labels/` (or send them back). Also File > Save
+into `analysis/song_hmm/exp3/reference/labels/` (or send them back). Also File > Save
 Project if you want to resume later. The export is plain text,
-`start<TAB>end<TAB>label`, which `analysis/song_exp3/reference/labels.py` reads:
+`start<TAB>end<TAB>label`, which `analysis/song_hmm/exp3/reference/labels.py` reads:
 
 ```bash
-python -c "from analysis.song_exp3.reference.labels import load_all; print(load_all())"
+python -c "from analysis.song_hmm.exp3.reference.labels import load_all; print(load_all())"
 ```
 
 ## How humpback song is structured (Payne & McVay 1971)
@@ -108,4 +108,4 @@ Whole song (CSV 3,021–3,473 s):
 | T6 | ![T6](examples/theme_T6.png) |
 
 Each image is 60 s: 15 s before the CSV theme start to 45 s after it. Regenerate with
-`python -m analysis.song_exp3.reference.make_examples`.
+`python -m analysis.song_hmm.exp3.reference.make_examples`.

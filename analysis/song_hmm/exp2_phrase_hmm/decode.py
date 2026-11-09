@@ -74,9 +74,9 @@ def from_phrase_path(name: str, path: np.ndarray, t_start: np.ndarray, offset: i
 
 def from_slot_path(name: str, path: np.ndarray) -> Decoded:
     """Experiment 1: per-second state path of the 176-state slot model."""
-    from analysis.song_hmm.decode import song_boundaries
-    from analysis.song_hmm.topology import IS_BG as IS_BG1
-    from analysis.song_hmm.topology import STATE_THEME as THEME1
+    from analysis.song_hmm.exp1_slot_hmm.decode import song_boundaries
+    from analysis.song_hmm.exp1_slot_hmm.topology import IS_BG as IS_BG1
+    from analysis.song_hmm.exp1_slot_hmm.topology import STATE_THEME as THEME1
 
     return Decoded(name, THEME1[path].astype(np.int32), ~IS_BG1[path], song_boundaries(path))
 

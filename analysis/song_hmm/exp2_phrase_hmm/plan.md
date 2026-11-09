@@ -2,7 +2,7 @@
 
 ## Context
 
-**Experiment 1** (`analysis/song_hmm/`, built on this branch):
+**Experiment 1** (`analysis/song_hmm/exp1_slot_hmm/`, built on this branch):
 - **Input:** one 18-number vector per second, computed from 16 frequency bands.
 - **Model:** 28 one-second phrase slots in the 1→…→6→1 theme cycle.
 - **What worked:** it finds sessions and a T6→T1 song cycle.
@@ -26,21 +26,21 @@ The recording and split are unchanged:
 
 ## Where it lives
 
-- Experiment 2 goes in a new package, `analysis/song_hmm_phrase/`.
-- Experiment 1 stays untouched in `analysis/song_hmm/`, so its numbers can be regenerated for the comparison.
+- Experiment 2 goes in a new package, `analysis/song_hmm/exp2_phrase_hmm/`.
+- Experiment 1 stays untouched in `analysis/song_hmm/exp1_slot_hmm/`, so its numbers can be regenerated for the comparison.
 - Shared code is imported, not copied:
   - `labels.load_labels`, the CSV reader;
-  - the generic sparse-graph numba kernels `_forward`, `_backward`, `_viterbi` from `analysis/song_hmm/hmm.py`.
+  - the generic sparse-graph numba kernels `_forward`, `_backward`, `_viterbi` from `analysis/song_hmm/exp1_slot_hmm/hmm.py`.
 
 **Stored documents**, all committed:
 
 | File | Content |
 |---|---|
-| `analysis/song_hmm_phrase/plan.md` | This plan |
-| `analysis/song_hmm_phrase/pipeline.md` | Exact wav → matrix processing for **both** experiments: every parameter, array shape and file |
-| `analysis/song_hmm_phrase/metrics.md` | Definition, formula and caveat for every metric |
-| `analysis/song_hmm_phrase/report.md` | Generated report with figures in `figures/` |
-| `analysis/song_hmm_phrase/README.md` | How to run |
+| `analysis/song_hmm/exp2_phrase_hmm/plan.md` | This plan |
+| `analysis/song_hmm/exp2_phrase_hmm/pipeline.md` | Exact wav → matrix processing for **both** experiments: every parameter, array shape and file |
+| `analysis/song_hmm/exp2_phrase_hmm/metrics.md` | Definition, formula and caveat for every metric |
+| `analysis/song_hmm/exp2_phrase_hmm/report.md` | Generated report with figures in `figures/` |
+| `analysis/song_hmm/exp2_phrase_hmm/README.md` | How to run |
 
 ## Inputs in detail (wav → model matrix)
 
@@ -277,20 +277,20 @@ Full order:
 
 | File | Purpose |
 |---|---|
-| `song_hmm_phrase/features.py` | Steps 1–8 above; cache |
-| `song_hmm_phrase/topology.py` | The ~81-state theme graph and its parameters |
-| `song_hmm_phrase/hmm.py` | Emissions, M-step, Baum–Welch, sampling (kernels imported from Experiment 1) |
-| `song_hmm_phrase/init.py` | k-means seeding, cyclic ordering, Theme 1 anchor; CSV-seeded variant |
-| `song_hmm_phrase/decode.py` | Window path → per-second path → sessions and songs |
-| `song_hmm_phrase/metrics.py` | Groups B–D, shared by all experiments and the CSV |
-| `song_hmm_phrase/train.py` | `python -m analysis.song_hmm_phrase.train [--seed audio\|csv]` |
-| `song_hmm_phrase/report.py` | `python -m analysis.song_hmm_phrase.report`: reruns Experiment 1's decode if its outputs are missing, computes everything, writes `report.md`, `figures/` and `work/report.json` |
-| `analysis/test/unit/song_hmm_phrase/test_*.py` | Tests |
-| `.gitignore` | Add `analysis/song_hmm_phrase/work/` |
+| `exp2_phrase_hmm/features.py` | Steps 1–8 above; cache |
+| `exp2_phrase_hmm/topology.py` | The ~81-state theme graph and its parameters |
+| `exp2_phrase_hmm/hmm.py` | Emissions, M-step, Baum–Welch, sampling (kernels imported from Experiment 1) |
+| `exp2_phrase_hmm/init.py` | k-means seeding, cyclic ordering, Theme 1 anchor; CSV-seeded variant |
+| `exp2_phrase_hmm/decode.py` | Window path → per-second path → sessions and songs |
+| `exp2_phrase_hmm/metrics.py` | Groups B–D, shared by all experiments and the CSV |
+| `exp2_phrase_hmm/train.py` | `python -m analysis.song_hmm.exp2_phrase_hmm.train [--seed audio\|csv]` |
+| `exp2_phrase_hmm/report.py` | `python -m analysis.song_hmm.exp2_phrase_hmm.report`: reruns Experiment 1's decode if its outputs are missing, computes everything, writes `report.md`, `figures/` and `work/report.json` |
+| `analysis/test/unit/song_hmm/exp2/test_*.py` | Tests |
+| `.gitignore` | Add `analysis/song_hmm/exp2_phrase_hmm/work/` |
 
 ## Verification
 
-1. **Unit tests** (`pytest analysis/test/unit/song_hmm_phrase`):
+1. **Unit tests** (`pytest analysis/test/unit/song_hmm/exp2`):
    - Topology:
      - every row sums to 1;
      - there are no theme skips or backward edges;
@@ -313,4 +313,4 @@ Full order:
    - Check that `report.md` contains the three required sections: previous experiment, current experiment, comparison.
    - Check that every table is filled for train and test, and that the figures render.
    - Check that the CSV's own label-free metrics appear, as the reference row.
-3. **Experiment 1:** existing tests still pass, and its numbers in the new report match `analysis/song_hmm/report.md`.
+3. **Experiment 1:** existing tests still pass, and its numbers in the new report match `analysis/song_hmm/exp1_slot_hmm/report.md`.

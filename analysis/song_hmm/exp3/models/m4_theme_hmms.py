@@ -18,8 +18,8 @@ from __future__ import annotations
 
 import numpy as np
 
-from analysis.song_hmm.topology import FIRST_SLOT, LAST_SLOT, N_SLOTS, SLOT_THEME, THEME_N_SLOTS
-from analysis.song_hmm_phrase.decode import Decoded
+from analysis.song_hmm.exp1_slot_hmm.topology import FIRST_SLOT, LAST_SLOT, N_SLOTS, SLOT_THEME, THEME_N_SLOTS
+from analysis.song_hmm.exp2_phrase_hmm.decode import Decoded
 
 from .common import HALVES, N_THEMES, at_times, boundaries_from_theme_steps, enforce_session_rule, labels, level_1s, save, steps_to_seconds
 from .graph import HMM, DiagGMM, Family, Graph

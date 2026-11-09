@@ -1,6 +1,6 @@
 """Phase 1 screening of X4 unit detection for every S x N setting.
 
-    python -m analysis.song_exp3.inputs.units_screen
+    python -m analysis.song_hmm.exp3.inputs.units_screen
 
 Per setting: units per minute in loud and quiet minutes, duration percentiles,
 share of time inside a unit, number of unit types (BIC), and the song-repeat
@@ -21,15 +21,15 @@ import matplotlib.pyplot as plt  # noqa: E402
 import numpy as np  # noqa: E402
 from scipy.io import wavfile  # noqa: E402
 
-from analysis.song_hmm.labels import load_labels  # noqa: E402
-from analysis.song_hmm.train import CSV_PATH, SPLIT_S, WAV_PATH  # noqa: E402
+from analysis.song_hmm.exp1_slot_hmm.labels import load_labels  # noqa: E402
+from analysis.song_hmm.exp1_slot_hmm.train import CSV_PATH, SPLIT_S, WAV_PATH  # noqa: E402
 
 from .screen import HERE, N_S, OUT, queries, scores  # noqa: E402
 from .spectrogram import N_OPTIONS, S_OPTIONS, SR, dc_removed, normalise, spectrogram  # noqa: E402
 from .units import detect, fit_types, token_windows  # noqa: E402
 
 FIG = HERE / "figures"
-PC = HERE.parent / "song_hmm_phrase" / "pipeline_check" / "work" / "results.json"
+PC = HERE.parent / "exp2_phrase_hmm" / "pipeline_check" / "work" / "results.json"
 
 
 def overlay(x, s_code, n_code, stretches, path):

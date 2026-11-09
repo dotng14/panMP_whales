@@ -9,7 +9,7 @@ and each family is re-normalised. Families marked fixed keep their values.
 Emissions: one model per emission group. DiagGMM (Gaussian mixture, diagonal)
 for vector inputs, Categorical for token inputs.
 
-Inference uses the log-domain numba kernels of Experiment 1 (analysis/song_hmm/hmm.py).
+Inference uses the log-domain numba kernels of Experiment 1 (analysis/song_hmm/exp1_slot_hmm/hmm.py).
 """
 
 from __future__ import annotations
@@ -19,7 +19,7 @@ from dataclasses import dataclass, field
 import numpy as np
 from scipy.special import logsumexp
 
-from analysis.song_hmm.hmm import _backward, _forward, _viterbi
+from analysis.song_hmm.exp1_slot_hmm.hmm import _backward, _forward, _viterbi
 
 PROB_FLOOR = 1e-6
 VAR_FLOOR = 1e-2

@@ -1,6 +1,6 @@
 """Phase 3: score every model (Exp 2, Exp 2b, M1-M4) and the CSV with the same metrics.
 
-    python -m analysis.song_exp3.evaluate
+    python -m analysis.song_hmm.exp3.evaluate
 
 Groups (definitions in metrics.md):
   H  against the hand labels (if reference/labels/*.txt exist), test half
@@ -17,13 +17,13 @@ import json
 
 import numpy as np
 
-from analysis.song_hmm.train import SPLIT_S
-from analysis.song_hmm_phrase.decode import Decoded, from_csv
-from analysis.song_hmm_phrase.metrics import csv_agreement, kappa, label_free, match_events, novelty_curve, novelty_peaks, unit_rows
+from analysis.song_hmm.exp1_slot_hmm.train import SPLIT_S
+from analysis.song_hmm.exp2_phrase_hmm.decode import Decoded, from_csv
+from analysis.song_hmm.exp2_phrase_hmm.metrics import csv_agreement, kappa, label_free, match_events, novelty_curve, novelty_peaks, unit_rows
 
 from .models.common import HALVES, HERE, N_S, N_THEMES, SESSION_GAP_S, WORK, labels
 
-PHRASE = HERE.parent / "song_hmm_phrase"
+PHRASE = HERE.parent / "exp2_phrase_hmm"
 MODELS = ("exp2", "exp2b", "M1", "M2", "M3", "M4")
 NAMES = {"csv": "CSV", "exp2": "Exp 2", "exp2b": "Exp 2b", "M1": "M1 theme HMM", "M2": "M2 song-first", "M3": "M3 units", "M4": "M4 six theme HMMs"}
 

@@ -1,7 +1,7 @@
 import numpy as np
 
-from analysis.song_exp3.models import m3_units, m4_theme_hmms
-from analysis.song_exp3.models.m2_songfirst import align, fit_template, name_phases, unit_rows
+from analysis.song_hmm.exp3.models import m3_units, m4_theme_hmms
+from analysis.song_hmm.exp3.models.m2_songfirst import align, fit_template, name_phases, unit_rows
 
 
 def _cyclic_song(rng, n_songs=8, P=60, d=12):

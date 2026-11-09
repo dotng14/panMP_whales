@@ -1,7 +1,7 @@
 import numpy as np
 from scipy.io import wavfile
 
-from analysis.song_hmm.features import FEATURE_NAMES, build_features
+from analysis.song_hmm.exp1_slot_hmm.features import FEATURE_NAMES, build_features
 
 SR = 2000
 LEVEL = FEATURE_NAMES.index("level")

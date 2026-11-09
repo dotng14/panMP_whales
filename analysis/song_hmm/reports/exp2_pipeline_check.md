@@ -1,6 +1,6 @@
 # Pipeline check: does wav → matrix keep the information in the recording?
 
-Checks the Experiment 2 input pipeline (`analysis/song_hmm_phrase/features.py`; stages I-0 … I-6 in [../pipeline.md](../analysis/song_hmm_phrase/pipeline.md)). Plan: [plan.md](../analysis/song_hmm_phrase/pipeline_check/plan.md). Code: `check.py` (it calls the real functions in `features.py`). Numbers: `work/results.json`. Listening clips (Griffin–Lim rebuilds, 8 kHz wav): `work/audio/` (not committed; regenerate with `python -m analysis.song_hmm_phrase.pipeline_check.check`).
+Checks the Experiment 2 input pipeline (`analysis/song_hmm/exp2_phrase_hmm/features.py`; stages I-0 … I-6 in [../pipeline.md](../exp2_phrase_hmm/pipeline.md)). Plan: [plan.md](../exp2_phrase_hmm/pipeline_check/plan.md). Code: `check.py` (it calls the real functions in `features.py`). Numbers: `work/results.json`. Listening clips (Griffin–Lim rebuilds, 8 kHz wav): `work/audio/` (not committed; regenerate with `python -m analysis.song_hmm.exp2_phrase_hmm.pipeline_check.check`).
 
 **How to read the song-repeat test (used in E, F and G).** A song repeats every ≈ 13 min. For 500 loud test-half windows, the nearest neighbour (among windows ≥ 5 min away) is found under a representation; a *hit* is a neighbour one or two song periods away (13 ± 2 or 26 ± 2 min). Random choice hits 0.051 of the time. A representation that keeps 'which phrase is this' scores higher; the number in brackets is the gain over chance.
 
@@ -42,7 +42,7 @@ The file is a ×100 decimation (`df100`) to 2 kHz, so anything the whale sang ab
 
 Below 30 Hz the difference is small: 1.4% of the song's extra energy lies there, so the 30 Hz lower edge loses almost nothing. Quiet minutes have 30% of their energy below 30 Hz (sea and flow noise), loud minutes 3%. The quiet spectrum also shows narrow lines at multiples of 50 Hz (100, 150, 200, 250 Hz, …): instrument tones, which a noise floor removes.
 
-![](../analysis/song_hmm_phrase/pipeline_check/figures/B_spectrum.png)
+![](../exp2_phrase_hmm/pipeline_check/figures/B_spectrum.png)
 
 ## I-0 Reading the wav (check A)
 
@@ -62,7 +62,7 @@ RIFF chunks: `fmt` 16 B at 12, `harp` 88 B at 36, `data` 144,000,000 B at 132. F
 
 The same three example stretches through the first stages (song boundary, inside theme 6, quietest start of the recording):
 
-![](../analysis/song_hmm_phrase/pipeline_check/figures/stages.png)
+![](../exp2_phrase_hmm/pipeline_check/figures/stages.png)
 
 ## I-1 Time and frequency resolution vs the song (check D)
 
@@ -89,7 +89,7 @@ Noise has a flat envelope spectrum, so quiet minutes are high everywhere; what m
 
 The current 0.256 s window keeps only 0.03 of a 10 Hz pulse train and 0.29 at 5 Hz. Halving the window (256 samples, hop 0.025 s) keeps 0.27 and 0.71, and draws fast sweeps more sharply (0.40 vs 0.25). The price is a 7.8 Hz frequency step, which merges the lowest bands (50 non-empty bands instead of 59, all below ~120 Hz). A longer window is worse on every count.
 
-![](../analysis/song_hmm_phrase/pipeline_check/figures/D_modulation.png)
+![](../exp2_phrase_hmm/pipeline_check/figures/D_modulation.png)
 
 **Units and sweeps in the whitened spectrogram** (loud minutes; a frame is 'on' when its strongest band is above the threshold):
 
@@ -114,7 +114,7 @@ At a low threshold almost every frame is 'on' (the median floor leaves half of e
 - **A 10th-percentile floor** keeps most cells (90%), removes 5% of loud power, and does better on the song-repeat test.
 - **No whitening** (one fixed offset per band) separates loud from quiet best (d′ 2.55) and scores best on the song-repeat test, but slow noise stays in: the theme-6 example below shows a broadband haze that whitening removes, and the 50 Hz-multiple instrument lines stay in quiet periods.
 
-![](../analysis/song_hmm_phrase/pipeline_check/figures/E_whitening_variants.png)
+![](../exp2_phrase_hmm/pipeline_check/figures/E_whitening_variants.png)
 
 Listening clips for each example stretch are in `work/audio/`: `0_original`, `1_stft_magnitude` (Griffin–Lim from the full STFT magnitude), `2_59_bands` (from the band powers, spread flat inside each band), `3_whitened` (from the whitened band powers). Phase is estimated, so they sound rough; the point is what survives each step.
 

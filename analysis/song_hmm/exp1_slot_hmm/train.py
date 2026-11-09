@@ -1,6 +1,6 @@
 """Fit the song-session HMM on the first half of the recording and decode both halves.
 
-    python -m analysis.song_hmm.train [--wav PATH] [--max-iter 30]
+    python -m analysis.song_hmm.exp1_slot_hmm.train [--wav PATH] [--max-iter 30]
 """
 
 from __future__ import annotations
@@ -18,7 +18,7 @@ from .labels import length_hist, load_labels
 from .topology import IS_BG, N_THEMES, STATE_THEME, Params
 
 HERE = Path(__file__).resolve().parent
-REPO = HERE.parents[1]
+REPO = HERE.parents[2]
 WAV_PATH = Path(r"C:\Users\hoang\Downloads\SOCAL_H_76_230426_193500_df100.x.x.wav")
 CSV_PATH = REPO / "backend/data/song_structure/SOCAL_H_76_230426_193500_df100.x.x.motif_segments.csv"
 SPLIT_S = 5 * 3600

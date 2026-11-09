@@ -1,6 +1,6 @@
 """Why Experiment 1 failed: can per-second spectral features recognise the CSV units and themes at all?
 
-    python analysis/song_hmm_phrase/diagnostics/exp1_feature_checks.py
+    python analysis/song_hmm/exp2_phrase_hmm/diagnostics/exp1_feature_checks.py
 
 Needs scikit-learn (not a project dependency; diagnostics only). Trains a
 logistic-regression classifier on the first 5 h and scores the last 5 h:
@@ -22,10 +22,10 @@ from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import balanced_accuracy_score
 from sklearn.preprocessing import StandardScaler
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
-from analysis.song_hmm.labels import load_labels  # noqa: E402
-from analysis.song_hmm.topology import SLOT_UNITS  # noqa: E402
-from analysis.song_hmm.train import CSV_PATH, WAV_PATH  # noqa: E402
+sys.path.insert(0, str(Path(__file__).resolve().parents[4]))
+from analysis.song_hmm.exp1_slot_hmm.labels import load_labels  # noqa: E402
+from analysis.song_hmm.exp1_slot_hmm.topology import SLOT_UNITS  # noqa: E402
+from analysis.song_hmm.exp1_slot_hmm.train import CSV_PATH, WAV_PATH  # noqa: E402
 
 N, SPLIT = 36000, 18000
 

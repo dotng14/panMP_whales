@@ -1,8 +1,8 @@
 import numpy as np
 from scipy.special import logsumexp
 
-from analysis.song_exp3.models.graph import HMM, Categorical, DiagGMM, Family, Graph
-from analysis.song_exp3.models.m1_theme import build_graph as m1_graph
+from analysis.song_hmm.exp3.models.graph import HMM, Categorical, DiagGMM, Family, Graph
+from analysis.song_hmm.exp3.models.m1_theme import build_graph as m1_graph
 
 
 def _toy():

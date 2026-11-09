@@ -1,7 +1,7 @@
 """Emissions, inference and Baum-Welch for the theme-level graph.
 
 The log-domain sparse-graph kernels are shared with Experiment 1
-(``analysis.song_hmm.hmm``); only the parameters and the M-step differ.
+(``analysis.song_hmm.exp1_slot_hmm.hmm``); only the parameters and the M-step differ.
 """
 
 from __future__ import annotations
@@ -10,7 +10,7 @@ from dataclasses import dataclass
 
 import numpy as np
 
-from analysis.song_hmm.hmm import _backward, _forward, _viterbi
+from analysis.song_hmm.exp1_slot_hmm.hmm import _backward, _forward, _viterbi
 
 from .topology import (
     BG,

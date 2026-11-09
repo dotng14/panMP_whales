@@ -1,8 +1,8 @@
 import numpy as np
 from scipy.special import logsumexp
 
-from analysis.song_hmm_phrase.hmm import baum_welch, log_emit, loglik, params_from_assignment, posterior, sample, viterbi
-from analysis.song_hmm_phrase.topology import (
+from analysis.song_hmm.exp2_phrase_hmm.hmm import baum_welch, log_emit, loglik, params_from_assignment, posterior, sample, viterbi
+from analysis.song_hmm.exp2_phrase_hmm.topology import (
     BG,
     BG_FIRST,
     DWELL,

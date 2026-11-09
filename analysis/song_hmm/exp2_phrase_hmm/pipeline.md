@@ -1,8 +1,8 @@
 # Pipeline: from the wav file to the matrix the model sees
 
 This document covers both experiments:
-- **Experiment 2** (current, `analysis/song_hmm_phrase/features.py`);
-- **Experiment 1** (previous, `analysis/song_hmm/features.py`).
+- **Experiment 2** (current, `analysis/song_hmm/exp2_phrase_hmm/features.py`);
+- **Experiment 1** (previous, `analysis/song_hmm/exp1_slot_hmm/features.py`).
 
 Shapes are those of the real run on the 10 h recording.
 
@@ -22,7 +22,7 @@ Because the sample rate is 2 kHz, nothing above 1 kHz (the Nyquist frequency) ex
 
 ## Experiment 2 input
 
-Run `python -m analysis.song_hmm_phrase.train`. The first call builds the features and caches them in `work/phrase_features.npz` (git-ignored). Later calls reuse that file while every parameter below is unchanged.
+Run `python -m analysis.song_hmm.exp2_phrase_hmm.train`. The first call builds the features and caches them in `work/phrase_features.npz` (git-ignored). Later calls reuse that file while every parameter below is unchanged.
 
 ### I-0. Raw audio `a[n]`
 
@@ -112,7 +112,7 @@ Each statistic is computed per band `b`. `n` runs over the 240 frames; the last 
 - **Source:** `backend/data/song_structure/SOCAL_H_76_230426_193500_df100.x.x.motif_segments.csv`
   - **Rows:** 30,923, one per unit.
   - **Columns:** `motif`, `song`, `theme`, `phrase_id`, `phrase_count`, `start_unix`, `end_unix`.
-- **Read by:** `analysis/song_hmm/labels.py`.
+- **Read by:** `analysis/song_hmm/exp1_slot_hmm/labels.py`.
   1. Times become seconds from the recording start.
   2. Units are grouped by (song, theme, phrase_count) into phrases.
   3. Each unit gets the slot at its position in the phrase.
@@ -142,7 +142,7 @@ Each statistic is computed per band `b`. `n` runs over the 240 frames; the last 
 
 ## Experiment 1 input
 
-Run `python -m analysis.song_hmm.train`. The cache is `analysis/song_hmm/work/features.npz`.
+Run `python -m analysis.song_hmm.exp1_slot_hmm.train`. The cache is `analysis/song_hmm/exp1_slot_hmm/work/features.npz`.
 
 | Step | Experiment 1 setting |
 |---|---|

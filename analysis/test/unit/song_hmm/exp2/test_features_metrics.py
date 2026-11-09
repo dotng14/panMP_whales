@@ -2,9 +2,9 @@ import numpy as np
 from scipy.io import wavfile
 from scipy.signal import chirp
 
-from analysis.song_hmm_phrase.decode import Decoded
-from analysis.song_hmm_phrase.features import STATS, band_spectrogram, build, descriptors, whiten
-from analysis.song_hmm_phrase.metrics import boundary_novelty, novelty_curve, novelty_peaks, theme_coherence, unit_rows
+from analysis.song_hmm.exp2_phrase_hmm.decode import Decoded
+from analysis.song_hmm.exp2_phrase_hmm.features import STATS, band_spectrogram, build, descriptors, whiten
+from analysis.song_hmm.exp2_phrase_hmm.metrics import boundary_novelty, novelty_curve, novelty_peaks, theme_coherence, unit_rows
 
 SR = 2000
 

@@ -5,8 +5,8 @@ This page describes the best setup from Experiment 3: how it turns the wav into 
 | Where to find it | |
 |---|---|
 | Full Experiment 3 report | [exp3_inputs_and_models.md](exp3_inputs_and_models.md) |
-| Processing and input details | [pipeline.md](../analysis/song_exp3/pipeline.md) |
-| Metric definitions | [metrics.md](../analysis/song_exp3/metrics.md) |
+| Processing and input details | [pipeline.md](../exp3/pipeline.md) |
+| Metric definitions | [metrics.md](../exp3/metrics.md) |
 | Code | `inputs/spectrogram.py`, `inputs/window_features.py`, `models/m1_theme.py`, `models/graph.py` |
 | Numbers | `work/eval.json`, `work/models/results.json`, `work/inputs/screen.json` |
 

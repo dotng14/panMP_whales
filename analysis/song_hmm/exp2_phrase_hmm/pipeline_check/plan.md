@@ -4,7 +4,7 @@
 
 Experiments 1 and 2 both fed the HMM a matrix built from the wav file, and both underperformed. Before Experiment 3, we need to know whether the processing itself is correct and keeps what matters in the recording, so that a weak model result can't be blamed on a broken or lossy input without us knowing.
 
-The pipeline under test is Experiment 2's (`analysis/song_hmm_phrase/features.py`), which Experiment 3 would reuse:
+The pipeline under test is Experiment 2's (`analysis/song_hmm/exp2_phrase_hmm/features.py`), which Experiment 3 would reuse:
 
 - **I-0** wav, 2 kHz
 - **I-1** STFT: 512-sample (0.256 s) Hann window, 0.05 s hop, 59 log bands from 30 to 1000 Hz
@@ -27,17 +27,17 @@ One limit can't be fixed at all. The file was decimated ×100 at the source (`df
 
 ## Where it lives
 
-New folder `analysis/song_hmm_phrase/pipeline_check/`, all committed except `work/`:
+New folder `analysis/song_hmm/exp2_phrase_hmm/pipeline_check/`, all committed except `work/`:
 
 | File | Content |
 |---|---|
 | `plan.md` | This plan |
-| `check.py` | `python -m analysis.song_hmm_phrase.pipeline_check.check`: runs every check below and writes the report |
+| `check.py` | `python -m analysis.song_hmm.exp2_phrase_hmm.pipeline_check.check`: runs every check below and writes the report |
 | `report.md` | Result: a pass/fail table, then one section per step (what it keeps, what it loses, whether that matters), then recommendations |
 | `figures/` | One figure per stage for the same example stretches |
 | `work/` | Git-ignored. Audio reconstructions for listening and cached arrays |
 
-`check.py` reuses `features.py` (`band_matrix`, `band_spectrogram`, `whiten`, `descriptors`, `load_or_build`) so that the code being checked is the real code, not a copy. It also uses `analysis/song_hmm/labels.py` for the CSV, only to pick example stretches. The alternative settings are passed as parameters. Any small refactor that `features.py` needs for this, such as letting `NFFT` and `HOP` be arguments, keeps the default behaviour byte-identical, and the existing tests prove it.
+`check.py` reuses `features.py` (`band_matrix`, `band_spectrogram`, `whiten`, `descriptors`, `load_or_build`) so that the code being checked is the real code, not a copy. It also uses `analysis/song_hmm/exp1_slot_hmm/labels.py` for the CSV, only to pick example stretches. The alternative settings are passed as parameters. Any small refactor that `features.py` needs for this, such as letting `NFFT` and `HOP` be arguments, keeps the default behaviour byte-identical, and the existing tests prove it.
 
 **Example stretches** used in the figures and audio:
 - 2 minutes around a song boundary, where the theme changes;
@@ -148,11 +148,11 @@ These measure what the song itself contains, from the raw audio, and compare it 
 
 ## Verification
 
-- **Tests:** add `analysis/test/unit/song_hmm_phrase/test_pipeline_check.py`:
+- **Tests:** add `analysis/test/unit/song_hmm/exp2/test_pipeline_check.py`:
   - the inverse STFT reaches its SNR target on synthetic noise;
   - the band-pooling energy identity holds;
   - a planted tone burst lands in the right frame;
   - a planted 10 Hz pulse train shows a modulation peak at 10 Hz;
   - shift-tolerant patch retrieval finds a planted repeat.
-- **Unchanged behaviour:** the existing `song_hmm` and `song_hmm_phrase` tests still pass, and with default parameters `features.build` produces the same cache key and arrays as before.
-- **Run:** `python -m analysis.song_hmm_phrase.pipeline_check.check` runs end to end on the 10 h file. `report.md` has every row filled; the figures render; the Griffin–Lim clips exist in `work/`.
+- **Unchanged behaviour:** the existing Experiment 1 and Experiment 2 tests still pass, and with default parameters `features.build` produces the same cache key and arrays as before.
+- **Run:** `python -m analysis.song_hmm.exp2_phrase_hmm.pipeline_check.check` runs end to end on the 10 h file. `report.md` has every row filled; the figures render; the Griffin–Lim clips exist in `work/`.

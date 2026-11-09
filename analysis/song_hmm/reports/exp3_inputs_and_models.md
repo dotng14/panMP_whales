@@ -1,6 +1,6 @@
 # Song-session HMM: Experiment 3 report
 
-Branch `dat-hmm`. Plan: [plan.md](../analysis/song_exp3/plan.md). Inputs: [pipeline.md](../analysis/song_exp3/pipeline.md). Metrics: [metrics.md](../analysis/song_exp3/metrics.md). Numbers: `work/eval.json`, `work/models/results.json`, `work/inputs/*.json`. Regenerate with `python -m analysis.song_exp3.evaluate` then `python -m analysis.song_exp3.report`.
+Branch `dat-hmm`. Plan: [plan.md](../exp3/plan.md). Inputs: [pipeline.md](../exp3/pipeline.md). Metrics: [metrics.md](../exp3/metrics.md). Numbers: `work/eval.json`, `work/models/results.json`, `work/inputs/*.json`. Regenerate with `python -m analysis.song_hmm.exp3.evaluate` then `python -m analysis.song_hmm.exp3.report`.
 
 ## Summary
 
@@ -27,12 +27,12 @@ In short:
 
 - Recording `SOCAL_H_76_230426_193500_df100.x.x.wav`: 2 kHz, mono, 10 h. Nothing above 1 kHz exists. **Train** 0–18,000 s, **test** 18,000–36,000 s; every statistic and fit uses train only.
 - CSV reference: 53 songs, 30,923 units; covers every second with whole-second units, 8 songs skip themes, song starts drift a median of 110 s from the audio's alignment.
-- Hand labels: two 30-minute test-half clips exported to `work/reference/`; instructions in [reference/README.md](../analysis/song_exp3/reference/README.md); **not labelled yet**.
+- Hand labels: two 30-minute test-half clips exported to `work/reference/`; instructions in [reference/README.md](../exp3/reference/README.md); **not labelled yet**.
 - Pair judgements: the blind pair page is built (`pairs/page/`); **not judged yet**.
 
 ## Previous experiment: Experiment 2 and the pipeline check
 
-Full reports: [Experiment 2](exp2_phrase_hmm.md), [pipeline check](exp2_pipeline_check.md); diagnostics in [`../song_hmm_phrase/diagnostics/`](../analysis/song_hmm_phrase/diagnostics/).
+Full reports: [Experiment 2](exp2_phrase_hmm.md), [pipeline check](exp2_pipeline_check.md); diagnostics in [`../exp2_phrase_hmm/diagnostics/`](../exp2_phrase_hmm/diagnostics/).
 
 **Experiment 2** described each 2 s step by a 12 s phrase window from a 0.256 s / 0.05 s spectrogram with a 5-minute median noise floor, summarised as 295 order-free statistics (level, variability, flux, up/down sweep per band) and reduced to 20 PCA components. An 81-state theme HMM (theme chains of ≥ 20 s, pauses, background ≥ 30 s, T6 → T1 boundary) was seeded from k-means clusters (Exp 2) or from the CSV (Exp 2b).
 
@@ -88,7 +88,7 @@ Full reports: [Experiment 2](exp2_phrase_hmm.md), [pipeline check](exp2_pipeline
 
 ### Processing options and inputs
 
-Every option and input is defined in [pipeline.md](../analysis/song_exp3/pipeline.md) (what it is, how it is built, shape, meaning, which model uses it).
+Every option and input is defined in [pipeline.md](../exp3/pipeline.md) (what it is, how it is built, shape, meaning, which model uses it).
 
 | code | what |
 |---|---|
@@ -104,7 +104,7 @@ Every option and input is defined in [pipeline.md](../analysis/song_exp3/pipelin
 
 Song-repeat hit rate on the test half (500 loud query windows; a hit = nearest window ≥ 5 min away lies 1 or 2 song periods away; chance ≈ 0.05). It ranks inputs; it is not an accuracy (correct matches 3+ songs away count as misses).
 
-![](../analysis/song_exp3/figures/screening.png)
+![](../exp3/figures/screening.png)
 
 | input | PCA-20 hit | PCA-40 hit | CSV same-theme of the match |
 |---|---|---|---|
@@ -136,10 +136,10 @@ Song-repeat hit rate on the test half (500 loud query windows; a hit = nearest w
 
 Detected units on the three example stretches (S2 spectrogram, each noise option; cyan boxes = units):
 
-![](../analysis/song_exp3/figures/units_overlay_S2_N1.png)
-![](../analysis/song_exp3/figures/units_overlay_S2_N2.png)
-![](../analysis/song_exp3/figures/units_overlay_S2_N3.png)
-![](../analysis/song_exp3/figures/units_overlay_S2_N4.png)
+![](../exp3/figures/units_overlay_S2_N1.png)
+![](../exp3/figures/units_overlay_S2_N2.png)
+![](../exp3/figures/units_overlay_S2_N3.png)
+![](../exp3/figures/units_overlay_S2_N4.png)
 
 **Chosen inputs** (`work/models/inputs_used.json`): M1 and M2 use `S2_N1_X2_20s`; M4 uses X3 frames from `S2_N1`; M3 uses units from `S2_N3`.
 
@@ -207,7 +207,7 @@ Log-likelihood per step: train -26.82, test -26.71 (comparable only within this 
 
 Synthetic recovery (20,000 steps sampled from the fitted model, refit, decoded): theme accuracy 1.000, song vs background 1.000, song boundaries found 8 of 8.
 
-![](../analysis/song_exp3/figures/m4_detection.png)
+![](../exp3/figures/m4_detection.png)
 
 Theme detection on 144 test CSV segments: top-1 accuracy 0.32 after isolated training, 0.24 after embedded training (chance 0.17). AUC above 0.5 means the theme's HMM scores its own segments higher than the others'.
 
@@ -246,11 +246,11 @@ Per-theme recall against the CSV, test half:
 | M3 units | 0.28 | 0.15 | 0.15 | 0.00 | 0.14 | 0.69 |
 | M4 six theme HMMs | 0.05 | 0.16 | 0.49 | 0.15 | 0.12 | 0.76 |
 
-![](../analysis/song_exp3/figures/timeline.png)
+![](../exp3/figures/timeline.png)
 
-![](../analysis/song_exp3/figures/song_lengths.png)
+![](../exp3/figures/song_lengths.png)
 
-![](../analysis/song_exp3/figures/confusions.png)
+![](../exp3/figures/confusions.png)
 
 ### What changed, what improved, what did not, and why
 

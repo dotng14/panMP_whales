@@ -6,7 +6,7 @@ Every metric is computed the same way for:
 - **Experiment 2b**, the same model seeded from the CSV;
 - **the CSV itself**, wherever a metric does not need the CSV as its reference.
 
-Each is reported for the train half and the test half. **The test half is the headline**, because it was never used for fitting. Code: `analysis/song_hmm_phrase/metrics.py`; Experiment 1's group A and D numbers come from `analysis/song_hmm/report.py`.
+Each is reported for the train half and the test half. **The test half is the headline**, because it was never used for fitting. Code: `analysis/song_hmm/exp2_phrase_hmm/metrics.py`; Experiment 1's group A and D numbers come from `analysis/song_hmm/exp1_slot_hmm/report.py`.
 
 ## Common decoded form
 
