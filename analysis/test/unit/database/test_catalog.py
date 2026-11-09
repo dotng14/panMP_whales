@@ -3,12 +3,14 @@
 from __future__ import annotations
 
 import json
+import sqlite3
 from contextlib import closing
 from pathlib import Path
 
 import numpy as np
 import pytest
 
+from analysis.test.catalog_setup import downgrade_tool_runs
 from analysis.test.synthetic import write_gpl_folder, write_motif_csv
 from database import catalog, index_existing
 
@@ -178,3 +180,52 @@ def test_reindex_counts(tmp_path):
     assert (totals["runs"], totals["skipped"]) == (1, [])
     assert index_existing.gpl_output_dir(tmp_path / "lib" / "a" / "x.wav", tmp_path / "lib", "result") == (
         tmp_path / "lib" / "result" / "a" / "x.gpl" / "output")
+
+
+def test_old_catalog_gains_pan_build(tmp_path):
+    """A catalog made before pan_build keeps its tool runs, and the atoms pointing at them."""
+    gpl = write_gpl_folder(tmp_path / "gpl", stem=STEM).root
+    build = make_build(tmp_path, gpl)
+    db = tmp_path / "old.sqlite"
+    # Register through the current code, then put the old CHECK back on the file.
+    with closing(catalog.connect(db)) as conn:
+        with conn:
+            first = catalog.register_run_dir(conn, build, label="kept")
+    downgrade_tool_runs(db)
+    with closing(sqlite3.connect(db)) as raw:
+        assert "'pan_build'" not in raw.execute("SELECT sql FROM sqlite_master WHERE name = 'tool_runs'").fetchone()[0]
+        with pytest.raises(sqlite3.IntegrityError):
+            raw.execute("UPDATE tool_runs SET tool = 'pan_build'")
+
+    with closing(catalog.connect(db)) as conn:
+        assert "'pan_build'" in conn.execute("SELECT sql FROM sqlite_master WHERE name = 'tool_runs'").fetchone()[0]
+        assert conn.execute("PRAGMA foreign_key_check").fetchall() == []
+        assert conn.execute("PRAGMA foreign_keys").fetchone()[0] == 1
+        run = conn.execute("SELECT tool, output_dictionary_id FROM tool_runs WHERE tool_run_id = ?",
+                           (first["tool_run_id"],)).fetchone()
+        assert tuple(run) == ("randomized_build", first["dictionary_id"])
+        pks = {r[0] for r in conn.execute("SELECT tool_run_id FROM templates")}
+        assert pks == {first["tool_run_id"]}
+        assert catalog.get_dictionary(conn, first["dictionary_id"])["label"] == "kept"
+        with conn:
+            conn.execute("UPDATE tool_runs SET tool = 'pan_build'")
+    # Opening it again leaves the migrated table alone.
+    with closing(catalog.connect(db)) as conn:
+        assert conn.execute("SELECT tool FROM tool_runs").fetchone()[0] == "pan_build"
+
+
+def test_pan_build_folder_registers_as_pan_build(tmp_path):
+    gpl = write_gpl_folder(tmp_path / "gpl", stem=STEM).root
+    build = make_build(tmp_path, gpl)
+    summary = json.loads((build / "summary.json").read_text())
+    summary.update(command="pan-build", seeder={"signal": "pca", "lengths_s": [1.0]})
+    (build / "summary.json").write_text(json.dumps(summary))
+    with closing(catalog.connect(tmp_path / "c.sqlite")) as conn:
+        with conn:
+            result = catalog.register_run_dir(conn, build)
+        assert result["kind"] == "pan-build"
+        tool = catalog.get_tool_run(conn, result["tool_run_id"])
+        assert tool["tool"] == "pan_build"
+        params = json.loads(catalog.get_dictionary(conn, result["dictionary_id"])["params_json"])
+        assert params["seeder"] == {"signal": "pca", "lengths_s": [1.0]}
+    assert index_existing.RUN_COMMANDS.index("pan-build") < index_existing.RUN_COMMANDS.index("matching-pursuit")

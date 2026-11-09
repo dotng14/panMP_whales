@@ -34,17 +34,21 @@ import numpy as np
 SCHEMA_PATH = Path(__file__).with_name("schema.sql")
 
 DICT_SOURCES = ("seed", "refinement", "matching", "edit")
-TOOL_NAMES = ("randomized_build", "matching_pursuit")
+TOOL_NAMES = ("randomized_build", "pan_build", "matching_pursuit")
+# Build commands and the tool name their folders are registered under.
+BUILD_TOOLS = {"randomized-build": "randomized_build", "pan-build": "pan_build"}
 FEEDBACK_LABELS = ("good", "bad")
 MOTIF_CSV_SUFFIX = ".motif_segments.csv"
 MOTIF_CSV_COLUMNS = frozenset(
     {"motif", "song", "theme", "phrase_id", "phrase_count", "start_unix", "end_unix"}
 )
-# The randomized-build knobs kept on the dictionary row (the rest stay in summary.json).
+# The build knobs kept on the dictionary row (the rest stay in summary.json).
+# A randomized build leaves `seeder` out; a pan build leaves out `epsilon`,
+# the width limits and `seed`.
 _BUILD_PARAMS = (
     "m_per_outer", "min_coverage", "max_outer", "refine_iters", "n_components", "n_min",
     "epsilon", "min_template_width", "max_template_width", "eps_step_fraction",
-    "max_relative_distance", "post_refine_max_relative_distance", "seed",
+    "max_relative_distance", "post_refine_max_relative_distance", "seed", "seeder",
     "n_windows", "window_offset",
 )
 _MP_PARAMS = ("n_windows", "window_offset", "n_atoms")
@@ -153,8 +157,39 @@ def connect(db_path: Path | str, *, read_only: bool = False) -> sqlite3.Connecti
     conn = sqlite3.connect(str(path))
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA foreign_keys = ON")
-    conn.executescript(SCHEMA_PATH.read_text())
+    schema = SCHEMA_PATH.read_text()
+    _allow_pan_build(conn, schema)
+    conn.executescript(schema)
     return conn
+
+
+def _allow_pan_build(conn: sqlite3.Connection, schema: str) -> None:
+    """Widen ``tool_runs.tool``'s CHECK in a catalog made before ``pan_build`` existed.
+
+    SQLite cannot change a CHECK in place, so the table is copied into one
+    made from the current schema (same columns, same order) and renamed. Ids,
+    and every row pointing at them, are kept.
+    """
+    row = conn.execute("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'tool_runs'").fetchone()
+    if row is None or "'pan_build'" in row[0]:
+        return
+    start = schema.index("CREATE TABLE IF NOT EXISTS tool_runs (")
+    ddl = schema[start : schema.index("\n);", start) + 3]
+    ddl = ddl.replace("CREATE TABLE IF NOT EXISTS tool_runs (", "CREATE TABLE tool_runs_new (", 1)
+    conn.execute("PRAGMA foreign_keys = OFF")
+    try:
+        conn.executescript(
+            f"""
+            BEGIN;
+            {ddl}
+            INSERT INTO tool_runs_new SELECT * FROM tool_runs;
+            DROP TABLE tool_runs;
+            ALTER TABLE tool_runs_new RENAME TO tool_runs;
+            COMMIT;
+            """
+        )
+    finally:
+        conn.execute("PRAGMA foreign_keys = ON")
 
 
 def _one(conn: sqlite3.Connection, sql: str, args: Sequence[Any] = ()) -> dict[str, Any] | None:
@@ -842,7 +877,7 @@ def _wav_stem(conn: sqlite3.Connection, segmentation_id: int | None, window_ids:
 def register_run_dir(
     conn: sqlite3.Connection, out_dir: Path | str, *, label: str | None = None
 ) -> dict[str, Any]:
-    """Register a ``randomized-build`` or ``matching-pursuit`` output folder.
+    """Register a ``randomized-build``, ``pan-build`` or ``matching-pursuit`` output folder.
 
     Idempotent: registering the same folder again updates its rows in place and
     keeps ids and user labels. The GPL folder named in ``summary.json`` is
@@ -857,11 +892,13 @@ def register_run_dir(
         raise CatalogError(f"run folder not found: {out}")
     summary = _read_json(out / "summary.json")
     command = summary.get("command")
-    if command == "randomized-build":
-        return _register_randomized_build(conn, out, summary, label)
+    if command in BUILD_TOOLS:
+        return _register_build(conn, out, summary, label)
     if command == "matching-pursuit":
         return _register_matching_pursuit(conn, out, summary, label)
-    raise CatalogError(f"{out / 'summary.json'} is not from randomized-build or matching-pursuit")
+    raise CatalogError(
+        f"{out / 'summary.json'} is not from randomized-build, pan-build or matching-pursuit"
+    )
 
 
 def _index_recorded_gpl_dir(conn: sqlite3.Connection, summary: dict[str, Any], out: Path) -> int | None:
@@ -871,7 +908,7 @@ def _index_recorded_gpl_dir(conn: sqlite3.Connection, summary: dict[str, Any], o
     return index_gpl_dir(conn, gpl_dir)
 
 
-def _register_randomized_build(
+def _register_build(
     conn: sqlite3.Connection, out: Path, summary: dict[str, Any], label: str | None
 ) -> dict[str, Any]:
     atoms = summary.get("atoms")
@@ -883,7 +920,7 @@ def _register_randomized_build(
     segmentation_id = _index_recorded_gpl_dir(conn, summary, out)
     window_ids = _window_ids(summary, matchings)
     created_at = _mtime_iso(out / "summary.json")
-    params = {k: summary.get(k) for k in _BUILD_PARAMS}
+    params = {k: summary.get(k) for k in _BUILD_PARAMS if k != "seeder" or "seeder" in summary}
 
     conn.execute(
         """
@@ -939,7 +976,7 @@ def _register_randomized_build(
 
     tool_run_id = _upsert_tool_run(
         conn,
-        tool="randomized_build",
+        tool=BUILD_TOOLS[summary["command"]],
         out_dir=str(out),
         segmentation_id=segmentation_id,
         learning_run_id=run_id,
@@ -1010,7 +1047,7 @@ def _register_randomized_build(
     conn.execute(
         "UPDATE tool_runs SET output_dictionary_id = ? WHERE tool_run_id = ?", (dictionary_id, tool_run_id)
     )
-    return {"kind": "randomized-build", "dictionary_id": dictionary_id, "run_id": run_id, "tool_run_id": tool_run_id}
+    return {"kind": summary["command"], "dictionary_id": dictionary_id, "run_id": run_id, "tool_run_id": tool_run_id}
 
 
 def _register_matching_pursuit(

@@ -84,6 +84,8 @@ def test_wav_default_signal_is_rms(wav_file, tmp_path):
         (["--signal", "energy", "--rate", "10"], 1),
         (["--signal", "bands", "--rate", "10"], 2),
         (["--signal", "bands", "--band-edges", "10,40,80,130"], 3),
+        (["--signal", "pca"], 8),
+        (["--signal", "pca", "--pca-rows", "3", "--rate", "10"], 3),
         (["--signal", "full"], 12),
     ],
 )
@@ -132,6 +134,7 @@ def test_gpl_spectrogram_npy_folder_directly(gpl_folder, tmp_path):
         (["--gpl-dir", "GPL", "--signal", "rms"], "GPL signal must be one of"),
         (["--gpl-dir", "GPL", "--rate", "0"], "rate must be positive"),
         (["--gpl-dir", "GPL", "--signal", "bands", "--band-edges", "100,50"], "band edges must increase"),
+        (["--gpl-dir", "GPL", "--signal", "pca", "--pca-rows", "13"], "PCA rows must be between 1 and 12"),
     ],
 )
 def test_bad_input_exit_2(series_files, wav_file, gpl_dir, tmp_path, capsys, args, message):

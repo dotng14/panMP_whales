@@ -5,7 +5,7 @@
     python -m database register --db catalog.sqlite runs/build_a runs/build_a_mp x.motif_segments.csv
 
 ``index`` scans roots (see ``index_existing``). ``register`` adds the given
-``randomized-build`` / ``matching-pursuit`` folders and song-structure CSVs.
+``randomized-build`` / ``pan-build`` / ``matching-pursuit`` folders and song-structure CSVs.
 Exit codes: 0 success, 1 something was skipped, 2 bad arguments.
 """
 

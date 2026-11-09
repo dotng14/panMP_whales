@@ -25,7 +25,7 @@ The fit lives in [`HMM/`](HMM/). Decoding a new recording is not in this tree. T
 - Matrix Profile over motif length: `panMP` / `pan_profile` in [`matrix_profile/`](matrix_profile/). Finds repeated subsequences without a fixed length.
 - Matching Pursuit: the Mallat loop and the randomized dictionary build in [`dict_learning/`](dict_learning/). See [Baseline pipelines](#baseline-pipelines) below.
 
-**Combination (sketch).** Use pan-MP peaks to propose candidate kernels (location and length). Use Matching Pursuit to place, average, and deflate them into a small dictionary.
+**Combination.** `python -m analysis.dict_learning pan-build`: each pass of the randomized build's outer loop takes its seeds from the pan matrix profile of the residual (one profile per pass; each pair's copies found with one distance profile, averaged into a seed and masked), then Matching Pursuit places, rebuilds and deflates them. See [Pan build](#pan-build) below and [`dict_learning/README.md`](dict_learning/README.md#pan-build). Coverage and specificity scores, and HMM scores from the kernels, are not written yet.
 
 **Output.** A dictionary of convolution kernels, plus the score of each kernel convolved along the sequence.
 
@@ -112,7 +112,7 @@ Every command with every option and its default is in one place:
 [Command-line tools](../README.md#command-line-tools) in the root README. This
 section explains what the three analysis commands compute.
 
-Three commands, each reading files directly. The two dict_learning commands
+Four commands, each reading files directly. The three dict_learning commands
 can also register their output in the SQLite catalog with `--catalog DB` (see
 [`../database/README.md`](../database/README.md)), which the web viewer lists
 next to the song-structure CSVs. Tests and the coverage gate:
@@ -132,6 +132,23 @@ atoms with fewer than `--n-min` patches), drops placements that leave more than
 `--post-refine-max-relative-distance` of their energy unexplained, merges the
 survivors, and subtracts them from the residual. It stops once time coverage
 exceeds `--min-coverage`. Details: [`dict_learning/README.md`](dict_learning/README.md).
+
+### Pan build
+
+```bash
+python -m analysis.dict_learning pan-build --gpl-dir GPL_OUT --out DICT \
+  --signal pca --lengths-s 1,2,3,4 --m-per-outer 5 --n-min 10
+```
+
+The same outer loop, refinement and stopping rules as the randomized build;
+only the seeds differ. Each pass runs the pan matrix profile once on a search
+signal built from the residual (`--signal pca`: its top 8 frequency
+patterns), takes the most unusual pairs, finds each pair's other copies with
+one distance profile, shifts the copies together onto the call, averages them
+into a seed, and masks them so the same call is not seeded again. The
+lengths take turns, longest first. A seed too similar to one already taken is
+dropped, and atoms that refine to the same shape are folded together. Details:
+[`dict_learning/README.md`](dict_learning/README.md#pan-build).
 
 ### Mallat matching pursuit
 
@@ -156,6 +173,7 @@ python -m analysis.matrix_profile pan --gpl-dir GPL_OUT --rate 10 --signal bands
 | | `--signal bands`: energy in 5 × 100 Hz bands, 0–500 Hz | 5 |
 | `--gpl-dir DIR [--rate HZ]` | `--signal energy` (default): whitened spectrogram summed over frequency (the HMM's signal) | 1 |
 | | `--signal bands [--band-edges 10,100,…]`: summed within bands (default 100 Hz bands over GPL's range) | bands |
+| | `--signal pca [--pca-rows 8]`: projected onto the recording's top frequency patterns (eigenvectors of the frequency covariance, strongest first) | `--pca-rows` |
 | | `--signal full`: every frequency row | ~100 |
 
 With `--rate`, GPL columns are averaged into `1/rate` s bins by frame centre;

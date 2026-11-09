@@ -3,7 +3,8 @@
 - A saved ``.npy`` series, 1-D or ``(rows, T)``.
 - A WAV: its RMS envelope (one row) or band energy (``analysis.bands``).
 - A GPL output folder, from the whitened spectrogram: summed over frequency
-  (one row), summed within frequency bands, or every frequency row. With a
+  (one row), summed within frequency bands, projected onto the recording's
+  top frequency patterns (``pca``), or every frequency row. With a
   ``rate`` the columns are averaged into bins of ``1 / rate`` seconds by the
   centre time of each STFT frame, as the song HMM does; without one the
   native STFT columns are kept.
@@ -22,7 +23,8 @@ from analysis.bands import band_energy
 from . import rms_envelope
 
 WAV_KINDS = ("rms", "bands")
-GPL_KINDS = ("energy", "bands", "full")
+GPL_KINDS = ("energy", "bands", "pca", "full")
+DEFAULT_PCA_ROWS = 8
 
 
 @dataclass
@@ -85,51 +87,103 @@ def _band_rows(spec: np.ndarray, freqs: np.ndarray, edges: list[float]) -> np.nd
     return out
 
 
+def frequency_pca(blocks: list[np.ndarray], n_rows: int) -> tuple[np.ndarray, np.ndarray]:
+    """Top ``n_rows`` frequency patterns of ``(F, T_k)`` blocks taken together.
+
+    Every column is one sample in ``F`` dimensions. Returns the orthonormal
+    ``(n_rows, F)`` basis, strongest pattern first, and the ``(F,)`` mean
+    column. Each pattern's sign is fixed so its largest entry is positive.
+    """
+    n_freq = blocks[0].shape[0]
+    if not 1 <= n_rows <= n_freq:
+        raise ValueError(f"PCA rows must be between 1 and {n_freq} (frequency rows), got {n_rows}")
+    n_cols = sum(block.shape[1] for block in blocks)
+    mean = sum(block.sum(axis=1) for block in blocks) / n_cols
+    scatter = np.zeros((n_freq, n_freq))
+    for block in blocks:
+        centred = block - mean[:, None]
+        scatter += centred @ centred.T
+    values, vectors = np.linalg.eigh(scatter)
+    basis = vectors[:, np.argsort(values)[::-1][:n_rows]].T
+    peak = basis[np.arange(n_rows), np.argmax(np.abs(basis), axis=1)]
+    basis *= np.where(peak < 0, -1.0, 1.0)[:, None]
+    return basis, mean
+
+
+def gpl_rows(
+    blocks: list[np.ndarray],
+    kind: str,
+    *,
+    start_freq: float,
+    end_freq: float,
+    band_edges: list[float] | None = None,
+    pca_rows: int = DEFAULT_PCA_ROWS,
+) -> tuple[list[np.ndarray], dict]:
+    """Signal rows for each ``(F, T_k)`` whitened-spectrogram block.
+
+    Row ``r`` of an ``F``-row block sits at
+    ``start_freq + r * (end_freq - start_freq) / (F - 1)`` Hz. Returns one
+    ``(rows, T_k)`` array per block and how they were built.
+    """
+    if kind not in GPL_KINDS:
+        raise ValueError(f"GPL signal must be one of {GPL_KINDS}, got {kind!r}")  # no-pipeline-cover: load_gpl and argparse check the kind first
+    n_freq = blocks[0].shape[0]
+    if any(block.shape[0] != n_freq for block in blocks):
+        raise ValueError("whitened windows have different frequency rows")
+    info: dict = {"kind": kind, "start_freq": float(start_freq), "end_freq": float(end_freq), "band_edges": None}
+    if kind == "energy":
+        return [block.sum(axis=0, keepdims=True) for block in blocks], info
+    if kind == "full":
+        return list(blocks), info
+    if kind == "pca":
+        basis, mean = frequency_pca(blocks, int(pca_rows))
+        info["pca_rows"] = int(pca_rows)
+        return [basis @ (block - mean[:, None]) for block in blocks], info
+    edges = list(band_edges) if band_edges else default_band_edges(start_freq, end_freq)
+    if len(edges) < 2 or any(b <= a for a, b in zip(edges[:-1], edges[1:])):
+        raise ValueError(f"band edges must increase, got {edges}")
+    freqs = np.linspace(float(start_freq), float(end_freq), n_freq)
+    info["band_edges"] = edges
+    return [_band_rows(block, freqs, edges) for block in blocks], info
+
+
+def decimate_columns(rows: np.ndarray, factor: int) -> np.ndarray:
+    """Average every ``factor`` columns of ``(R, T)``; a partial last group is dropped.
+
+    Column ``s`` of the result covers input columns ``[s * factor, (s + 1) * factor)``.
+    """
+    if factor < 1:
+        raise ValueError(f"decimation factor must be >= 1, got {factor}")  # no-pipeline-cover: PanSeedConfig checks --decimate first
+    if factor == 1:
+        return np.asarray(rows, dtype=np.float64)
+    n = rows.shape[1] // factor
+    if n < 1:
+        raise ValueError(f"decimation factor {factor} is longer than the signal ({rows.shape[1]} columns)")  # no-pipeline-cover: pan_profile needs a longer signal than any motif length allows
+    return rows[:, : n * factor].reshape(rows.shape[0], n, factor).mean(axis=2)
+
+
 def load_gpl(
     gpl_dir: Path,
     kind: str,
     *,
     rate: float | None = None,
     band_edges: list[float] | None = None,
+    pca_rows: int = DEFAULT_PCA_ROWS,
 ) -> Signal:
-    """Signal from the whitened spectrogram of a GPL output folder.
-
-    Row ``r`` of an ``F``-row window sits at
-    ``start_freq + r * (end_freq - start_freq) / (F - 1)`` Hz.
-    """
+    """Signal from the whitened spectrogram of a GPL output folder (see :func:`gpl_rows`)."""
     if kind not in GPL_KINDS:
         raise ValueError(f"GPL signal must be one of {GPL_KINDS}, got {kind!r}")
     windows = _gpl_windows(gpl_dir)
-    spec0, meta0 = windows[0]
-    n_freq = spec0.shape[0]
-    start_freq = float(meta0.get("start_freq", 0.0))
-    end_freq = float(meta0.get("end_freq", 0.0))
-    freqs = np.linspace(start_freq, end_freq, n_freq)
-    edges = None
-    if kind == "bands":
-        edges = list(band_edges) if band_edges else default_band_edges(start_freq, end_freq)
-        if len(edges) < 2 or any(b <= a for a, b in zip(edges[:-1], edges[1:])):
-            raise ValueError(f"band edges must increase, got {edges}")
-
-    rows_per_window = []
-    for spec, meta in windows:
-        if spec.shape[0] != n_freq:
-            raise ValueError("whitened windows have different frequency rows")
-        if kind == "energy":
-            rows_per_window.append(spec.sum(axis=0, keepdims=True))
-        elif kind == "bands":
-            rows_per_window.append(_band_rows(spec, freqs, edges))
-        else:
-            rows_per_window.append(spec)
-
-    info = {
-        "source": "gpl",
-        "path": str(gpl_dir),
-        "kind": kind,
-        "start_freq": start_freq,
-        "end_freq": end_freq,
-        "band_edges": edges,
-    }
+    meta0 = windows[0][1]
+    rows_per_window, built = gpl_rows(
+        [spec for spec, _ in windows],
+        kind,
+        start_freq=float(meta0.get("start_freq", 0.0)),
+        end_freq=float(meta0.get("end_freq", 0.0)),
+        band_edges=band_edges,
+        pca_rows=pca_rows,
+    )
+    info = {"source": "gpl", "path": str(gpl_dir), **built}
     if rate is None:
         sample_rate = float(meta0["sample_freq"])
         info["native_rate"] = sample_rate / float(meta0["overlap"])

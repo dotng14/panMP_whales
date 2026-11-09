@@ -1,16 +1,21 @@
-"""Command line for the randomized dictionary build and Mallat matching pursuit.
+"""Command line for the dictionary builds and Mallat matching pursuit.
 
-Both commands read a GPL output folder directly: ``spectrogram_npy/`` (whitened
-windows plus JSON sidecars) and ``CSV_*.csv`` (detections)::
+The commands read a GPL output folder directly: ``spectrogram_npy/`` (whitened
+windows plus JSON sidecars) and, for ``randomized-build``, ``CSV_*.csv``
+(detections)::
 
     python -m analysis.dict_learning randomized-build --gpl-dir GPL_OUT --out DICT_DIR
+    python -m analysis.dict_learning pan-build --gpl-dir GPL_OUT --out DICT_DIR
     python -m analysis.dict_learning matching-pursuit --gpl-dir GPL_OUT \\
         --dictionary DICT_DIR --out MP_DIR
 
-``randomized-build`` writes ``atoms/template_*.npy``, ``summary.json``,
-``matchings.json`` and ``outer_logs.jsonl``. ``matching-pursuit`` places the
+The two builds share the outer loop and differ in where seeds come from:
+random detection patches, or the pan matrix profile
+(``learn/pan_seeds.py``). Both write ``atoms/template_*.npy``,
+``summary.json``, ``matchings.json`` and ``outer_logs.jsonl``; ``pan-build``
+adds ``pan_seeds.jsonl``. ``matching-pursuit`` places the
 atoms listed in a dictionary's ``summary.json`` and writes ``summary.json`` and
-``matchings.json``. With ``--catalog DB`` either command also registers its
+``matchings.json``. With ``--catalog DB`` every command also registers its
 output folder in the SQLite catalog (``database/``).
 """
 
@@ -30,6 +35,15 @@ from . import mp as mp_module
 from .core import Dictionary, Matching, Template, Window, as_stack, coverage_from_matchings
 from .io import Detection, discover_windows, find_detection_csvs, load_detections_from_paths
 from .learn import randomized_dictionary as rd
+from .learn.pan_seeds import (
+    DEFAULT_COPY_THRESHOLD,
+    DEFAULT_DEDUPE_CORR,
+    DEFAULT_MIN_COPIES,
+    DEFAULT_SIGNAL,
+    PanSeedConfig,
+    PanSeeder,
+)
+from analysis.matrix_profile.signals import DEFAULT_PCA_ROWS, GPL_KINDS
 from .tools import matching_pursuit
 
 
@@ -152,12 +166,29 @@ def _probability(name: str, value: float | None) -> float | None:
     return value
 
 
-# ── randomized-build ─────────────────────────────────────────────────────────
+# ── randomized-build and pan-build ───────────────────────────────────────────
 
 
-def run_randomized_build(args: argparse.Namespace) -> int:
-    windows = load_windows(args.gpl_dir, args.n_windows, args.window_offset)
-    detections = load_detections(args.gpl_dir)
+def _outer_loop_kwargs(args: argparse.Namespace) -> dict[str, Any]:
+    """Options both builds pass to ``learn_randomized_outer``."""
+    return {
+        "m_per_outer": args.m_per_outer,
+        "min_coverage": args.min_coverage,
+        "max_outer": args.max_outer,
+        "refine_iters": args.refine_iters,
+        "n_components": args.n_components,
+        "n_min": args.n_min,
+        "eps_step_fraction": args.eps_step_fraction,
+        "max_relative_distance": args.max_relative_distance,
+        "post_refine_max_relative_distance": args.post_refine_max_relative_distance,
+        "mp_mode": args.mp_mode,
+        "n_workers": args.workers,
+        "show_progress": args.progress,
+    }
+
+
+def _run_build(args: argparse.Namespace, windows: list[Window], partition, **extra) -> rd.RandomizedOuterResult:
+    """Run the outer loop with ``--verbose`` lines, ``--loop-stats`` and ``--compute``."""
     _probability("--max-relative-distance", args.max_relative_distance)
     _probability("--post-refine-max-relative-distance", args.post_refine_max_relative_distance)
     _apply_compute(args.compute)
@@ -174,31 +205,22 @@ def run_randomized_build(args: argparse.Namespace) -> int:
     def build() -> rd.RandomizedOuterResult:
         try:
             return rd.learn_randomized_outer(
-                windows,
-                detections,
-                m_per_outer=args.m_per_outer,
-                min_coverage=args.min_coverage,
-                max_outer=args.max_outer,
-                refine_iters=args.refine_iters,
-                n_components=args.n_components,
-                n_min=args.n_min,
-                epsilon=args.epsilon,
-                min_template_width=args.min_template_width,
-                max_template_width=args.max_template_width,
-                eps_step_fraction=args.eps_step_fraction,
-                max_relative_distance=args.max_relative_distance,
-                post_refine_max_relative_distance=args.post_refine_max_relative_distance,
-                rng=args.seed,
-                mp_mode=args.mp_mode,
-                n_workers=args.workers,
-                show_progress=args.progress,
-                progress_callback=on_log,
+                windows, partition, **_outer_loop_kwargs(args), progress_callback=on_log, **extra
             )
         except ValueError as exc:
             raise CliError(str(exc)) from exc
 
-    result = _run_with_stats(args.loop_stats, args.out, build)
+    return _run_with_stats(args.loop_stats, args.out, build)
 
+
+def _write_build(
+    args: argparse.Namespace,
+    command: str,
+    windows: list[Window],
+    result: rd.RandomizedOuterResult,
+    params: dict[str, Any],
+) -> int:
+    """Write a build folder (atoms, matchings, outer logs, summary); exit 1 when no atom survived."""
     atoms_dir = args.out / "atoms"
     atoms_dir.mkdir(exist_ok=True)
     counts: dict[int, int] = {}
@@ -224,13 +246,12 @@ def run_randomized_build(args: argparse.Namespace) -> int:
         "".join(json.dumps(asdict(log)) + "\n" for log in result.outer_logs)
     )
     summary = {
-        "command": "randomized-build",
+        "command": command,
         "gpl_dir": str(args.gpl_dir.resolve()),
         "wav": str(args.gpl_dir.resolve()),
         "n_windows": len(windows),
         "window_ids": [window.window_id for window in windows],
         "window_offset": args.window_offset,
-        "n_detections": len(detections),
         "sec_per_bin": _sec_per_bin(windows[0]),
         "m_per_outer": args.m_per_outer,
         "min_coverage": args.min_coverage,
@@ -238,13 +259,10 @@ def run_randomized_build(args: argparse.Namespace) -> int:
         "refine_iters": args.refine_iters,
         "n_components": args.n_components,
         "n_min": args.n_min,
-        "epsilon": args.epsilon,
-        "min_template_width": args.min_template_width,
-        "max_template_width": args.max_template_width,
+        **params,
         "eps_step_fraction": args.eps_step_fraction,
         "max_relative_distance": args.max_relative_distance,
         "post_refine_max_relative_distance": args.post_refine_max_relative_distance,
-        "seed": args.seed,
         "stop_reason": result.stop_reason,
         "n_outer_completed": result.n_outer_completed,
         "n_atoms": result.n_atoms,
@@ -274,11 +292,82 @@ def run_randomized_build(args: argparse.Namespace) -> int:
     return 0
 
 
+def run_randomized_build(args: argparse.Namespace) -> int:
+    windows = load_windows(args.gpl_dir, args.n_windows, args.window_offset)
+    detections = load_detections(args.gpl_dir)
+    result = _run_build(
+        args,
+        windows,
+        detections,
+        epsilon=args.epsilon,
+        min_template_width=args.min_template_width,
+        max_template_width=args.max_template_width,
+        rng=args.seed,
+    )
+    params = {
+        "n_detections": len(detections),
+        "epsilon": args.epsilon,
+        "min_template_width": args.min_template_width,
+        "max_template_width": args.max_template_width,
+        "seed": args.seed,
+    }
+    return _write_build(args, "randomized-build", windows, result, params)
+
+
+def _lengths_s(text: str) -> list[float]:
+    return [float(part) for part in text.split(",") if part.strip()]
+
+
+def run_pan_build(args: argparse.Namespace) -> int:
+    windows = load_windows(args.gpl_dir, args.n_windows, args.window_offset)
+    sec_per_bin = _sec_per_bin(windows[0])
+    if sec_per_bin is None:
+        raise CliError("--lengths-s needs sample_freq in the window sidecars")
+    if not args.lengths_s or min(args.lengths_s) <= 0:
+        raise CliError(f"--lengths-s must be positive seconds, got {args.lengths_s}")
+    columns = sorted({int(round(seconds / sec_per_bin)) for seconds in args.lengths_s})
+    try:
+        config = PanSeedConfig(
+            lengths=tuple(columns),
+            start_freq=windows[0].start_freq,
+            end_freq=windows[0].end_freq,
+            signal=args.signal,
+            pca_rows=args.pca_rows,
+            band_edges=tuple(args.band_edges) if args.band_edges else None,
+            decimate=args.decimate,
+            copy_threshold=args.copy_threshold,
+            min_copies=args.min_copies,
+            dedupe_corr=args.dedupe_corr,
+            nthreads=args.pan_threads,
+        )
+    except ValueError as exc:
+        raise CliError(str(exc)) from exc
+    seeder = PanSeeder(config)
+    result = _run_build(args, windows, None, seeder=seeder, merge_corr=args.dedupe_corr)
+    (args.out / "pan_seeds.jsonl").write_text(
+        "".join(json.dumps(asdict(log)) + "\n" for log in seeder.passes)
+    )
+    params = {
+        "seeder": {
+            "signal": args.signal,
+            "pca_rows": args.pca_rows if args.signal == "pca" else None,
+            "band_edges": args.band_edges if args.signal == "bands" else None,
+            "lengths_s": args.lengths_s,
+            "lengths_columns": columns,
+            "decimate": args.decimate,
+            "copy_threshold": args.copy_threshold,
+            "min_copies": args.min_copies,
+            "dedupe_corr": args.dedupe_corr,
+        },
+    }
+    return _write_build(args, "pan-build", windows, result, params)
+
+
 # ── matching-pursuit ─────────────────────────────────────────────────────────
 
 
 def load_dictionary(dictionary_dir: Path) -> Dictionary:
-    """Atoms listed in a ``randomized-build`` ``summary.json``."""
+    """Atoms listed in a ``randomized-build`` or ``pan-build`` ``summary.json``."""
     summary_path = dictionary_dir / "summary.json"
     if not summary_path.is_file():
         raise CliError(f"no summary.json in dictionary directory {dictionary_dir}")
@@ -388,6 +477,21 @@ def _add_input_args(parser: argparse.ArgumentParser) -> None:
     )
 
 
+def _add_outer_loop_args(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument("--m-per-outer", type=int, default=rd.DEFAULT_OUTER_M)
+    parser.add_argument("--min-coverage", type=float, default=rd.DEFAULT_OUTER_MIN_COVERAGE)
+    parser.add_argument("--max-outer", type=int, default=rd.DEFAULT_OUTER_MAX_OUTER)
+    parser.add_argument("--refine-iters", type=int, default=rd.DEFAULT_OUTER_REFINE_ITERS)
+    parser.add_argument("--n-components", type=int, default=rd.defaults.N_COMPONENTS)
+    parser.add_argument("--n-min", type=int, default=rd.DEFAULT_OUTER_N_MIN)
+    parser.add_argument(
+        "--post-refine-max-relative-distance",
+        type=_optional_float,
+        default=rd.DEFAULT_OUTER_POST_REFINE_TAU,
+    )
+    parser.add_argument("--verbose", action="store_true", help="Print one line per outer pass")
+
+
 def _add_mp_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--eps-step-fraction", type=float, default=rd.defaults.EPS_STEP_FRACTION)
     parser.add_argument(
@@ -418,12 +522,7 @@ def build_parser() -> argparse.ArgumentParser:
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
     _add_input_args(build)
-    build.add_argument("--m-per-outer", type=int, default=rd.DEFAULT_OUTER_M)
-    build.add_argument("--min-coverage", type=float, default=rd.DEFAULT_OUTER_MIN_COVERAGE)
-    build.add_argument("--max-outer", type=int, default=rd.DEFAULT_OUTER_MAX_OUTER)
-    build.add_argument("--refine-iters", type=int, default=rd.DEFAULT_OUTER_REFINE_ITERS)
-    build.add_argument("--n-components", type=int, default=rd.defaults.N_COMPONENTS)
-    build.add_argument("--n-min", type=int, default=rd.DEFAULT_OUTER_N_MIN)
+    _add_outer_loop_args(build)
     build.add_argument("--epsilon", type=float, default=rd.DEFAULT_CREATE_EPSILON)
     build.add_argument(
         "--min-template-width", type=_optional_int, default=rd.DEFAULT_MIN_TEMPLATE_WIDTH
@@ -431,15 +530,47 @@ def build_parser() -> argparse.ArgumentParser:
     build.add_argument(
         "--max-template-width", type=_optional_int, default=rd.DEFAULT_MAX_TEMPLATE_WIDTH
     )
-    build.add_argument(
-        "--post-refine-max-relative-distance",
-        type=_optional_float,
-        default=rd.DEFAULT_OUTER_POST_REFINE_TAU,
-    )
     build.add_argument("--seed", type=int, default=None, help="Random seed")
-    build.add_argument("--verbose", action="store_true", help="Print one line per outer pass")
     _add_mp_args(build)
     build.set_defaults(func=run_randomized_build)
+
+    pan = sub.add_parser(
+        "pan-build",
+        help="Learn a dictionary: pan matrix profile seeds, MP + PCA refine, coverage-gated outer loop",
+        formatter_class=argparse.ArgumentDefaultsHelpFormatter,
+    )
+    _add_input_args(pan)
+    _add_outer_loop_args(pan)
+    pan.add_argument("--signal", choices=GPL_KINDS, default=DEFAULT_SIGNAL, help="Search signal")
+    pan.add_argument(
+        "--pca-rows", type=int, default=DEFAULT_PCA_ROWS, help="--signal pca: frequency patterns kept"
+    )
+    pan.add_argument(
+        "--band-edges", type=_lengths_s, default=None,
+        help="--signal bands: edges in Hz, e.g. 10,100,200 (default: 100 Hz bands)",
+    )
+    pan.add_argument(
+        "--lengths-s", type=_lengths_s, default=[1.0, 2.0, 3.0, 4.0],
+        help="Motif lengths in seconds, comma-separated",
+    )
+    pan.add_argument(
+        "--decimate", type=int, default=1, help="Average every N STFT columns for the search signal"
+    )
+    pan.add_argument(
+        "--copy-threshold", type=float, default=DEFAULT_COPY_THRESHOLD,
+        help="A copy is closer than this fraction of the way from the pair's distance to the median",
+    )
+    pan.add_argument(
+        "--min-copies", type=int, default=DEFAULT_MIN_COPIES, help="Drop a pair with fewer copies"
+    )
+    pan.add_argument(
+        "--dedupe-corr", type=float, default=DEFAULT_DEDUPE_CORR,
+        help="Drop a seed this similar (best shifted cosine) to one already taken, and fold "
+        "together atoms of one pass that refine to this similarity",
+    )
+    pan.add_argument("--pan-threads", type=int, default=1, help="Matrix-profile threads")
+    _add_mp_args(pan)
+    pan.set_defaults(func=run_pan_build)
 
     pursue = sub.add_parser(
         "matching-pursuit",
@@ -448,7 +579,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     _add_input_args(pursue)
     pursue.add_argument(
-        "--dictionary", type=Path, required=True, help="Output folder of randomized-build"
+        "--dictionary", type=Path, required=True, help="Output folder of randomized-build or pan-build"
     )
     pursue.add_argument("--max-repeats", type=int, default=None)
     pursue.add_argument("--disallow-overlap", action="store_true")

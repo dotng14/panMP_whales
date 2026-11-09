@@ -2,6 +2,16 @@
 
 How to seed a Matching Pursuit (MP) dictionary from pan matrix profile (panMP) pairs on a 10 h recording, efficiently and without duplicate motifs. Implementation steps, file names and tests are in [stage1_motif_dictionary.md](stage1_motif_dictionary.md). This document only covers the design.
 
+> **Status (2026-11-02): built as `python -m analysis.dict_learning pan-build`** (`dict_learning/code/learn/pan_seeds.py`; see [`analysis/dict_learning/README.md`](../analysis/dict_learning/README.md#pan-build)). It follows §4 with Option A (distance profile) for copies, inside the randomized build's outer loop: one outer pass is one batch, and MP + PCA refinement (`refine_dictionary`) is the joint refinement. Where it differs from this design:
+>
+> - **Copy rule.** Not `r = 2 × the pair's distance`. On several rows, per-row z-normalization gives the rows a call never reaches full weight, so even a perfect pair has a large distance and `2d` takes in the whole background (55 copies of one pair on the synthetic test folder). Copies are under `d + 0.5 × (median − d)`, with the median taken over the candidate's distance profile.
+> - **Recentring, added.** Z-normalized distance ranks the onset or tail of a loud call as a strong motif. Without a fix, one dominant call gave two seeds, one per edge, and masking did not catch the second. All copies of a seed now shift together, by up to half a width, to where their mean has the most energy.
+> - **Duplicate check** is a best shifted cosine on the full residual (at least half the narrower width overlapping), threshold 0.9.
+> - **Search signal default `pca`** (8 rows). `full` gives cleaner seeds on the synthetic tests, but costs about rows ÷ 8 times as much.
+> - **Lengths take turns, longest first.** Ranking all lengths' pairs by one z-score let the 1 s length take 10 of 13 atoms on 014845; short atoms match 2–3× as often, which made refinement (nearly all the run time) 2–3× slower than the randomized build.
+> - **Refined twins are folded.** Seeds distinct at the duplicate check can refine to one shape (four of one pass on 014845, 0.93–0.99 alike). After refinement, such an atom's placements move to the busier twin, which is rebuilt; the residual is re-deflated.
+> - Not done yet: §4 step 5's per-second HMM scores, and the coverage and specificity measures.
+
 **Summary.** Run the matrix profile **once** to find candidate pairs. Then, for each candidate, find its other copies with a cheap one-candidate search (an FFT distance profile) and **mask** those copies so the same call can't be picked again. Finally, let all the atoms compete in one joint MP. This keeps the duplicate protection of the current one-pair-per-round loop without rerunning the matrix profile for every atom.
 
 ---

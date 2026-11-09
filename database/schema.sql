@@ -62,8 +62,8 @@ CREATE TABLE IF NOT EXISTS windows (
     n_time          INTEGER
 );
 
--- 3. Randomized builds -------------------------------------------------------
--- One row per `randomized-build` output folder.
+-- 3. Builds -----------------------------------------------------------------
+-- One row per `randomized-build` or `pan-build` output folder.
 CREATE TABLE IF NOT EXISTS learning_runs (
     run_id                 INTEGER PRIMARY KEY AUTOINCREMENT,
     label                  TEXT,
@@ -113,7 +113,7 @@ CREATE TABLE IF NOT EXISTS learning_round_logs (
 CREATE TABLE IF NOT EXISTS tool_runs (
     tool_run_id          INTEGER PRIMARY KEY AUTOINCREMENT,
     tool                 TEXT NOT NULL
-        CHECK (tool IN ('randomized_build', 'matching_pursuit')),
+        CHECK (tool IN ('randomized_build', 'pan_build', 'matching_pursuit')),
     input_dictionary_id  INTEGER REFERENCES dictionaries(dictionary_id) ON DELETE SET NULL,
     output_dictionary_id INTEGER REFERENCES dictionaries(dictionary_id) ON DELETE SET NULL,
     segmentation_id      INTEGER REFERENCES gpl_segmentations(segmentation_id) ON DELETE SET NULL,

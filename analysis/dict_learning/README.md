@@ -1,8 +1,9 @@
 # dict_learning/
 
 Dictionary learning on GPL whitened spectrogram windows: **Mallat matching
-pursuit (MP)** and the **randomized dictionary build** built on it. This is the
-baseline for combining panMP with MP (see
+pursuit (MP)**, the **randomized dictionary build** built on it, and the
+**pan build**, which takes the randomized build's seeds from the pan matrix
+profile instead (the panMP + MP design in
 [`../../plans/stage1_panmp_to_mp_design.md`](../../plans/stage1_panmp_to_mp_design.md)).
 
 The other builders (greedy seed trials, `build_dictionary`, `extend_dictionary`,
@@ -22,9 +23,10 @@ dict_learning/
 │   ├── io.py             GPL windows, detection CSVs, detections → patches
 │   ├── mp.py             Mallat MP: shift scoring (numba / NumPy / CuPy), loop, workers, counters
 │   ├── tools.py          matching_pursuit; rebuild atoms from their patches (mean, PC1, top-k PCA)
-│   ├── cli.py            randomized-build and matching-pursuit commands
+│   ├── cli.py            randomized-build, pan-build and matching-pursuit commands
 │   └── learn/
-│       ├── randomized_dictionary.py   Create → Refine, coverage-gated outer loop
+│       ├── randomized_dictionary.py   Create → Refine, coverage-gated outer loop (any seeder)
+│       ├── pan_seeds.py               pan matrix profile seeds for that loop (pan-build)
 │       ├── refine.py                  refine_dictionary_by_averaging (used by learn_from_motifs)
 │       └── learn_from_motifs.py       panMP → MP trial, one pair per round (later "mp-greedy" mode)
 ├── experiments/  notebooks/  scripts/  reports/   (see Removed: many no longer run)
@@ -39,9 +41,10 @@ Every option and its default:
 [Command-line tools](../../README.md#command-line-tools) in the root README.
 This section covers what the commands read and write.
 
-Both commands read a GPL output folder (`spectrogram_npy/` with whitened
-windows and JSON sidecars, plus `CSV_*.csv` detections). With `--catalog DB`,
-either command also registers its output folder in the SQLite catalog after
+The commands read a GPL output folder (`spectrogram_npy/` with whitened
+windows and JSON sidecars, plus `CSV_*.csv` detections, which `pan-build`
+does not need). With `--catalog DB`, every command also registers its output
+folder in the SQLite catalog after
 writing it (a matching-pursuit run registers its dictionary folder first if
 needed). `summary.json` records absolute `gpl_dir` / `dictionary` paths and the
 `window_ids` used, so a folder can be registered later with
@@ -78,6 +81,84 @@ Exit codes: 0 success, 1 no atoms survived, 2 bad input (message on stderr).
 analysis.dict_learning randomized-build --help` lists every knob with its
 default.
 
+### `pan-build`
+
+```bash
+python -m analysis.dict_learning pan-build --gpl-dir GPL_OUT --out DICT_DIR \
+  --signal pca --lengths-s 1,2,3,4 --m-per-outer 5 --n-min 10 --verbose
+```
+
+The randomized build's outer loop with a different seeder
+(`learn/pan_seeds.py`). Each pass:
+
+1. **Search signal.** The residual windows, joined in time order, as `pca`
+   (projected onto the residual's top `--pca-rows` frequency patterns),
+   `full`, `bands` or `energy` (`analysis.matrix_profile.signals.gpl_rows`),
+   with every `--decimate` columns averaged. Positions map back to
+   `(window_id, t_start)` through the windows' column counts
+   (`io.ColumnMap`), not a time grid: a GPL window is not a whole number of
+   hops, so joined columns drift off any grid at every boundary.
+2. **One pan matrix profile** at the `--lengths-s` lengths.
+3. **Pairs, best first,** by the z-score of their distance within their
+   length, the lengths taking turns, longest first. Z-scores of different
+   lengths don't compare: ranked together on the 014845 recording, the 1 s
+   length took 10 of 13 atoms, and 1 s atoms match 2–3 times as often, so
+   each pass's refinement took 2–3 times as long. A long seed taken first
+   also masks the shorter cuts of its call. Skipped: a pair with a masked copy, a copy that spans two windows
+   (per-window MP could never place it), or a flat stretch (two flat windows
+   are a perfect z-normalized match).
+4. **Copies:** one distance profile (`matrix_profile.distance_profile`, the
+   matrix profile's own measure, by FFT) from the pair's first copy. Copies
+   are the starts under `d + copy_threshold × (median − d)`, where `d` is the
+   pair's distance and the median is the profile's, taken best first and no
+   closer together than the profile's exclusion zone. Fewer than
+   `--min-copies`: the pair is dropped. A multiple of `d` does not work here:
+   per-row z-normalization gives frequency rows the call never reaches full
+   weight, so `d` is large even for a perfect pair, and `2d` takes in the
+   whole background (55 "copies" of one pair on the synthetic test folder).
+5. **Seed:** the copies cut from the full residual (re-aligned within
+   `--decimate` columns), all shifted together by up to half a width to
+   where their mean has the most energy, averaged, scaled to unit norm. The
+   shift matters: z-normalized distance ranks the onset or tail of a loud
+   call (half noise, half call) as a strong motif, and without the shift one
+   call gave two seeds, one per edge.
+6. **Duplicates:** a seed whose best shifted cosine (at least half the
+   narrower width overlapping) with a seed or atom already taken reaches
+   `--dedupe-corr` is dropped.
+7. **Mask** every copy, before and after the shift, at every length.
+
+Steps 3–7 repeat until `--m-per-outer` seeds are taken, every start is used,
+or 25 pairs per seed asked for have been tried. Refinement, pruning, merging,
+coverage and the stop reasons are the randomized build's, with one addition:
+
+8. **Fold refined twins.** Seeds that differ at step 6 can still refine to the
+   same shape (on 014845, four seeds of one pass ended 0.93–0.99 alike). After
+   refinement, an atom whose best shifted cosine with an atom that has more
+   placements reaches `--dedupe-corr` hands its placements to that atom,
+   moved by the shift (`randomized_dictionary.merge_similar_atoms`); the
+   atom is rebuilt from all of them and the residual re-deflated from the
+   pass's input, before the post-refine gate. `n_merged` in
+   `outer_logs.jsonl` counts the folded atoms. `randomized-build` doesn't
+   fold (`merge_corr=None`).
+ One matrix profile
+per pass: masking uses neighbours found before anything was masked, so a call
+whose nearest neighbour got masked waits for the next pass, whose profile
+runs on the new residual.
+
+**Which signal.** On the synthetic tests `full` seeds each planted motif once
+with exactly its copies, even when one motif is twice as frequent and twice
+as loud; `pca` sometimes lets a copy of another motif in or misses a motif in
+the first pass, and refinement repairs it (all motifs above 0.95 after
+refining, in every layout tried). `pca` is the default because the matrix
+profile's cost grows with the row count: 8 rows instead of 1637 on the
+200 kHz LeiData files.
+
+Writes the `randomized-build` files (with `"command": "pan-build"` and a
+`seeder` block in `summary.json`) plus `pan_seeds.jsonl`, one `PanPass` per
+outer pass: signal rows and columns, pairs tried, how many were skipped as
+masked, too few copies or duplicate, and each pick's pair, distance,
+z-score and copies.
+
 ### `matching-pursuit`
 
 ```bash
@@ -85,7 +166,7 @@ python -m analysis.dict_learning matching-pursuit \
   --gpl-dir GPL_OUT --dictionary DICT_DIR --out MP_DIR [--mp-mode global] [--max-repeats N]
 ```
 
-Places the atoms of a `randomized-build` output on the windows and writes
+Places the atoms of a `randomized-build` or `pan-build` output on the windows and writes
 `matchings.json` and `summary.json` (energy before and after, stop reason,
 time and window coverage).
 
@@ -137,6 +218,23 @@ result.dictionary, result.matchings, result.outer_logs, result.stop_reason
 `build_randomized_dictionary` runs one Create → Refine. `create_dictionary`
 also accepts pre-built `Segment` partitions and a parent-dictionary gate
 (`parent`, `alpha`); the CLI uses neither.
+
+`seeder=` replaces Create: any callable
+`(residual_stack, m, accumulated_dictionary) -> RandomizedCreateResult`
+(the `Seeder` protocol). `partition` may then be `None`.
+
+### Pan seeds (`code/learn/pan_seeds.py`)
+
+```python
+from analysis.dict_learning.code.learn.pan_seeds import PanSeedConfig, PanSeeder
+
+seeder = PanSeeder(PanSeedConfig(lengths=(8, 16, 24, 33),     # STFT columns
+                                 start_freq=10.0, end_freq=10000.0, signal="pca"))
+result = learn_randomized_outer(windows, None, seeder=seeder, m_per_outer=5, n_min=10)
+seeder.passes      # one PanPass per outer pass
+```
+
+`shape_similarity(a, b)` is the duplicate check's best shifted cosine.
 
 ### Mallat MP (`code/tools.py`, `code/mp.py`)
 

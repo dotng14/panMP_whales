@@ -168,7 +168,7 @@ def test_non_gpl_window_names(catalog_runs, tmp_path):
         ("no folder", "run folder not found"),
         ("no summary", "missing summary.json"),
         ("bad json", "is not valid JSON"),
-        ("other command", "is not from randomized-build or matching-pursuit"),
+        ("other command", "is not from randomized-build, pan-build or matching-pursuit"),
         ("no atom list", "has no atom list"),
         ("atom file missing", "atom file missing"),
         ("unknown atom", "which the dictionary lacks"),

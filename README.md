@@ -9,7 +9,7 @@ same environment). `--help` on any command prints its full usage.
 | Step | Command | Reads | Writes |
 |---|---|---|---|
 | 1. Spectrogram + detections | `python -m analysis.GPL_Python.process_v4` | WAV (or a folder of WAVs) | GPL output folder |
-| 2. Build a dictionary | `python -m analysis.dict_learning randomized-build` | GPL output folder | dictionary folder |
+| 2. Build a dictionary | `python -m analysis.dict_learning randomized-build` (random seeds) or `pan-build` (pan matrix profile seeds) | GPL output folder | dictionary folder |
 | 3. Place a dictionary | `python -m analysis.dict_learning matching-pursuit` | GPL output folder + dictionary folder | MP folder |
 | — Find repeats (no dictionary) | `python -m analysis.matrix_profile pan` | `.npy` series, WAV or GPL output folder | pan folder |
 | — Catalog for the web viewer | `python -m database index` / `register` | WAV library, run folders, CSVs | catalog SQLite file |
@@ -19,6 +19,7 @@ A whole run, end to end:
 ```bash
 python -m analysis.GPL_Python.process_v4 recording.wav --output-dir GPL_OUT
 python -m analysis.dict_learning randomized-build --gpl-dir GPL_OUT --out DICT --seed 0 --catalog catalog.sqlite
+#   or: python -m analysis.dict_learning pan-build --gpl-dir GPL_OUT --out DICT --catalog catalog.sqlite
 python -m analysis.dict_learning matching-pursuit --gpl-dir GPL_OUT --dictionary DICT --out MP --catalog catalog.sqlite
 python -m analysis.matrix_profile pan --gpl-dir GPL_OUT --rate 10 --out PAN --plot
 ```
@@ -42,7 +43,7 @@ Details: [`analysis/GPL_Python/README.md`](analysis/GPL_Python/README.md).
 
 ```bash
 python -m analysis.dict_learning randomized-build --gpl-dir GPL_OUT --out DICT \
-  --m-per-outer 5 --n-min 10 --min-coverage 0.5 --seed 0 --verbose
+  --m-per-outer 5 --n-min 10 --min-coverage 0.2 --seed 0 --verbose
 ```
 
 Each outer pass samples poorly explained detection patches as atoms, refines
@@ -55,12 +56,12 @@ subtracts them from the residual. It stops at the first of: coverage reached,
 | `--gpl-dir`, `--out` | required | Input GPL folder, output folder |
 | `--seed` | random | Fix it to make a run repeatable |
 | `--m-per-outer` | 5 | Atoms sampled per outer pass |
-| `--min-coverage` | 0.5 | Stop once this fraction of time bins is explained |
-| `--max-outer` | 100 | Stop after this many outer passes |
-| `--refine-iters` | 3 | MP + rebuild rounds per pass |
+| `--min-coverage` | 0.2 | Stop once more than this fraction of time bins is explained |
+| `--max-outer` | 10 | Stop after this many outer passes |
+| `--refine-iters` | 1 | MP + rebuild rounds per pass |
 | `--n-min` | 10 | Drop an atom matched to fewer patches than this |
 | `--n-components` | 1 | PCA modes per atom; `>1` is subspace MP (not stored in the catalog schema) |
-| `--epsilon` | 0.1 | Only sample patches that keep more than this fraction of their energy unexplained |
+| `--epsilon` | 0.9 | Only sample patches whose residual keeps more than this fraction of their norm (‖r‖ / ‖x‖ > ε) |
 | `--min-template-width` / `--max-template-width` | 10 / 20 columns | Detections outside this width are not sampled (`none` = no limit) |
 | `--post-refine-max-relative-distance` | 0.9 | After refining, drop placements leaving more than this fraction of energy unexplained (`none` = off) |
 | `--verbose` | off | One line per outer pass on stderr |
@@ -70,6 +71,44 @@ subtracts them from the residual. It stops at the first of: coverage reached,
 Plus the [shared MP options](#shared-mp-options). Exit codes: 0 success,
 1 no atoms survived, 2 bad input. Output files:
 [`analysis/dict_learning/README.md`](analysis/dict_learning/README.md#randomized-build).
+
+### 2b. `pan-build`
+
+```bash
+python -m analysis.dict_learning pan-build --gpl-dir GPL_OUT --out DICT \
+  --lengths-s 1,2,3,4 --m-per-outer 5 --n-min 10 --verbose
+```
+
+The same outer loop as `randomized-build`, but each pass takes its seeds from
+the pan matrix profile of the residual instead of random detection patches. It
+runs the profile once, takes the most unusual pairs, finds every copy of each
+pair with one distance profile, averages the copies into a seed, and masks them
+so the same call is not seeded twice. MP then refines the seeds, as in
+`randomized-build`. It needs no detection CSV.
+
+Takes `--m-per-outer`, `--min-coverage`, `--max-outer`, `--refine-iters`,
+`--n-components`, `--n-min`, `--post-refine-max-relative-distance`, `--verbose`,
+`--n-windows`, `--window-offset` and `--catalog` with the defaults above, plus
+the [shared MP options](#shared-mp-options) and:
+
+| Option | Default | Meaning |
+|---|---|---|
+| `--signal` | `pca` | What the matrix profile searches: `pca` (the recording's top frequency patterns), `full` (every frequency row: cleaner seeds, about rows/8 times slower), `bands`, `energy` |
+| `--pca-rows` | 8 | Frequency patterns kept with `--signal pca` |
+| `--band-edges` | 100 Hz bands | Band edges in Hz with `--signal bands` |
+| `--lengths-s` | 1,2,3,4 | Motif lengths in seconds; each becomes a whole number of STFT columns, and the atom width |
+| `--decimate` | 1 | Average every N columns for the search (faster on long recordings); copies are re-aligned to the column afterwards |
+| `--copy-threshold` | 0.5 | A copy is closer to the pair's first copy than this fraction of the way from the pair's own distance to the median distance |
+| `--min-copies` | 3 | Drop a pair with fewer copies |
+| `--dedupe-corr` | 0.9 | Drop a seed whose best shifted cosine with a seed or atom already taken is at least this; after refinement, fold an atom this similar to a busier one of the same pass into it |
+| `--pan-threads` | 1 | Matrix-profile threads |
+
+Writes what `randomized-build` writes, with `"command": "pan-build"` and a
+`seeder` block in `summary.json`, plus `pan_seeds.jsonl` (per pass: the signal
+size, pairs tried, why pairs were skipped, and every seed's pair and copies).
+Exit codes as above; a pass that finds no pair with enough copies ends the run
+with `empty_pool`. How it works:
+[`analysis/dict_learning/README.md`](analysis/dict_learning/README.md#pan-build).
 
 ### 3. `matching-pursuit`
 
@@ -82,7 +121,7 @@ Places a saved dictionary's atoms on the windows and writes the placements
 
 | Option | Default | Meaning |
 |---|---|---|
-| `--gpl-dir`, `--dictionary`, `--out` | required | GPL folder, a `randomized-build` output folder, output folder |
+| `--gpl-dir`, `--dictionary`, `--out` | required | GPL folder, a `randomized-build` or `pan-build` output folder, output folder |
 | `--max-repeats` | no limit | Stop after this many placements |
 | `--disallow-overlap` | off | Don't let placements overlap in time within a window |
 | `--n-windows`, `--window-offset` | all, 0 | Use a slice of the windows |
@@ -92,7 +131,7 @@ Plus the shared MP options below.
 
 ### Shared MP options
 
-Both `randomized-build` and `matching-pursuit` take these.
+`randomized-build`, `pan-build` and `matching-pursuit` all take these.
 
 | Option | Default | Meaning |
 |---|---|---|
@@ -118,9 +157,10 @@ python -m analysis.matrix_profile pan --gpl-dir GPL_OUT --rate 10 --signal bands
 | Option | Default | Meaning |
 |---|---|---|
 | `--series FILE.npy` / `--wav FILE` / `--gpl-dir DIR` | one required | Input: a 1-D or `(rows, T)` array, a mono WAV, or a GPL folder |
-| `--signal` | WAV: `rms`; GPL: `energy` | WAV: `rms` or `bands`. GPL: `energy`, `bands` or `full` (every frequency row) |
+| `--signal` | WAV: `rms`; GPL: `energy` | WAV: `rms` or `bands`. GPL: `energy`, `bands`, `pca` (top frequency patterns) or `full` (every frequency row) |
 | `--rate` | GPL: native columns | Samples per second of the signal; required with `--wav` |
 | `--band-edges` | 100 Hz bands | Band edges in Hz for `--signal bands`, e.g. `10,100,200` |
+| `--pca-rows` | 8 | Frequency patterns kept for `--signal pca` |
 | `--min-len` / `--max-len` / `--step` | 32 / 128 / 32 | Motif lengths to scan, in samples of the signal |
 | `--top-k` | 10 | Motif pairs to report |
 | `--engine` | `fast` | `fast` (numba) or `reference` (MATLAB port, 1 row, slow) |
