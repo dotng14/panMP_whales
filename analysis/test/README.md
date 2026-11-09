@@ -29,7 +29,7 @@ analysis/test/
 ├── unit/
 │   ├── .coveragerc      unit coverage report
 │   ├── database/        catalog helpers, validation, hand-made run folders, the pan_build upgrade
-│   ├── dict_learning/   MP, refine, randomized build, pan seeds, learn_from_motifs, bands
+│   ├── dict_learning/   MP, refine, randomized build, pan seeds, split, learn_from_motifs, bands
 │   └── matrix_profile/  mpxForPan, panMP, pan_profile, distance_profile, signals, MATLAB parity
 └── integration/
     ├── .coveragerc      the 100% gate
@@ -37,6 +37,7 @@ analysis/test/
     ├── test_randomized_build_cli.py
     ├── test_pan_build_cli.py
     ├── test_matching_pursuit_cli.py
+    ├── test_split_cli.py
     ├── test_pan_cli.py
     ├── test_catalog_cli.py   --catalog, python -m database register / index
     └── test_catalog_api.py   the backend's catalog routes (TestClient)
@@ -284,6 +285,26 @@ that would leave the window, and a distinct atom is untouched. In
 `refine_dictionary`, two seeds of one planted motif (one shifted a column)
 end as one atom with `merge_corr=0.9` and as two without.
 
+### `split`
+
+`integration/test_split_cli.py` builds a dictionary by hand on the GPL
+fixture:
+
+- Atom 0 is the mean of motifs 0 and 1, placed on every copy of both. Atom 1
+  is motif 2, on its own copies.
+- Splitting atom 0 with `--seed 0` must give back motifs 0 and 1 (cosine
+  above 0.99), each holding exactly its own planted copies, with ids 0 and 2.
+  Atom 1 is unchanged.
+- The result is read by `matching-pursuit` and the catalog, which records an
+  `edit` dictionary of its parent.
+- A split of that split takes its patches from a `matching-pursuit` run. It
+  uses `--min-relative-reduction 0`: those placements also cover noise, so
+  the reduction depends on the data.
+
+Rejections exit 1: atom 1 with `--min-relative-reduction 0.9`, and
+`--min-size 50`. Bad options and inputs that don't fit exit 2. The unit tests
+in `unit/dict_learning/test_split_template.py` are gplrev3's, ported.
+
 ## The coverage gate
 
 `integration/.coveragerc` measures `analysis.dict_learning`,
@@ -330,9 +351,9 @@ To review them:
 grep -rn "no-pipeline-cover:\|no-pipeline-branch:\|gpu-only" analysis database --include=*.py
 ```
 
-At the time of writing there are 171 `no-pipeline-cover` and 15
+At the time of writing there are 191 `no-pipeline-cover` and 18
 `no-pipeline-branch` markers, in `dict_learning/code/{core,io,mp,tools}.py`,
-`learn/{randomized_dictionary,pan_seeds}.py`, `dict_learning/__init__.py`,
+`learn/{randomized_dictionary,pan_seeds,split_template}.py`, `dict_learning/__init__.py`,
 `matrix_profile/{__init__,signals}.py`, `bands.py` and `database/catalog.py`.
 
 **When the gate fails after a change:** add an integration test through a CLI if

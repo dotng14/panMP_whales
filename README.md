@@ -11,6 +11,7 @@ same environment). `--help` on any command prints its full usage.
 | 1. Spectrogram + detections | `python -m analysis.GPL_Python.process_v4` | WAV (or a folder of WAVs) | GPL output folder |
 | 2. Build a dictionary | `python -m analysis.dict_learning randomized-build` (random seeds) or `pan-build` (pan matrix profile seeds) | GPL output folder | dictionary folder |
 | 3. Place a dictionary | `python -m analysis.dict_learning matching-pursuit` | GPL output folder + dictionary folder | MP folder |
+| — Split one atom in two | `python -m analysis.dict_learning split` | GPL output folder + dictionary folder (+ MP folder) | dictionary folder |
 | — Find repeats (no dictionary) | `python -m analysis.matrix_profile pan` | `.npy` series, WAV or GPL output folder | pan folder |
 | — Catalog for the web viewer | `python -m database index` / `register` | WAV library, run folders, CSVs | catalog SQLite file |
 
@@ -23,6 +24,10 @@ python -m analysis.dict_learning randomized-build --gpl-dir GPL_OUT --out DICT -
 python -m analysis.dict_learning matching-pursuit --gpl-dir GPL_OUT --dictionary DICT --out MP --catalog catalog.sqlite
 python -m analysis.matrix_profile pan --gpl-dir GPL_OUT --rate 10 --out PAN --plot
 ```
+
+The same pipelines as scripts with configured options, one per command:
+[`analysis/scripts/pipeline/`](analysis/scripts/pipeline/README.md). Every
+file these commands read and write: [`FILES.md`](FILES.md).
 
 ### 1. GPL: `process_v4`
 
@@ -128,6 +133,33 @@ Places a saved dictionary's atoms on the windows and writes the placements
 | `--catalog DB` | off | Also register the output (and its dictionary, if needed) |
 
 Plus the shared MP options below.
+
+### 3b. `split`
+
+```bash
+python -m analysis.dict_learning split --gpl-dir GPL_OUT --dictionary DICT --template 3 --out DICT2
+```
+
+Splits the patches of one atom into two rank-1 clusters: it perturbs the atom
+by ±ε, assigns each patch to the closer of the two, refits each by its first
+principal component, and keeps the best of `--n-trials` starts. When two
+atoms cut the residual error by at least `--min-relative-reduction`, it writes
+a new dictionary folder. The split atom becomes half `a` (same id), half `b`
+gets a new id, and the other atoms and placements carry over. Otherwise it
+exits 1 and writes only `summary.json`. Ported from gplrev3's viewer `split`
+command.
+
+| Option | Default | Meaning |
+|---|---|---|
+| `--gpl-dir`, `--dictionary`, `--template`, `--out` | required | GPL folder, the dictionary folder (a build or an earlier split), the `template_id` to split, output folder |
+| `--matchings` | the dictionary's own | Take the atom's patches from this `matching-pursuit` run of the dictionary instead |
+| `--epsilon` | 0.1 | Size of the ± perturbation, relative to the atom |
+| `--n-trials` | 10 | Random ± starts; the best split is kept |
+| `--max-refine` | 10 | Assign-and-refit rounds per start |
+| `--min-relative-reduction` | 0.1 | Accept only when two atoms cut the residual error by this fraction |
+| `--min-size` | 2 | Fewest patches on each side |
+| `--seed` | random | Random seed |
+| `--catalog DB` | off | Also register the output, as an edit of its parent dictionary |
 
 ### Shared MP options
 

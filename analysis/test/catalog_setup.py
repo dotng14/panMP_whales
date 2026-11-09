@@ -41,10 +41,10 @@ def pursue(gpl: Path, dictionary: Path, out: Path, *extra: str) -> int:
 
 
 def downgrade_tool_runs(db: Path) -> None:
-    """Give ``tool_runs`` the CHECK it had before ``pan_build`` existed, keeping its rows."""
+    """Give ``tool_runs`` the CHECK it had before ``pan_build`` and ``split`` existed, keeping its rows."""
     with closing(sqlite3.connect(db)) as raw:
         ddl = raw.execute("SELECT sql FROM sqlite_master WHERE name = 'tool_runs'").fetchone()[0]
-        columns = ddl.split("(", 1)[1].replace("'randomized_build', 'pan_build', ", "'randomized_build', ")
+        columns = ddl.split("(", 1)[1].replace("'pan_build', ", "").replace(", 'split'", "")
         raw.executescript(
             f"""
             PRAGMA foreign_keys = OFF;

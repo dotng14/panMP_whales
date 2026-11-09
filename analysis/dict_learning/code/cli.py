@@ -8,6 +8,8 @@ windows plus JSON sidecars) and, for ``randomized-build``, ``CSV_*.csv``
     python -m analysis.dict_learning pan-build --gpl-dir GPL_OUT --out DICT_DIR
     python -m analysis.dict_learning matching-pursuit --gpl-dir GPL_OUT \\
         --dictionary DICT_DIR --out MP_DIR
+    python -m analysis.dict_learning split --gpl-dir GPL_OUT \\
+        --dictionary DICT_DIR --template 3 --out SPLIT_DIR
 
 The two builds share the outer loop and differ in where seeds come from:
 random detection patches, or the pan matrix profile
@@ -15,8 +17,10 @@ random detection patches, or the pan matrix profile
 ``summary.json``, ``matchings.json`` and ``outer_logs.jsonl``; ``pan-build``
 adds ``pan_seeds.jsonl``. ``matching-pursuit`` places the
 atoms listed in a dictionary's ``summary.json`` and writes ``summary.json`` and
-``matchings.json``. With ``--catalog DB`` every command also registers its
-output folder in the SQLite catalog (``database/``).
+``matchings.json``. ``split`` replaces one atom of a dictionary by two
+(``learn/split_template.py``) and writes a new dictionary folder in the build
+layout. With ``--catalog DB`` every command also registers its output folder
+in the SQLite catalog (``database/``).
 """
 
 from __future__ import annotations
@@ -44,6 +48,7 @@ from .learn.pan_seeds import (
     PanSeeder,
 )
 from analysis.matrix_profile.signals import DEFAULT_PCA_ROWS, GPL_KINDS
+from .learn.split_template import split_template_matchings
 from .tools import matching_pursuit
 
 
@@ -456,6 +461,148 @@ def run_matching_pursuit(args: argparse.Namespace) -> int:
 # ── parser ───────────────────────────────────────────────────────────────────
 
 
+# ── split ────────────────────────────────────────────────────────────────────
+
+
+def _read_matchings(folder: Path) -> list[Matching]:
+    path = folder / "matchings.json"
+    if not path.is_file():
+        raise CliError(f"no matchings.json in {folder}")
+    return [
+        Matching(
+            template_id=int(row["template_id"]),
+            window_id=str(row["window_id"]),
+            t_start=int(row["t_start"]),
+            amplitude=float(row["amplitude"]),
+        )
+        for row in json.loads(path.read_text())
+    ]
+
+
+def run_split(args: argparse.Namespace) -> int:
+    """Replace one atom by the two halves of its patches; write a new dictionary folder."""
+    dictionary = load_dictionary(args.dictionary)
+    source = json.loads((args.dictionary / "summary.json").read_text())
+    placements_dir = args.matchings or args.dictionary
+    if args.matchings is not None:
+        mp_summary = args.matchings / "summary.json"
+        recorded = json.loads(mp_summary.read_text()).get("dictionary") if mp_summary.is_file() else None
+        if recorded is None or Path(recorded).resolve() != args.dictionary.resolve():
+            raise CliError(f"{args.matchings} is not a matching-pursuit run of {args.dictionary}")
+    matchings = _read_matchings(placements_dir)
+    by_id = {int(t.template_id): t for t in dictionary}
+    target = by_id.get(int(args.template))
+    if target is None:
+        raise CliError(f"template {args.template} not in {args.dictionary}; it has {sorted(by_id)}")
+
+    all_windows = {w.window_id: w for w in load_windows(args.gpl_dir, None, 0)}
+    window_ids = list(source.get("window_ids") or sorted({m.window_id for m in matchings}))
+    missing = sorted({m.window_id for m in matchings} - set(all_windows))
+    if missing:
+        raise CliError(f"{len(missing)} placement windows are not in {args.gpl_dir}, e.g. {missing[0]}")
+    windows = [all_windows[wid] for wid in window_ids if wid in all_windows]
+    if any(t.n_freq != windows[0].n_freq for t in dictionary):
+        raise CliError(f"the atoms and the windows of {args.gpl_dir} have different frequency rows")
+    own = [m for m in matchings if int(m.template_id) == int(target.template_id)]
+    if not own:
+        raise CliError(f"template {args.template} has no placements in {placements_dir}")
+
+    try:
+        result, side_a, side_b = split_template_matchings(
+            windows, target, own,
+            epsilon=args.epsilon, n_trials=args.n_trials, min_relative_reduction=args.min_relative_reduction,
+            min_size=args.min_size, max_refine=args.max_refine, rng=args.seed,
+        )
+    except ValueError as exc:
+        raise CliError(str(exc)) from exc
+
+    args.out.mkdir(parents=True, exist_ok=True)
+    id_a = int(target.template_id)
+    id_b = max(by_id) + 1
+    report = {
+        "command": "split",
+        "gpl_dir": str(args.gpl_dir.resolve()),
+        "dictionary": str(args.dictionary.resolve()),
+        "matchings_from": str(placements_dir.resolve()),
+        "split_template": id_a,
+        "accepted": bool(result.accepted),
+        "relative_reduction": result.relative_reduction,
+        "sse_one": result.sse_one,
+        "sse_two": result.sse_two,
+        "n_a": result.n_a,
+        "n_b": result.n_b,
+        "best_trial": result.best_trial,
+        "epsilon": args.epsilon,
+        "n_trials": args.n_trials,
+        "max_refine": args.max_refine,
+        "min_relative_reduction": args.min_relative_reduction,
+        "min_size": args.min_size,
+        "seed": args.seed,
+        "n_windows": len(windows),
+        "window_ids": [w.window_id for w in windows],
+        "window_offset": source.get("window_offset", 0),
+        "sec_per_bin": _sec_per_bin(windows[0]),
+    }
+    if not result.accepted:
+        _write_json(args.out / "summary.json", {**report, "new_template_ids": [], "atoms": []})
+        print(
+            f"split rejected: relative reduction {result.relative_reduction:.3f} is below "
+            f"--min-relative-reduction {args.min_relative_reduction}",
+            file=sys.stderr,
+        )
+        return 1
+
+    new = Dictionary()
+    for template in dictionary:
+        if int(template.template_id) != id_a:
+            new.add(template)
+    parent = target.source_segment_id or f"template_{id_a}"
+    new.add(Template(template_id=id_a, data=result.template_a, source_segment_id=f"split:{parent}:a"))
+    new.add(Template(template_id=id_b, data=result.template_b, source_segment_id=f"split:{parent}:b"))
+    placed = [m for m in matchings if int(m.template_id) != id_a]
+    placed += [Matching(template_id=id_a, window_id=m.window_id, t_start=m.t_start, amplitude=m.amplitude) for m in side_a]
+    placed += [Matching(template_id=id_b, window_id=m.window_id, t_start=m.t_start, amplitude=m.amplitude) for m in side_b]
+    placed.sort(key=lambda m: (m.window_id, m.t_start, m.template_id))
+
+    atoms_dir = args.out / "atoms"
+    atoms_dir.mkdir(exist_ok=True)
+    counts: dict[int, int] = {}
+    for matching in placed:
+        counts[int(matching.template_id)] = counts.get(int(matching.template_id), 0) + 1
+    atoms = []
+    for template in sorted(new, key=lambda t: int(t.template_id)):
+        rel = f"atoms/template_{template.template_id:03d}.npy"
+        np.save(args.out / rel, template.data)
+        atoms.append(
+            {
+                "template_id": int(template.template_id),
+                "width": template.width,
+                "n_freq": template.n_freq,
+                "n_components": template.n_components,
+                "n_patches": counts.get(int(template.template_id), 0),
+                "source_segment_id": template.source_segment_id,
+                "path": rel,
+            }
+        )
+    _write_json(args.out / "matchings.json", _matching_rows(placed))
+    stack = as_stack(windows)
+    _write_json(
+        args.out / "summary.json",
+        {
+            **report,
+            "new_template_ids": [id_a, id_b],
+            "n_atoms": len(atoms),
+            "n_matchings": len(placed),
+            **_coverage(stack, new, placed),
+            "atoms": atoms,
+        },
+    )
+    print(json.dumps({"out": str(args.out), "split_template": id_a, "new_template_ids": [id_a, id_b],
+                      "n_a": result.n_a, "n_b": result.n_b, "relative_reduction": result.relative_reduction}))
+    _register(args.catalog, args.out)
+    return 0
+
+
 def _optional_int(text: str) -> int | None:
     return None if text.lower() == "none" else int(text)
 
@@ -585,6 +732,35 @@ def build_parser() -> argparse.ArgumentParser:
     pursue.add_argument("--disallow-overlap", action="store_true")
     _add_mp_args(pursue)
     pursue.set_defaults(func=run_matching_pursuit)
+
+    split = sub.add_parser(
+        "split",
+        help="Replace one atom by two: split its patches into two rank-1 clusters",
+        formatter_class=argparse.ArgumentDefaultsHelpFormatter,
+    )
+    split.add_argument("--gpl-dir", type=Path, required=True, help="GPL output folder the dictionary was built on")
+    split.add_argument("--dictionary", type=Path, required=True, help="Dictionary folder (a build or an earlier split)")
+    split.add_argument("--template", type=int, required=True, help="template_id of the atom to split")
+    split.add_argument("--out", type=Path, required=True, help="Output folder for the new dictionary")
+    split.add_argument(
+        "--matchings", type=Path, default=None,
+        help="Take the atom's patches from this matching-pursuit run of the dictionary "
+        "(default: the dictionary's own matchings.json)",
+    )
+    split.add_argument("--epsilon", type=float, default=0.1, help="Size of the ± perturbation, relative to the atom")
+    split.add_argument("--n-trials", type=int, default=10, help="Random ± starts; the best split is kept")
+    split.add_argument("--max-refine", type=int, default=10, help="Assign-and-refit rounds per start")
+    split.add_argument(
+        "--min-relative-reduction", type=float, default=0.1,
+        help="Accept only when two atoms cut the residual error by this fraction",
+    )
+    split.add_argument("--min-size", type=int, default=2, help="Fewest patches on each side")
+    split.add_argument("--seed", type=int, default=None, help="Random seed")
+    split.add_argument(
+        "--catalog", type=Path, default=None,
+        help="Also register the output folder in this catalog SQLite file",
+    )
+    split.set_defaults(func=run_split)
     return parser
 
 

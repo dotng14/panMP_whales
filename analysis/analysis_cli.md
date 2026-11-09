@@ -4,11 +4,13 @@ Run from the repo root. Exit code 0 is success. Exit code 2 is bad input, printe
 
 ## `python -m analysis.dict_learning`
 
-Two commands. Both read a GPL output folder: `spectrogram_npy/spwhiten_*.npy` with JSON sidecars, windows in time order. `randomized-build` also requires `CSV_*.csv` detections. `--n-windows` and `--window-offset` (default 0) take the slice `[offset, offset + n)`.
+Four commands. All read a GPL output folder: `spectrogram_npy/spwhiten_*.npy` with JSON sidecars, windows in time order. `randomized-build` also requires `CSV_*.csv` detections. `--n-windows` and `--window-offset` (default 0) take the slice `[offset, offset + n)`. `pan-build` and `split` are described in the root [`README.md`](../README.md#2b-pan-build) and [`dict_learning/README.md`](dict_learning/README.md); every file they read and write is in [`FILES.md`](../FILES.md).
 
 ```bash
 python -m analysis.dict_learning randomized-build --gpl-dir GPL_OUT --out DICT_DIR
+python -m analysis.dict_learning pan-build --gpl-dir GPL_OUT --out DICT_DIR
 python -m analysis.dict_learning matching-pursuit --gpl-dir GPL_OUT --dictionary DICT_DIR --out MP_DIR
+python -m analysis.dict_learning split --gpl-dir GPL_OUT --dictionary DICT_DIR --template 3 --out SPLIT_DIR
 ```
 
 `--catalog DB` registers the output folder in that SQLite catalog after a successful run.
@@ -58,7 +60,7 @@ Stdout is one JSON object: `out`, `stop_reason`, `n_atoms`, `n_matchings`, `time
 
 ### `matching-pursuit`
 
-Place the atoms listed in a `randomized-build` `summary.json` on the GPL windows. Rank-1 dictionaries are matched with normalized patches.
+Place the atoms listed in a `randomized-build`, `pan-build` or `split` `summary.json` on the GPL windows. Rank-1 dictionaries are matched with normalized patches.
 
 | Flag | Default | Meaning |
 |---|---|---|
