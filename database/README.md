@@ -5,7 +5,7 @@ have, so the web viewer can list, name, sort and overlay them. Large arrays stay
 on disk; the catalog stores metadata and absolute paths.
 
 Adapted from `gplrev3-webserver/database/` (same table names and lineage
-rules), with a fresh schema for this repo: only the randomized build and
+rules), with a fresh schema for this repo: only the two builds and
 matching pursuit write to it, and CSVs are a new kind of entry. It uses its own
 DB file; it never touches gplrev3's catalog.
 
@@ -16,11 +16,11 @@ DB file; it never touches gplrev3's catalog.
 | `wav_files` | WAV under a library root |
 | `gpl_segmentations` | GPL output folder (`spectrogram_npy/`, `CSV_*.csv`, `panel.bin`) |
 | `windows` | Whitened window, with its sample span, STFT hop and wall-clock times |
-| `learning_runs` | `randomized-build` output folder |
+| `learning_runs` | `randomized-build`, `pan-build` or `split` output folder |
 | `learning_round_logs` | Outer pass of a build (`outer_logs.jsonl`) |
-| `tool_runs` | Registered folder: tool (`randomized_build` / `matching_pursuit`), input and output dictionary |
+| `tool_runs` | Registered folder: tool (`randomized_build` / `pan_build` / `split` / `matching_pursuit`), input and output dictionary |
 | `templates` | Atom (`atoms/template_NNN.npy`); `template_pk` is its global id |
-| `dictionaries` | List of atoms: `seed` (a build) or `matching` (MP with a parent's atoms); `refinement` and `edit` reserved |
+| `dictionaries` | List of atoms: `seed` (either build), `matching` (MP with a parent's atoms) or `edit` (a `split` of its parent); `refinement` reserved |
 | `dictionary_templates` | Atom in a dictionary (position, user label) |
 | `dictionary_windows` | Window a dictionary's MP ran over |
 | `matchings` | MP placement: atom, window, `t_start`, amplitude, and `start_sec` / `end_sec` from the WAV start |
@@ -54,6 +54,21 @@ by stem, so neither needs the WAV to be indexed first.
 t_start × hop / sample_freq`, and `end_sec` adds the atom width. They are
 computed when the folder is registered, from the window sidecars. If the GPL
 folder is gone they stay NULL and the placement has no lane box.
+
+**Pan builds** register like randomized builds, with tool `pan_build`; their
+`params_json` adds the `seeder` block from `summary.json`. A catalog file made
+before `pan_build` or `split` existed is upgraded the first time it is
+opened for writing: SQLite cannot change a CHECK in place, so `connect` copies
+`tool_runs` into a table with the current CHECK and renames it, keeping every
+id and every row that points at one (`_widen_tool_check`). Read-only
+connections leave the file alone.
+
+**Splits** (`python -m analysis.dict_learning split`) register with tool
+`split`, as an `edit` dictionary whose `parent_dictionary_id` is the
+dictionary they split; the parent is registered first if it is not in the
+catalog yet, and is also the tool run's `input_dictionary_id`. Their
+`params_json` holds the split options and result (`split_template`,
+`new_template_ids`, `relative_reduction`, `n_a`, `n_b`, …).
 
 **Re-registering** the same folder updates its rows in place: ids and user
 labels are kept, atoms are upserted by `template_id`, placements and outer logs

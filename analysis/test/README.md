@@ -1,10 +1,11 @@
 # analysis/test
 
-Tests for the three baseline pipelines, the catalog, and the code under them:
+Tests for the baseline pipelines, the pan build, the catalog, and the code under them:
 
 | Entry point | Command |
 |---|---|
 | Randomized dictionary build | `python -m analysis.dict_learning randomized-build [--catalog DB]` |
+| Pan-seeded dictionary build | `python -m analysis.dict_learning pan-build [--catalog DB]` |
 | Mallat matching pursuit with a saved dictionary | `python -m analysis.dict_learning matching-pursuit [--catalog DB]` |
 | Pan matrix profile | `python -m analysis.matrix_profile pan` |
 | Catalog of runs and CSVs | `python -m database register` / `index` |
@@ -23,18 +24,20 @@ There are two layers:
 analysis/test/
 ├── README.md
 ├── conftest.py          shared fixtures (session-scoped, written to pytest's tmp dir)
-├── synthetic.py         builders for synthetic GPL folders, series, WAVs, song-structure CSVs; run_module()
-├── catalog_setup.py     helpers for the catalog tests (run the CLIs, copy the catalog)
+├── synthetic.py         builders for synthetic GPL folders, window stacks, series, WAVs, song-structure CSVs; run_module()
+├── catalog_setup.py     helpers for the catalog tests (run the CLIs, copy the catalog, give it the pre-pan_build schema)
 ├── unit/
 │   ├── .coveragerc      unit coverage report
-│   ├── database/        catalog helpers, validation, hand-made run folders
-│   ├── dict_learning/   MP, refine, randomized build, learn_from_motifs, bands
-│   └── matrix_profile/  mpxForPan, panMP, pan_profile, signals, MATLAB parity
+│   ├── database/        catalog helpers, validation, hand-made run folders, the pan_build upgrade
+│   ├── dict_learning/   MP, refine, randomized build, pan seeds, split, learn_from_motifs, bands
+│   └── matrix_profile/  mpxForPan, panMP, pan_profile, distance_profile, signals, MATLAB parity
 └── integration/
     ├── .coveragerc      the 100% gate
     ├── conftest.py      catalog_runs: a build + MP registered with --catalog, plus one CSV
     ├── test_randomized_build_cli.py
+    ├── test_pan_build_cli.py
     ├── test_matching_pursuit_cli.py
+    ├── test_split_cli.py
     ├── test_pan_cli.py
     ├── test_catalog_cli.py   --catalog, python -m database register / index
     └── test_catalog_api.py   the backend's catalog routes (TestClient)
@@ -116,6 +119,16 @@ numba compiles its kernels on first use and caches them (`cache=True`) in
   baseline work.
 - **1 warning:** CuPy prints a `FutureWarning` about `cupyx.jit.rawkernel` when
   the CUDA test runs.
+- **1 failure (since `7fb51be`, 2026-10-30):**
+  `integration/test_matching_pursuit_cli.py::test_subspace_dictionary`. With
+  the new randomized-build defaults, `--max-relative-distance 0` on the
+  subspace dictionary still places 1 atom; the test expects 0.
+- **The coverage gate fails (since `7fb51be` and `4fd2b52`):** at about 78%,
+  because files added there have no integration tests:
+  `dict_learning/code/catalog/repeats_from_catalog.py`,
+  `matrix_profile/replicate_report/*.py`, and the action-history and
+  segmentation helpers in `database/catalog.py` and
+  `backend/app/services/catalog_service.py`. Every other file is at 100%.
 
 ## Fixtures
 
@@ -139,6 +152,11 @@ directory. Nothing in the repository is read or written.
   3 rows, one too short for the motif lengths, and a 3-D array (invalid).
 - **`wav_file` / `stereo_wav_file`:** 6 s at 2 kHz, noise plus repeated 150 Hz
   and 350 Hz bursts, mono and stereo.
+- **`planted_stack(...)`** (a builder in `synthetic.py`, used by the pan seed
+  unit tests): a window stack in memory, 3 windows of 12 × 300, with motif 0
+  planted 10 times at amplitude 2 and motifs 1 and 2 five times each, in
+  shuffled 40-column slots. Motif 0 is the dominant call that must still give
+  only one seed.
 - **`catalog_runs`** (integration only): a GPL folder whose window ids carry the
   stem `SOCAL_T_230426_193500`, a randomized build and a matching-pursuit run
   registered with `--catalog`, and a 6-unit song-structure CSV for that stem.
@@ -222,6 +240,71 @@ again with `--n-components 2` for the subspace tests.
 
 Use `--engine reference` (pure Python) only on series of a few hundred samples.
 
+The pan CLI tests also run `--signal pca` (8 rows by default, and
+`--pca-rows 3` with `--rate 10`) and reject `--pca-rows 13`, one more than the
+fixture's 12 frequency rows.
+
+### `pan-build`
+
+`FAST` in `integration/test_pan_build_cli.py`:
+
+| Option | Test | Default | Why |
+|---|---|---|---|
+| `--lengths-s` | 0.12 | 1,2,3,4 | The planted motifs are 12 columns of 10 ms. The defaults are 100–400 columns; a 400-column pair needs about 800 joined columns, and the fixture has 720 |
+| `--m-per-outer` | 3 | 5 | The 3 planted motifs |
+| `--n-min` / `--refine-iters` | 2 / 1 | 10 / 1 | As in the randomized-build `FAST`: each motif has 4 copies, so 10 would prune every atom |
+| `--max-outer` / `--min-coverage` | 2 / 1.0 | 10 / 0.2 | Exactly 2 passes, so `pan_seeds.jsonl` and the second pass's duplicate check against accumulated atoms are exercised; in the second pass two atoms refine to a third's shape and are folded (`n_merged` 0, 2) |
+| `--workers` | 1 | all CPUs | Fast and deterministic |
+
+Values that make one path run:
+
+| Options | Path |
+|---|---|
+| `--signal energy` | One row cannot tell the band-separated motifs apart, so some pairs point at copies already taken: the masked-neighbour skip (`n_masked > 0`) |
+| `--signal bands --band-edges 10,50,90,130`, `--signal pca --pca-rows 4`, `--signal full` | The other search signals; `full` must find all 3 motifs (cosine above 0.9) |
+| `--decimate 2` | The decimated search (360 columns) and the re-alignment of copies to native columns |
+| `--m-per-outer 100 --min-copies 2 --dedupe-corr 0.3` | More seeds than the signal holds: the pass runs until every start is masked or used, and the loose duplicate rule rejects some seeds |
+| `--m-per-outer 1 --min-copies 50` | No pair has 50 copies: the pass gives up after 25 tries (`TRIES_PER_SEED` × 1), `empty_pool`, exit 1 |
+| `--lengths-s 5` | Longer than the joined signal can pair: exit 2 from the matrix profile |
+| `--lengths-s 0.03` | 3 columns, under the profile's minimum of 4: exit 2 |
+
+The unit tests in `unit/dict_learning/test_pan_seeds.py` use `planted_stack`
+with `signal="full"` and `lengths=(12,)`, over 4 random layouts. Each must give
+exactly 3 seeds, one per motif (cosine above 0.99), each with exactly its own
+planted copies to within 3 columns (a quarter of the width: z-normalized
+minima move a little with the noise). The matrix profile must run once. The
+end-to-end unit test uses the default `pca` signal and checks the refined
+dictionary instead (every motif above 0.95), because `pca` seeds can carry a
+stray copy that refinement removes. With `lengths=(8, 12)` the first pick must
+be 12 wide and both lengths must give seeds.
+
+`unit/dict_learning/test_merge_atoms.py` checks the folding of refined twins:
+a copy of an atom shifted 2 columns in its frame hands its placements over at
+`t + 2`, minus one that lands on a placement the atom already has and one
+that would leave the window, and a distinct atom is untouched. In
+`refine_dictionary`, two seeds of one planted motif (one shifted a column)
+end as one atom with `merge_corr=0.9` and as two without.
+
+### `split`
+
+`integration/test_split_cli.py` builds a dictionary by hand on the GPL
+fixture:
+
+- Atom 0 is the mean of motifs 0 and 1, placed on every copy of both. Atom 1
+  is motif 2, on its own copies.
+- Splitting atom 0 with `--seed 0` must give back motifs 0 and 1 (cosine
+  above 0.99), each holding exactly its own planted copies, with ids 0 and 2.
+  Atom 1 is unchanged.
+- The result is read by `matching-pursuit` and the catalog, which records an
+  `edit` dictionary of its parent.
+- A split of that split takes its patches from a `matching-pursuit` run. It
+  uses `--min-relative-reduction 0`: those placements also cover noise, so
+  the reduction depends on the data.
+
+Rejections exit 1: atom 1 with `--min-relative-reduction 0.9`, and
+`--min-size 50`. Bad options and inputs that don't fit exit 2. The unit tests
+in `unit/dict_learning/test_split_template.py` are gplrev3's, ported.
+
 ## The coverage gate
 
 `integration/.coveragerc` measures `analysis.dict_learning`,
@@ -268,10 +351,10 @@ To review them:
 grep -rn "no-pipeline-cover:\|no-pipeline-branch:\|gpu-only" analysis database --include=*.py
 ```
 
-At the time of writing there are 160 `no-pipeline-cover` and 11
+At the time of writing there are 191 `no-pipeline-cover` and 18
 `no-pipeline-branch` markers, in `dict_learning/code/{core,io,mp,tools}.py`,
-`learn/randomized_dictionary.py`, `dict_learning/__init__.py`,
-`matrix_profile/__init__.py`, `bands.py` and `database/catalog.py`.
+`learn/{randomized_dictionary,pan_seeds,split_template}.py`, `dict_learning/__init__.py`,
+`matrix_profile/{__init__,signals}.py`, `bands.py` and `database/catalog.py`.
 
 **When the gate fails after a change:** add an integration test through a CLI if
 the new code is reachable that way. Mark a line only when no CLI input can reach

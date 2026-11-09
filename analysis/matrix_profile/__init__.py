@@ -378,6 +378,45 @@ def mpx_channels(series, minlag, w, nthreads=1):
     )
 
 
+def distance_profile(signal, start: int, length: int) -> np.ndarray:
+    """Distance from the window at ``start`` to every window of a ``(rows, T)`` signal.
+
+    The measure is the one :func:`mpx_channels` ranks pairs by: per row the
+    z-normalized Euclidean distance ``sqrt(2 * length * (1 - corr))``, summed
+    over rows, with the same rule for flat windows (two flat windows match
+    perfectly, a flat window against a varying one has correlation 0).
+    Correlations are clipped to ``[-1, 1]``. Each row costs a few FFTs of the
+    signal's length (MASS), so this finds the copies of one candidate without
+    another matrix profile. No exclusion zone: entry ``start`` is 0.
+    """
+    from scipy.fft import irfft, next_fast_len, rfft
+
+    rows = np.atleast_2d(np.asarray(signal, dtype=np.float64))
+    width = int(length)
+    n = rows.shape[1]
+    if width < 4 or width > n:
+        raise ValueError(f"length must be between 4 and {n}, got {width}")  # no-pipeline-cover: the pan seeder checks lengths against the signal first
+    if not 0 <= int(start) <= n - width:
+        raise ValueError(f"start must be between 0 and {n - width}, got {start}")  # no-pipeline-cover: the pan seeder only passes starts from the matrix profile
+    start = int(start)
+    nprof = n - width + 1
+    nfft = next_fast_len(n + width - 1)
+    total = np.zeros(nprof)
+    for row in rows:
+        row = np.ascontiguousarray(row)
+        mu, invnorm = _sliding_mean_invnorm(row, width)
+        query = row[start : start + width] - mu[start]
+        dot = irfft(rfft(row, nfft) * rfft(query[::-1], nfft), nfft)[width - 1 : width - 1 + nprof]
+        flat = invnorm == 0.0
+        if invnorm[start] == 0.0:  # no-pipeline-branch: the pan seeder masks flat starts
+            corr = np.where(flat, 1.0, 0.0)  # no-pipeline-cover: the pan seeder masks flat starts
+        else:
+            corr = np.where(flat, 0.0, dot * invnorm * invnorm[start])
+        np.clip(corr, -1.0, 1.0, out=corr)
+        total += np.sqrt(2.0 * width * (1.0 - corr))
+    return total
+
+
 def _zscore(x):
     """MATLAB-compatible z-score (sample std, ddof=1)."""
     x = np.asarray(x, dtype=float)

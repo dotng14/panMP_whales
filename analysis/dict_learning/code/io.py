@@ -258,3 +258,49 @@ def load_gpl_inputs(  # no-pipeline-cover: library entry point (GPL_Python/prepr
         detections = []
 
     return windows, detections
+
+
+@dataclass(frozen=True)
+class ColumnMap:
+    """Columns of a window stack joined in order, and the way back.
+
+    Joined column ``c`` is local column ``c - starts[k]`` of window ``k``.
+    GPL windows do not hold a whole number of STFT hops, so joined columns are
+    not evenly spaced in time; this map, not a time grid, is how a position
+    found on the joined signal becomes a ``(window_id, t_start)`` placement.
+    """
+
+    window_ids: tuple[str, ...]
+    starts: tuple[int, ...]  # one per window, plus the total column count
+
+    @classmethod
+    def from_stack(cls, stack: dict[str, np.ndarray]) -> "ColumnMap":
+        """Windows in the stack's own order (the CLIs load them in time order)."""
+        ids = tuple(stack)
+        starts = np.concatenate([[0], np.cumsum([stack[w].shape[1] for w in ids])])
+        return cls(window_ids=ids, starts=tuple(int(s) for s in starts))
+
+    @property
+    def n_columns(self) -> int:
+        return self.starts[-1]
+
+    def join(self, stack: dict[str, np.ndarray]) -> np.ndarray:
+        return np.concatenate([np.asarray(stack[w], dtype=np.float64) for w in self.window_ids], axis=1)
+
+    def window_index(self, column: int) -> int:
+        return int(np.searchsorted(self.starts, int(column), side="right")) - 1
+
+    def locate(self, column: int, width: int) -> tuple[str, int] | None:
+        """``(window_id, t_start)`` of columns ``[column, column + width)``, or ``None`` across a boundary."""
+        k = self.window_index(column)
+        if k < 0 or k >= len(self.window_ids) or int(column) + int(width) > self.starts[k + 1]:  # no-pipeline-branch: the pan seeder masks starts that span two windows
+            return None  # no-pipeline-cover: the pan seeder masks starts that span two windows
+        return self.window_ids[k], int(column) - self.starts[k]
+
+    def crosses_boundary(self, width: int) -> np.ndarray:
+        """True for every start whose ``width`` columns span two windows."""
+        n_starts = self.n_columns - int(width) + 1
+        out = np.zeros(max(n_starts, 0), dtype=bool)
+        for boundary in self.starts[1:-1]:
+            out[max(0, boundary - int(width) + 1) : min(n_starts, boundary)] = True
+        return out

@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import shutil
+import sqlite3
+from contextlib import closing
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -36,3 +38,21 @@ def build(gpl: Path, out: Path, *extra: str) -> int:
 def pursue(gpl: Path, dictionary: Path, out: Path, *extra: str) -> int:
     return dict_learning_main(["matching-pursuit", "--gpl-dir", str(gpl), "--dictionary", str(dictionary),
                                "--out", str(out), "--workers", "1", *extra])
+
+
+def downgrade_tool_runs(db: Path) -> None:
+    """Give ``tool_runs`` the CHECK it had before ``pan_build`` and ``split`` existed, keeping its rows."""
+    with closing(sqlite3.connect(db)) as raw:
+        ddl = raw.execute("SELECT sql FROM sqlite_master WHERE name = 'tool_runs'").fetchone()[0]
+        columns = ddl.split("(", 1)[1].replace("'pan_build', ", "").replace(", 'split'", "")
+        raw.executescript(
+            f"""
+            PRAGMA foreign_keys = OFF;
+            BEGIN;
+            CREATE TABLE old_tool_runs ({columns};
+            INSERT INTO old_tool_runs SELECT * FROM tool_runs;
+            DROP TABLE tool_runs;
+            ALTER TABLE old_tool_runs RENAME TO tool_runs;
+            COMMIT;
+            """
+        )

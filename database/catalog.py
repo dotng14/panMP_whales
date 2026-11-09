@@ -34,18 +34,27 @@ import numpy as np
 SCHEMA_PATH = Path(__file__).with_name("schema.sql")
 
 DICT_SOURCES = ("seed", "refinement", "matching", "edit")
-TOOL_NAMES = ("randomized_build", "matching_pursuit")
+TOOL_NAMES = ("randomized_build", "pan_build", "matching_pursuit", "split")
+# Commands that write a dictionary folder, and the tool name it is registered under.
+BUILD_TOOLS = {"randomized-build": "randomized_build", "pan-build": "pan_build", "split": "split"}
 FEEDBACK_LABELS = ("good", "bad")
 MOTIF_CSV_SUFFIX = ".motif_segments.csv"
 MOTIF_CSV_COLUMNS = frozenset(
     {"motif", "song", "theme", "phrase_id", "phrase_count", "start_unix", "end_unix"}
 )
-# The randomized-build knobs kept on the dictionary row (the rest stay in summary.json).
+# The build knobs kept on the dictionary row (the rest stay in summary.json).
+# A randomized build leaves `seeder` out; a pan build leaves out `epsilon`,
+# the width limits and `seed`.
 _BUILD_PARAMS = (
     "m_per_outer", "min_coverage", "max_outer", "refine_iters", "n_components", "n_min",
     "epsilon", "min_template_width", "max_template_width", "eps_step_fraction",
-    "max_relative_distance", "post_refine_max_relative_distance", "seed",
+    "max_relative_distance", "post_refine_max_relative_distance", "seed", "seeder",
     "n_windows", "window_offset",
+)
+# A split folder's knobs and result (the rest stay in summary.json).
+_SPLIT_PARAMS = (
+    "split_template", "new_template_ids", "relative_reduction", "n_a", "n_b", "epsilon", "n_trials",
+    "max_refine", "min_relative_reduction", "min_size", "seed", "n_windows", "window_offset",
 )
 _MP_PARAMS = ("n_windows", "window_offset", "n_atoms")
 
@@ -153,8 +162,39 @@ def connect(db_path: Path | str, *, read_only: bool = False) -> sqlite3.Connecti
     conn = sqlite3.connect(str(path))
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA foreign_keys = ON")
-    conn.executescript(SCHEMA_PATH.read_text())
+    schema = SCHEMA_PATH.read_text()
+    _widen_tool_check(conn, schema)
+    conn.executescript(schema)
     return conn
+
+
+def _widen_tool_check(conn: sqlite3.Connection, schema: str) -> None:
+    """Widen ``tool_runs.tool``'s CHECK in a catalog made before every tool in ``TOOL_NAMES`` existed.
+
+    SQLite cannot change a CHECK in place, so the table is copied into one
+    made from the current schema (same columns, same order) and renamed. Ids,
+    and every row pointing at them, are kept.
+    """
+    row = conn.execute("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'tool_runs'").fetchone()
+    if row is None or all(f"'{tool}'" in row[0] for tool in TOOL_NAMES):
+        return
+    start = schema.index("CREATE TABLE IF NOT EXISTS tool_runs (")
+    ddl = schema[start : schema.index("\n);", start) + 3]
+    ddl = ddl.replace("CREATE TABLE IF NOT EXISTS tool_runs (", "CREATE TABLE tool_runs_new (", 1)
+    conn.execute("PRAGMA foreign_keys = OFF")
+    try:
+        conn.executescript(
+            f"""
+            BEGIN;
+            {ddl}
+            INSERT INTO tool_runs_new SELECT * FROM tool_runs;
+            DROP TABLE tool_runs;
+            ALTER TABLE tool_runs_new RENAME TO tool_runs;
+            COMMIT;
+            """
+        )
+    finally:
+        conn.execute("PRAGMA foreign_keys = ON")
 
 
 def _one(conn: sqlite3.Connection, sql: str, args: Sequence[Any] = ()) -> dict[str, Any] | None:
@@ -842,12 +882,13 @@ def _wav_stem(conn: sqlite3.Connection, segmentation_id: int | None, window_ids:
 def register_run_dir(
     conn: sqlite3.Connection, out_dir: Path | str, *, label: str | None = None
 ) -> dict[str, Any]:
-    """Register a build, matching-pursuit, or limited-overlap output folder.
+    """Register a randomized-build, pan-build, split, matching-pursuit, or limited-overlap folder.
 
     Idempotent: registering the same folder again updates its rows in place and
     keeps ids and user labels. The GPL folder named in ``summary.json`` is
-    indexed too, so placements get times in seconds. A matching-pursuit run
-    registers its dictionary folder first when that is not in the catalog yet.
+    indexed too, so placements get times in seconds. A matching-pursuit run,
+    and a split (an ``edit`` of its parent dictionary), register their
+    dictionary folder first when that is not in the catalog yet.
 
     Returns ``{"kind", "dictionary_id", "run_id", "tool_run_id"}``. The caller
     commits.
@@ -857,13 +898,16 @@ def register_run_dir(
         raise CatalogError(f"run folder not found: {out}")
     summary = _read_json(out / "summary.json")
     command = summary.get("command")
-    if command == "randomized-build":
-        return _register_randomized_build(conn, out, summary, label)
+    if command in BUILD_TOOLS:
+        return _register_build(conn, out, summary, label)
     if command == "matching-pursuit":
         return _register_matching_pursuit(conn, out, summary, label)
     if command in ("balanced-ten", "ten-motif", "limited-overlap"):
         return _register_limited_overlap(conn, out, summary, label)
-    raise CatalogError(f"{out / 'summary.json'} is not from randomized-build or matching-pursuit")
+    raise CatalogError(
+        f"{out / 'summary.json'} is not from randomized-build, pan-build, split or matching-pursuit"
+        " or limited-overlap"
+    )
 
 
 def _index_recorded_gpl_dir(conn: sqlite3.Connection, summary: dict[str, Any], out: Path) -> int | None:
@@ -913,10 +957,11 @@ def _register_limited_overlap(
     adapted["n_matchings"] = len(matchings)
     adapted["time_coverage_fraction"] = summary.get("time_coverage_fraction", summary.get("coverage"))
     adapted["n_windows"] = len({row["window_id"] for row in matchings})
-    return _register_randomized_build(conn, out, adapted, label, matchings=matchings)
+    adapted["command"] = "randomized-build"
+    return _register_build(conn, out, adapted, label, matchings=matchings)
 
 
-def _register_randomized_build(
+def _register_build(
     conn: sqlite3.Connection,
     out: Path,
     summary: dict[str, Any],
@@ -933,7 +978,12 @@ def _register_randomized_build(
     segmentation_id = _index_recorded_gpl_dir(conn, summary, out)
     window_ids = _window_ids(summary, matchings)
     created_at = _mtime_iso(out / "summary.json")
-    params = {k: summary.get(k) for k in _BUILD_PARAMS}
+    if summary["command"] == "split":
+        params = {k: summary.get(k) for k in _SPLIT_PARAMS}
+        parent_id: int | None = _parent_dictionary_id(conn, summary, out)
+    else:
+        params = {k: summary.get(k) for k in _BUILD_PARAMS if k != "seeder" or "seeder" in summary}
+        parent_id = None
 
     conn.execute(
         """
@@ -989,9 +1039,10 @@ def _register_randomized_build(
 
     tool_run_id = _upsert_tool_run(
         conn,
-        tool="randomized_build",
+        tool=BUILD_TOOLS[summary["command"]],
         out_dir=str(out),
         segmentation_id=segmentation_id,
+        input_dictionary_id=parent_id,
         learning_run_id=run_id,
         params_json=_json_or_none(params),
         energy_before=summary.get("energy_before"),
@@ -1040,8 +1091,8 @@ def _register_randomized_build(
         conn,
         out_dir=str(out),
         name=out.name,
-        source="seed",
-        parent_dictionary_id=None,
+        source="seed" if parent_id is None else "edit",
+        parent_dictionary_id=parent_id,
         learning_run_id=run_id,
         segmentation_id=segmentation_id,
         wav_stem=_wav_stem(conn, segmentation_id, window_ids),
@@ -1060,22 +1111,26 @@ def _register_randomized_build(
     conn.execute(
         "UPDATE tool_runs SET output_dictionary_id = ? WHERE tool_run_id = ?", (dictionary_id, tool_run_id)
     )
-    return {"kind": "randomized-build", "dictionary_id": dictionary_id, "run_id": run_id, "tool_run_id": tool_run_id}
+    return {"kind": summary["command"], "dictionary_id": dictionary_id, "run_id": run_id, "tool_run_id": tool_run_id}
+
+
+def _parent_dictionary_id(conn: sqlite3.Connection, summary: dict[str, Any], out: Path) -> int:
+    """The catalog id of the dictionary folder ``summary`` names, registering it first if needed."""
+    dictionary_dir = _resolve_recorded_path(summary.get("dictionary"), out)
+    if dictionary_dir is None:
+        raise CatalogError(f"{out / 'summary.json'} does not name its dictionary folder")
+    parent = _one(conn, "SELECT dictionary_id FROM dictionaries WHERE out_dir = ?", (str(dictionary_dir),))
+    if parent is not None:
+        return int(parent["dictionary_id"])
+    if not (dictionary_dir / "summary.json").is_file():
+        raise CatalogError(f"dictionary folder {dictionary_dir} is not in the catalog and has no summary.json")
+    return int(register_run_dir(conn, dictionary_dir)["dictionary_id"])
 
 
 def _register_matching_pursuit(
     conn: sqlite3.Connection, out: Path, summary: dict[str, Any], label: str | None
 ) -> dict[str, Any]:
-    dictionary_dir = _resolve_recorded_path(summary.get("dictionary"), out)
-    if dictionary_dir is None:
-        raise CatalogError(f"{out / 'summary.json'} does not name its dictionary folder")
-    parent = _one(conn, "SELECT dictionary_id FROM dictionaries WHERE out_dir = ?", (str(dictionary_dir),))
-    if parent is None:
-        if not (dictionary_dir / "summary.json").is_file():
-            raise CatalogError(f"dictionary folder {dictionary_dir} is not in the catalog and has no summary.json")
-        parent_id = register_run_dir(conn, dictionary_dir)["dictionary_id"]
-    else:
-        parent_id = int(parent["dictionary_id"])
+    parent_id = _parent_dictionary_id(conn, summary, out)
     members = list_dictionary_templates(conn, parent_id)
     template_pks = {int(m["template_id"]): int(m["template_pk"]) for m in members}
     widths = {int(m["template_id"]): int(m["width"] or 1) for m in members}

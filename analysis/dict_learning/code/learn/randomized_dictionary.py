@@ -35,7 +35,7 @@ Typical use::
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Callable, Sequence
+from typing import Callable, Protocol, Sequence
 
 import numpy as np
 
@@ -51,6 +51,7 @@ from ..io import Detection
 from ..mp import refit_and_deflate, residual_energy
 from ..tools import matching_pursuit, rebuild_template_from_matchings
 from ..io import detections_to_segments
+from .shape_match import best_shift
 
 # Default post-refine gate: drop placements with unexplained energy fraction
 # ``dnorm(x, A) > POST_REFINE_MAX_RELATIVE_DISTANCE``.
@@ -88,6 +89,7 @@ class RandomizedRefineResult:
     iterations_completed: int = 0
     n_pruned: int = 0
     n_distance_filtered: int = 0
+    n_merged: int = 0
 
 
 @dataclass
@@ -111,6 +113,22 @@ class RandomizedOuterPassLog:
     n_windows_total: int
     energy_before: float | None = None
     energy_after: float | None = None
+    n_merged: int = 0
+
+
+class Seeder(Protocol):
+    """Proposes the seed atoms of one outer pass.
+
+    Called with the current residual stack, the number of seeds wanted, and
+    the dictionary accumulated so far (seed ids must not collide with it;
+    the loop renumbers survivors afterwards). Returns the seeds as a
+    :class:`RandomizedCreateResult`; an empty dictionary ends the loop with
+    ``empty_pool``.
+    """
+
+    def __call__(
+        self, residual: dict[str, np.ndarray], m: int, accumulated: Dictionary
+    ) -> RandomizedCreateResult: ...
 
 
 @dataclass
@@ -402,6 +420,82 @@ def create_dictionary(
     )
 
 
+def merge_similar_atoms(
+    stack: dict[str, np.ndarray],
+    dictionary: Dictionary,
+    matchings: Sequence[Matching],
+    *,
+    min_corr: float,
+    n_components: int = defaults.N_COMPONENTS,
+    max_relative_distance: float | None = defaults.MAX_RELATIVE_DISTANCE,
+) -> tuple[Dictionary, list[Matching], int]:
+    """Fold each atom into a busier one with the same shape.
+
+    Atoms are taken most placements first. One whose best shifted cosine
+    (:func:`~.shape_match.best_shift`, on the first basis vector) with an atom
+    already kept reaches ``min_corr`` hands its placements to that atom, moved
+    by the shift. Placements that would leave their window, or that the kept
+    atom already has at the same start, are dropped. Every atom that gained
+    placements is rebuilt from all of them, from ``stack``. Returns the
+    dictionary, the matchings (amplitudes not refitted) and the number of
+    atoms folded.
+    """
+    counts: dict[int, int] = {}
+    for matching in matchings:
+        counts[int(matching.template_id)] = counts.get(int(matching.template_id), 0) + 1
+    order = sorted(dictionary, key=lambda t: (-counts.get(int(t.template_id), 0), int(t.template_id)))
+    kept: dict[int, Template] = {}
+    folded: dict[int, tuple[int, int]] = {}  # folded id -> (kept id, shift)
+    for atom in order:
+        best: tuple[float, int, int] | None = None
+        for other in kept.values():
+            corr, shift = best_shift(other.basis[0], atom.basis[0])
+            if corr >= min_corr and (best is None or corr > best[0]):
+                best = (corr, int(other.template_id), shift)
+        if best is None:
+            kept[int(atom.template_id)] = atom
+        else:
+            folded[int(atom.template_id)] = (best[1], best[2])
+    if not folded:
+        return dictionary, list(matchings), 0
+
+    out: list[Matching] = []
+    seen: set[tuple[int, str, int]] = set()
+    for matching in matchings:
+        template_id, shift = folded.get(int(matching.template_id), (int(matching.template_id), 0))
+        t_start = int(matching.t_start) + shift
+        width = int(kept[template_id].width)
+        key = (template_id, str(matching.window_id), t_start)
+        if t_start < 0 or t_start + width > stack[matching.window_id].shape[1] or key in seen:
+            continue
+        seen.add(key)
+        out.append(
+            Matching(
+                template_id=template_id,
+                window_id=str(matching.window_id),
+                t_start=t_start,
+                amplitude=float(matching.amplitude),
+                coeffs=None if matching.coeffs is None else np.asarray(matching.coeffs).copy(),
+            )
+        )
+
+    gained = {target for target, _ in folded.values()}
+    merged = Dictionary()
+    for template_id in sorted(kept):
+        atom = kept[template_id]
+        if template_id in gained:
+            atom = rebuild_template_from_matchings(
+                stack,
+                atom,
+                [m for m in out if int(m.template_id) == template_id],
+                n_components=n_components,
+                method="pca",
+                max_relative_distance=max_relative_distance,
+            )
+        merged.add(atom)
+    return merged, out, len(folded)
+
+
 def refine_dictionary(
     residual: Sequence[Window] | dict[str, np.ndarray],
     dictionary: Dictionary,
@@ -417,6 +511,7 @@ def refine_dictionary(
     mp_mode: str | None = None,
     n_workers: int | None = None,
     show_progress: bool | None = False,
+    merge_corr: float | None = None,
 ) -> RandomizedRefineResult:
     """RefineDictionary: whole-dictionary MP, top-K PCA rebuild, prune.
 
@@ -434,6 +529,10 @@ def refine_dictionary(
     The returned residual is re-deflated from the input residual using only the
     kept matchings. Pass ``post_refine_max_relative_distance=None`` to skip
     that gate.
+
+    With ``merge_corr`` set, atoms that came out of the iterations with the
+    same shape are folded together first (:func:`merge_similar_atoms`), and
+    the residual is re-deflated even without the gate.
 
     Overlaps are allowed (``disallow_overlap=False``).
     """
@@ -509,12 +608,24 @@ def refine_dictionary(
         current = rebuilt
         completed += 1
 
+    n_merged = 0
+    if merge_corr is not None and len(current) > 1:
+        current, matchings, n_merged = merge_similar_atoms(
+            original,
+            current,
+            matchings,
+            min_corr=float(merge_corr),
+            n_components=n_components,
+            max_relative_distance=max_relative_distance,
+        )
+
     # Post-refine: drop placements with dnorm(x, A) > tau, then re-prune atoms.
-    if (
+    gated = (
         post_refine_max_relative_distance is not None
         and len(current) > 0
-        and matchings
-    ):
+        and bool(matchings)
+    )
+    if gated:
         matchings, n_distance_filtered = filter_matchings_by_atom_distance(
             original,
             current,
@@ -534,6 +645,7 @@ def refine_dictionary(
             survivors.add(int(atom.template_id))
         matchings = [m for m in matchings if int(m.template_id) in survivors]
         current = kept_dict
+    if gated or n_merged:
         residual_after = {k: np.array(v, copy=True) for k, v in original.items()}
         if matchings and len(current) > 0:
             matchings, _occupied = refit_and_deflate(
@@ -552,6 +664,7 @@ def refine_dictionary(
         iterations_completed=completed,
         n_pruned=n_pruned_total,
         n_distance_filtered=n_distance_filtered,
+        n_merged=n_merged,
     )
 
 
@@ -689,7 +802,7 @@ def _coverage_fractions(
 
 def learn_randomized_outer(
     residual: Sequence[Window] | dict[str, np.ndarray],
-    partition: Sequence[Detection] | Sequence[Segment],
+    partition: Sequence[Detection] | Sequence[Segment] | None,
     *,
     m_per_outer: int = DEFAULT_OUTER_M,
     min_coverage: float = DEFAULT_OUTER_MIN_COVERAGE,
@@ -709,6 +822,8 @@ def learn_randomized_outer(
     n_workers: int | None = None,
     show_progress: bool | None = False,
     progress_callback: Callable[[RandomizedOuterPassLog], None] | None = None,
+    seeder: Seeder | None = None,
+    merge_corr: float | None = None,
 ) -> RandomizedOuterResult:
     """Coverage-gated residual outer loop over Create→Refine.
 
@@ -727,6 +842,15 @@ def learn_randomized_outer(
 
     ``mp_mode`` and ``n_workers`` are passed to every refine MP (``None``
     falls back to ``DICT_LEARNING_MP_MODE`` / ``DICT_LEARNING_MP_WORKERS``).
+
+    ``seeder`` replaces step 1: it is called with the residual, ``m_per_outer``
+    and the accumulated dictionary, and returns the pass's seeds (the pan
+    matrix profile seeder in ``pan_seeds.py`` is one). ``partition``,
+    ``epsilon``, the width limits and ``rng`` are then unused, and
+    ``partition`` may be ``None``.
+
+    ``merge_corr`` is passed to every refine: atoms of one pass that refine
+    to the same shape are folded together (off by default).
 
     Default recipe (CLI ``randomized-build``)::
 
@@ -750,6 +874,8 @@ def learn_randomized_outer(
         raise ValueError(f"max_outer must be >= 1, got {max_outer}")
     if n_min < 1:
         raise ValueError(f"n_min must be >= 1, got {n_min}")
+    if seeder is None and partition is None:
+        raise ValueError("partition is required without a seeder")  # no-pipeline-cover: library input check; the CLIs always pass one or the other
 
     unit_windows: Sequence[Window] | None = windows_for_units
     if unit_windows is None and not isinstance(residual, dict):  # no-pipeline-branch: the CLI always passes windows
@@ -769,11 +895,13 @@ def learn_randomized_outer(
     energy_start: float | None = None
     stop_reason = "max_outer"
 
-    for outer in range(1, int(max_outer) + 1):
-        created = create_dictionary(
-            residual_stack,
-            partition,
-            m_per_outer,
+    def random_seeds(
+        residual_now: dict[str, np.ndarray], m: int, _accumulated: Dictionary
+    ) -> RandomizedCreateResult:
+        return create_dictionary(
+            residual_now,
+            partition,  # type: ignore[arg-type]
+            m,
             windows_for_units=unit_windows,
             original=original,
             epsilon=epsilon,
@@ -781,6 +909,11 @@ def learn_randomized_outer(
             max_template_width=max_template_width,
             rng=gen,
         )
+
+    propose = seeder if seeder is not None else random_seeds
+
+    for outer in range(1, int(max_outer) + 1):
+        created = propose(residual_stack, m_per_outer, accum)
         if created.n_sampled == 0 or len(created.dictionary) == 0:
             stop_reason = "empty_pool"
             break
@@ -797,6 +930,7 @@ def learn_randomized_outer(
             mp_mode=mp_mode,
             n_workers=n_workers,
             show_progress=show_progress,
+            merge_corr=merge_corr,
         )
         if energy_start is None and refined.energies:
             energy_start = refined.energies[0]
@@ -832,6 +966,7 @@ def learn_randomized_outer(
             n_windows_total=n_win_t,
             energy_before=refined.energies[0] if refined.energies else None,
             energy_after=refined.energies[-1] if refined.energies else None,
+            n_merged=refined.n_merged,
         )
         outer_logs.append(log)
         if progress_callback is not None:  # no-pipeline-branch: the CLI always passes a callback

@@ -3,9 +3,9 @@
 - **WAV roots**: every ``*.wav`` → ``wav_files``; its GPL cache
   ``<root>/<GPL_RESULT_DIRNAME>/<rel>.gpl/output`` (as the backend's
   ``gpl_cache.py`` writes it) → ``gpl_segmentations`` + ``windows``.
-- **Run roots**: every folder with a ``summary.json`` from ``randomized-build``
-  or ``matching-pursuit`` → dictionaries, atoms, placements. Builds go first so
-  matching-pursuit runs find their parent.
+- **Run roots**: every folder with a ``summary.json`` from ``randomized-build``,
+  ``pan-build`` or ``matching-pursuit`` → dictionaries, atoms, placements.
+  Builds go first so matching-pursuit runs find their parent.
 - **CSV roots**: every ``*.motif_segments.csv`` → ``annotation_csvs``. Rows
   whose file is gone are dropped.
 
@@ -22,7 +22,7 @@ from typing import Any
 
 from . import catalog
 
-RUN_COMMANDS = ("randomized-build", "matching-pursuit")
+RUN_COMMANDS = ("randomized-build", "pan-build", "matching-pursuit")
 
 
 def gpl_output_dir(wav_path: Path, root: Path, result_dirname: str) -> Path:

@@ -230,3 +230,44 @@ def run_module(*args: str):
         text=True,
         check=False,
     )
+
+
+@dataclass
+class PlantedStack:
+    """A window stack (window id → ``(F, T)``) with motif copies at known places."""
+
+    stack: dict[str, np.ndarray]
+    motifs: list[np.ndarray]
+    # (window index, column, motif index) for every planted copy.
+    copies: list[tuple[int, int, int]]
+
+
+def planted_stack(
+    *,
+    n_windows: int = 3,
+    n_freq: int = 12,
+    n_time: int = 300,
+    width: int = 12,
+    counts: tuple[int, ...] = (10, 5, 5),
+    amplitudes: tuple[float, ...] = (2.0, 1.0, 1.0),
+    noise: float = 0.05,
+    seed: int = 0,
+) -> PlantedStack:
+    """``counts[k]`` copies of motif ``k`` at ``amplitudes[k]``, in shuffled 40-column slots.
+
+    The defaults make motif 0 dominant: twice as many copies, twice as loud.
+    """
+    rng = np.random.default_rng(seed)
+    motifs = motif_shapes(n_freq, width, len(counts))
+    plan = [k for k, count in enumerate(counts) for _ in range(count)]
+    rng.shuffle(plan)
+    slots = [(w, c) for w in range(n_windows) for c in range(5, n_time - width - 5, 40)]
+    if len(plan) > len(slots):
+        raise ValueError(f"{len(plan)} copies do not fit in {len(slots)} slots")
+    chosen = [slots[i] for i in rng.permutation(len(slots))[: len(plan)]]
+    data = [noise * rng.standard_normal((n_freq, n_time)) for _ in range(n_windows)]
+    copies = []
+    for k, (w, c) in zip(plan, chosen):
+        data[w][:, c : c + width] += amplitudes[k] * motifs[k]
+        copies.append((w, c, k))
+    return PlantedStack({f"w{i}": d for i, d in enumerate(data)}, motifs, copies)
