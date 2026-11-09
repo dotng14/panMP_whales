@@ -222,6 +222,42 @@ Registered in pmp as dictionaries 6 (pan-build, partial 0, nested 0.5),
 7 (pan-build, no overlap at all) and 8 (randomized-build seed 0, no overlap
 at all).
 
+## 5. Re-placing the no-overlap dictionary with partial overlap
+
+Dictionary #7 (pan-build, no overlap at all, `--n-min 3`) looks the cleanest
+in the web viewer: each atom covers a whole call. Its build coverage is 0.309.
+I ran `matching-pursuit` with its 10 atoms unchanged, on the same 10 windows,
+with no nesting and three partial-overlap limits. Each was run twice: as
+`matching-pursuit` runs by default (no placement gate), and with
+`--max-relative-distance 0.9`, the gate the builds apply after refinement. The
+gate drops placements that leave more than 90% of their patch unexplained.
+Each run takes about 2 s.
+
+| Re-placement | Gate | Coverage | Placements | Energy explained | Columns > 1 | Overlapping pairs |
+|---|---|---|---|---|---|---|
+| (the build itself) | 0.9 | 0.309 | 87 | 0.485 | 0% | 0 |
+| no overlap | none | 0.521 | 180 | 0.478 | 0% | 0 |
+| no overlap | 0.9 | 0.300 | 89 | 0.482 | 0% | 0 |
+| partial 0.10 | none | 0.531 | 187 | 0.490 | 0.5% | 14 |
+| partial 0.10 | 0.9 | 0.307 | 91 | 0.489 | 0.3% | 5 |
+| partial 0.25 | none | 0.567 | 204 | 0.486 | 3.8% | 53 |
+| partial 0.25 | 0.9 | 0.306 | 92 | 0.483 | 1.8% | 13 |
+
+- **The ungated coverage is padding.** Without the gate, coverage rises to
+  0.52–0.57 and the placements double. Energy explained doesn't move
+  (0.48–0.49), so the extra placements explain almost nothing: each leaves
+  more than 90% of its patch unexplained.
+- **Partial overlap adds almost nothing on top of no overlap.** With the gate,
+  0.25 gives 0.306 against 0.300; the energy explained is the same.
+- **The missing coverage is missing atoms, not overlap.** About 0.3 of the
+  time is all that these 10 atoms cover well. To cover more, the build needs
+  more atoms. Next to try: more passes or seeds per pass, a lower `--n-min`,
+  and all 30 windows, so rarer calls reach 3 copies.
+
+Registered in pmp as matching-pursuit dictionaries of #7: 9 (no overlap,
+ungated), 10 (partial 0.25, ungated) and 11 (partial 0.25, gated). Backup
+first: `catalog.sqlite.bak.20261109T124419_before_mp_on_7`.
+
 ## How this differs from Yoav's limited-overlap learner
 
 `analysis/dictionary_learning_limited_overlap/` (commit `dd8e21f`) also
@@ -259,8 +295,8 @@ inside a phrase, but no stacking"; the pairwise rule can.
 Registered in the production pmp catalog
 (`production-pmp-webserver/backend/data/catalog.sqlite`). Backups were taken
 before each batch: `catalog.sqlite.bak.20261109T113751_before_overlap_exp`
-(before 2–5) and `catalog.sqlite.bak.20261109T120729_before_less_overlap`
-(before 6–8).
+(before 2–5), `catalog.sqlite.bak.20261109T120729_before_less_overlap`
+(before 6–8) and `catalog.sqlite.bak.20261109T124419_before_mp_on_7` (before 9–11).
 
 | Dictionary id | Label | Folder |
 |---|---|---|
@@ -271,6 +307,9 @@ before each batch: `catalog.sqlite.bak.20261109T113751_before_overlap_exp`
 | 6 | overlap experiment: pan-build, no partial overlap, units inside phrases allowed, n_min 3 | `~rivo/whale_runs/014845_overlap/less/pan_p00_n50` |
 | 7 | overlap experiment: pan-build, no overlap at all, n_min 3 | `.../less/pan_p00_n00` |
 | 8 | overlap experiment: randomized-build seed 0, no overlap at all, n_min 3 | `.../less/rand_p00_n00_s0` |
+| 9 | overlap experiment: MP of #7, no overlap, ungated | `~rivo/whale_runs/014845_overlap/mp_on_7/none` |
+| 10 | overlap experiment: MP of #7, partial overlap 0.25, ungated | `.../mp_on_7/p25` |
+| 11 | overlap experiment: MP of #7, partial overlap 0.25, gate 0.9 | `.../mp_on_7/p25_gated` |
 
 ## Reproducing
 
@@ -279,6 +318,8 @@ before each batch: `catalog.sqlite.bak.20261109T113751_before_overlap_exp`
 R=~/whale_runs/014845_overlap/grid bash analysis/dict_learning/experiments/overlap_and_speed/run_grid.sh
 # The tighter limits of section 4 (about 10 min on 2 cores)
 R=~/whale_runs/014845_overlap/less bash analysis/dict_learning/experiments/overlap_and_speed/run_less.sh
+# The re-placements of section 5 (under a minute)
+bash analysis/dict_learning/experiments/overlap_and_speed/run_mp_on_7.sh
 # The measures, for any build folders (FOLDER.log holds the /usr/bin/time -v output)
 python analysis/dict_learning/experiments/overlap_and_speed/compare.py \
   pan_limited_n3=$R/pan_limited_n3 rand_limited_n3_s0=$R/rand_limited_n3_s0
