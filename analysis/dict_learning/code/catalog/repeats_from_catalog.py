@@ -24,6 +24,12 @@ _DISTANCE_EPS = 1e-12
 
 
 def _average_raster(template_data: np.ndarray) -> dict:
+    """The atom as a display raster.
+
+    A subspace atom ``(k, F, W)`` shows its first component (``basis[0]``).
+    """
+    if template_data.ndim == 3:
+        template_data = template_data[0]
     clipped, _, _ = clip_intensity_percentile(
         template_data, hi_percentile=_AVERAGE_MAGNITUDE_PERCENTILE
     )
