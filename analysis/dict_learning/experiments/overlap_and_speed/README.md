@@ -346,6 +346,69 @@ Registered in pmp as dictionaries 12 (partial 0.10) and 13 (partial 0.25),
 both `refinement`s of #7. Backup first:
 `catalog.sqlite.bak.20261109T125952_before_stage2`.
 
+## 7. The whole recording (30 windows)
+
+The two-stage recipe on all 30 windows of 014845 (37.5 min), with
+`--max-outer 20 --min-coverage 0.5`:
+
+- **Stage 1:** no overlap, 5 seeds a pass, `--n-min` 3 or 5.
+- **Stage 2:** from each stage 1, nesting 0.5 with partial 0.05 or 0.10, and
+  10 seeds a pass.
+
+Stage-2 wall times don't include their stage 1.
+
+| Run | Wall | Coverage | Energy explained | Atoms | Placements | Columns > 1 | Nested | Partial | Windows matched | Stop | Atom widths (8/16/24/33) |
+|---|---|---|---|---|---|---|---|---|---|---|---|
+| stage 1, n_min 3 | 6:31 | 0.391 | 0.403 | 20 | 496 | 0% | 0 | 0 | 29 | no survivors, pass 8 | 7/5/5/3 |
+| → partial 0.05 | 4:48 | 0.467 | 0.547 | 48 | 789 | 29% | 323 | 16 | 29 | no survivors, pass 7 | 20/11/9/8 |
+| **→ partial 0.10** | 9:43 | **0.484** | **0.579** | **68** | 924 | 38% | 470 | 41 | 30 | no survivors, pass 17 | 33/16/10/9 |
+| stage 1, n_min 5 | 1:36 | 0.298 | 0.371 | 11 | 338 | 0% | 0 | 0 | 26 | no survivors, pass 4 | 2/3/3/3 |
+| → partial 0.05 | 3:24 | 0.431 | 0.514 | 35 | 746 | 30% | 285 | 11 | 28 | no survivors, pass 8 | 14/7/4/10 |
+| → partial 0.10 | 2:42 | 0.414 | 0.520 | 34 | 690 | 33% | 312 | 49 | 27 | no survivors, pass 6 | 12/6/7/9 |
+
+- **Keep `--n-min 3`.** Raising it to 5 for 3× the data stops stage 1 after
+  3 passes, with 11 atoms. Calls rarely have 5 separate copies, even in
+  37.5 minutes.
+- **Two stages still help:** coverage goes from 0.391 to 0.484, and energy
+  explained from 0.403 to 0.579.
+- **The whole file is covered less than the first 10 windows.** 0.484
+  against 0.506–0.512, so the first 10 windows hold more song. All but one
+  window now has placements, against 8–10 of the first 10.
+- **The best run** (stage 1 then partial 0.10) took 16 min for 37.5 min of
+  audio on 2 cores. Each build still ends when one pass keeps no atom.
+
+### New atoms
+
+`new_atoms.py` compares each atom with the best 10-window dictionary (#14): an
+atom is new when its best shifted cosine with every #14 atom is below 0.8.
+As a baseline, two 10-window builds from the same stage 1 (#12 against #14)
+share all 10 stage-1 atoms but only 10 of 26 stage-2 atoms (median best
+similarity 0.77). Stage 2 finds different, overlapping sets of shapes for the
+same calls.
+
+| Full-file run | Atoms | New (below 0.8) | Median best similarity of new | New placed only in windows 11–30 | #14 atoms matched |
+|---|---|---|---|---|---|
+| → partial 0.10 | 68 | 57 | 0.57 | 14 | 9 of 38 |
+| → partial 0.05 | 48 | 38 | 0.62 | 10 | 8 of 38 |
+
+- **Some atoms are new, and some come from run-to-run variation.** The new
+  atoms are less like #14 (median 0.57–0.62) than two builds on the same data
+  are like each other (0.77), so some are new shapes. 10–14 of them appear
+  only in windows the 10-window build never saw.
+- **This matters for merging dictionaries across recordings.** With shapes
+  this variable, a duplicate check at 0.9 would keep almost everything, and
+  a merged dictionary would grow with every recording. Merging needs a looser
+  threshold, or clustering of atoms by the calls they cover.
+
+Registered in pmp (backup first:
+`catalog.sqlite.bak.20261109T134523_before_full_file`):
+
+- 15: stage 1, `n_min` 3;
+- 16: → partial 0.05;
+- 17: → partial 0.10;
+- 18: stage 1, `n_min` 5, registered without a label as the parent of 19;
+- 19: → partial 0.05, `n_min` 5.
+
 ## How this differs from Yoav's limited-overlap learner
 
 `analysis/dictionary_learning_limited_overlap/` (commit `dd8e21f`) also
@@ -386,7 +449,8 @@ before each batch: `catalog.sqlite.bak.20261109T113751_before_overlap_exp`
 (before 2–5), `catalog.sqlite.bak.20261109T120729_before_less_overlap`
 (before 6–8), `catalog.sqlite.bak.20261109T124419_before_mp_on_7` (before 9–11) and
 `catalog.sqlite.bak.20261109T125952_before_stage2` (before 12–13) and
-`catalog.sqlite.bak.20261109T130926_before_stage2_p05` (before 14).
+`catalog.sqlite.bak.20261109T130926_before_stage2_p05` (before 14) and
+`catalog.sqlite.bak.20261109T134523_before_full_file` (before 15–19).
 
 | Dictionary id | Label | Folder |
 |---|---|---|
@@ -403,6 +467,11 @@ before each batch: `catalog.sqlite.bak.20261109T113751_before_overlap_exp`
 | 12 | overlap experiment: #7 then stage 2, partial 0.10 + units in phrases, n_min 3 | `~rivo/whale_runs/014845_overlap/stage2/p10_n50` |
 | 13 | overlap experiment: #7 then stage 2, partial 0.25 + units in phrases, n_min 3 | `.../stage2/p25_n50` |
 | 14 | overlap experiment: #7 then stage 2, partial 0.05 + units in phrases, 10 seeds/pass, n_min 3 | `.../stage2/p05_n50_m10` |
+| 15 | overlap experiment: whole file, stage 1 no overlap, n_min 3 | `~rivo/whale_runs/014845_overlap/full/s1_n3` |
+| 16 | overlap experiment: whole file, stage 2 partial 0.05 + units in phrases, n_min 3 | `.../full/s2_n3_p05` |
+| 17 | overlap experiment: whole file, stage 2 partial 0.10 + units in phrases, n_min 3 | `.../full/s2_n3_p10` |
+| 18 | (no label: stage 1, n_min 5, registered as 19's parent) | `.../full/s1_n5` |
+| 19 | overlap experiment: whole file, stage 2 partial 0.05 + units in phrases, n_min 5 | `.../full/s2_n5_p05` |
 
 ## Reproducing
 
@@ -415,6 +484,11 @@ R=~/whale_runs/014845_overlap/less bash analysis/dict_learning/experiments/overl
 bash analysis/dict_learning/experiments/overlap_and_speed/run_mp_on_7.sh
 # The two-stage builds of section 6 (about 5 min)
 bash analysis/dict_learning/experiments/overlap_and_speed/run_stage2.sh
+# The whole recording of section 7 (about 30 min)
+bash analysis/dict_learning/experiments/overlap_and_speed/run_full_file.sh
+# New atoms of one build against another (section 7)
+python analysis/dict_learning/experiments/overlap_and_speed/new_atoms.py ~/whale_runs/014845_overlap/full/s2_n3_p10 \
+  ~/whale_runs/014845_overlap/stage2/p05_n50_m10
 # The measures, for any build folders (FOLDER.log holds the /usr/bin/time -v output)
 python analysis/dict_learning/experiments/overlap_and_speed/compare.py \
   pan_limited_n3=$R/pan_limited_n3 rand_limited_n3_s0=$R/rand_limited_n3_s0
