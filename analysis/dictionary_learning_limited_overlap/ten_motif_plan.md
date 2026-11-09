@@ -1,6 +1,6 @@
 # Twenty-motif dictionary with a residual gap
 
-Build a 20-motif, 5-component limited-overlap dictionary on the 014845 recording whose placement counts stay within a factor of 4, coverage is at least 0.7, and every motif beats the runner-up by at least 0.1 unexplained fraction on average.
+Build a 20-motif, 5-component limited-overlap dictionary on the 014845 recording whose placement counts stay within a factor of 4, coverage is above 0.3, and every motif beats the runner-up by at least 0.1 unexplained fraction on average.
 
 The five targets conflict on the dictionary we already have. After replacing motif 8 with 32 coefficient-halves and refining twice, coverage is 0.761 with 35 motifs, but only 8 motifs have a mean residual gap of at least 0.2, and those 8 have placement counts from 10 to 50 (a factor of 5) and cover far less than 0.7. The motifs that supply the coverage are near-duplicates, so their gaps are about 0.03–0.09. The search below keeps a candidate only when all five checks pass.
 
@@ -12,7 +12,7 @@ Accept the dictionary only when all of these hold:
 
 - exactly 20 motifs, each with 5 components
 - `max(n_placements) / min(n_placements) ≤ 4`
-- coverage ≥ 0.7
+- coverage > 0.3
 - every motif's mean gap ≥ 0.1
 
 ## Methods combined
@@ -23,14 +23,18 @@ Accept the dictionary only when all of these hold:
 
 ## Search
 
-Start from a fresh limited-overlap run that stops once coverage exceeds 0.7. Then repeat a bounded number of edits. After every edit, run two refine rounds (pursuit, 5-component rebuild, drop placements with unexplained fraction above 0.4, drop motifs under `n_min`) and recompute the five checks.
+Start from a fresh limited-overlap run that stops once coverage exceeds 0.3. Do not merge motifs. Then repeat a bounded number of edits. After every edit, run two refine rounds (pursuit, 5-component rebuild, drop placements with unexplained fraction above 0.4, drop motifs under `n_min`) and recompute the five checks.
 
-- More than 20 motifs, or any motif with mean gap below 0.1: merge the motif into the motif that is most often its runner-up, so the near-duplicate stops competing.
+- Coverage at or below 0.3: run another limited-overlap pass and add the motifs it keeps. Repeat until coverage exceeds 0.3 or a pass keeps no motif.
 - Fewer than 20 motifs, or the largest motif has more than 4 times the placements of the smallest: split the largest motif. Try the binary `ε` split first. If either child would still sit within 0.1 of another motif, try one median split along the component that most separates the patches. Keep a split only when both children survive the gap check after refine.
-- If neither merge nor split improves the worst failing check, stop and report which constraint still fails. Do not relax a target to force a save.
+- If a split does not improve the worst failing check, stop and report which constraint still fails. Do not relax a target to force a save.
 
 `n_min` stays 10 during refine so a split child is not deleted before it can be judged. The factor-of-4 check, not `n_min`, is what rejects a tiny motif.
 
+## Specificity
+
+Specificity is measured after the search, on the GPL whitened spectrogram. It does not decide which edit is kept. Before the ratios are formed, shift and scale each motif's dot-product sequence as in [spectrogram_time_normalize.md](spectrogram_time_normalize.md): subtract a one-minute Gaussian mean and divide by the standard deviation in that same window. A local maximum of that sequence has ratio `shifted(t*) / smoothed(t*)`, where `smoothed` is the shifted sequence convolved with a Gaussian whose standard deviation is half the motif width. The number for a motif is the 90th percentile of those ratios. Every finite ratio is included.
+
 ## Output
 
-Write the accepted dictionary under `/home/yfreund/whale_processing/result/LeiData/` without overwriting the existing limited-overlap runs. Point `notebooks/014845_limited_overlap.ipynb` at it and re-execute. The notebook should show the five checks: motif count, components, placement counts, coverage, and per-motif mean gap.
+Write the dictionary under `/home/yfreund/whale_processing/result/LeiData/` without overwriting the existing limited-overlap runs. Point `notebooks/014845_limited_overlap.ipynb` at it and re-execute. The notebook should show the five checks: motif count, components, placement counts, coverage, and per-motif mean gap. It should also show the specificity 90th percentile of each motif.

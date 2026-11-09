@@ -41,6 +41,34 @@ def _average_raster(template_data: np.ndarray) -> dict:
     }
 
 
+def _display_image(npy_path: str, data: np.ndarray) -> tuple[np.ndarray, np.ndarray | None]:
+    """2-D image to draw, and the mean when ``data`` is a component stack."""
+    if data.ndim == 2:
+        return data, None
+    if data.ndim != 3:
+        raise ValueError(f"template must be (F, W) or (k, F, W), got shape {data.shape}")
+    mean_path = Path(npy_path).with_name("mean_" + Path(npy_path).name.removeprefix("template_"))
+    if mean_path.is_file():
+        mean = np.load(mean_path)
+        if mean.ndim == 2 and mean.shape == data.shape[1:]:
+            return mean, mean
+    return np.asarray(data[0]), None
+
+
+def _mean_component_distance(patch: np.ndarray, basis: np.ndarray, mean: np.ndarray) -> float | None:
+    """Unexplained fraction after a mean-plus-components fit."""
+    energy = float(np.sum(patch * patch))
+    if energy <= _DISTANCE_EPS:
+        return None
+    delta = patch - mean
+    explained = 0.0
+    for component in basis:
+        coeff = float(np.sum(delta * component))
+        explained += coeff * coeff
+    residual = float(np.sum(delta * delta)) - explained
+    return float(np.clip(residual / energy, 0.0, 1.0))
+
+
 def chunk_distance_norm(
     patch: np.ndarray,
     template_data: np.ndarray,
@@ -175,8 +203,9 @@ def build_repeats_payload_from_catalog(
         tid = int(mem["template_id"])
         display_tid = tid + 1 if zero_based else tid
         data = catalog.load_template_array(mem["npy_path"])
-        template_width = int(data.shape[-1])
-        n_freq = int(data.shape[-2]) if data.ndim >= 2 else int(data.shape[0])
+        image, mean = _display_image(mem["npy_path"], data)
+        template_width = int(image.shape[-1])
+        n_freq = int(image.shape[-2])
         chunks = []
         seen: set[tuple[int, int]] = set()
         for m in matchings_by_tid.get(tid, []):
@@ -232,7 +261,10 @@ def build_repeats_payload_from_catalog(
                 )
                 if patch is not None:
                     try:
-                        dist = chunk_distance_norm(patch, data)
+                        if mean is not None:
+                            dist = _mean_component_distance(patch, data, mean)
+                        else:
+                            dist = chunk_distance_norm(patch, data)
                     except ValueError:
                         dist = None
                     if dist is not None:
@@ -243,7 +275,7 @@ def build_repeats_payload_from_catalog(
         chunks = sort_chunks_by_fit(chunks)
         # Keep empty templates so numbering stays contiguous in the navigator
         # (e.g. template 4 with 0 chunks still appears as a slot).
-        average = _average_raster(data)
+        average = _average_raster(image)
         average["durationSec"] = template_width * stft_overlap / sample_freq
         member_label = mem.get("label")
         named = bool(str(member_label).strip()) if member_label is not None else False

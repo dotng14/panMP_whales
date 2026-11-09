@@ -842,7 +842,7 @@ def _wav_stem(conn: sqlite3.Connection, segmentation_id: int | None, window_ids:
 def register_run_dir(
     conn: sqlite3.Connection, out_dir: Path | str, *, label: str | None = None
 ) -> dict[str, Any]:
-    """Register a ``randomized-build`` or ``matching-pursuit`` output folder.
+    """Register a build, matching-pursuit, or limited-overlap output folder.
 
     Idempotent: registering the same folder again updates its rows in place and
     keeps ids and user labels. The GPL folder named in ``summary.json`` is
@@ -861,6 +861,8 @@ def register_run_dir(
         return _register_randomized_build(conn, out, summary, label)
     if command == "matching-pursuit":
         return _register_matching_pursuit(conn, out, summary, label)
+    if command in ("balanced-ten", "ten-motif", "limited-overlap"):
+        return _register_limited_overlap(conn, out, summary, label)
     raise CatalogError(f"{out / 'summary.json'} is not from randomized-build or matching-pursuit")
 
 
@@ -871,13 +873,61 @@ def _index_recorded_gpl_dir(conn: sqlite3.Connection, summary: dict[str, Any], o
     return index_gpl_dir(conn, gpl_dir)
 
 
-def _register_randomized_build(
+def _register_limited_overlap(
     conn: sqlite3.Connection, out: Path, summary: dict[str, Any], label: str | None
+) -> dict[str, Any]:
+    """Register a limited-overlap dictionary as a seed the viewer can list.
+
+    Motifs become atoms (``motif_id`` is the template id) and placements become
+    matchings. The component array stays the atom file; a sibling ``mean_*.npy``
+    is what the repeat view draws.
+    """
+    motifs = summary.get("motifs")
+    if not motifs:
+        raise CatalogError(f"{out / 'summary.json'} has no motif list")
+    atoms = []
+    for motif in motifs:
+        path = motif.get("path")
+        if not path or not (out / path).is_file():
+            raise CatalogError(f"atom file missing: {out / path if path else out}")
+        atoms.append(
+            {
+                "template_id": int(motif["motif_id"]),
+                "path": path,
+                "width": motif.get("width"),
+                "n_freq": motif.get("n_freq"),
+                "n_components": motif.get("n_components"),
+                "n_patches": motif.get("n_placements"),
+                "source_segment_id": motif.get("seed_window_id"),
+            }
+        )
+    matchings = []
+    for row in _read_json(out / "matchings.json"):
+        placed = dict(row)
+        if "template_id" not in placed:
+            placed["template_id"] = int(placed["motif_id"])
+        matchings.append(placed)
+    adapted = dict(summary)
+    adapted["atoms"] = atoms
+    adapted["n_atoms"] = len(atoms)
+    adapted["n_matchings"] = len(matchings)
+    adapted["time_coverage_fraction"] = summary.get("time_coverage_fraction", summary.get("coverage"))
+    adapted["n_windows"] = len({row["window_id"] for row in matchings})
+    return _register_randomized_build(conn, out, adapted, label, matchings=matchings)
+
+
+def _register_randomized_build(
+    conn: sqlite3.Connection,
+    out: Path,
+    summary: dict[str, Any],
+    label: str | None,
+    matchings: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     atoms = summary.get("atoms")
     if atoms is None:
         raise CatalogError(f"{out / 'summary.json'} has no atom list")
-    matchings = _read_json(out / "matchings.json")
+    if matchings is None:
+        matchings = _read_json(out / "matchings.json")
     logs_path = out / "outer_logs.jsonl"
     logs = [json.loads(line) for line in logs_path.read_text().splitlines() if line.strip()] if logs_path.is_file() else []
     segmentation_id = _index_recorded_gpl_dir(conn, summary, out)
