@@ -27,13 +27,14 @@ Recommended: two stages (section 6).
 
 1. `pan-build --overlap limited --max-partial-overlap 0 --max-nested-ratio 0 --n-min 3`:
    no overlap, so every atom is learned on whole calls.
-2. `pan-build --overlap limited --max-partial-overlap 0.1 --n-min 3 --init-dictionary STAGE1`:
-   the stage-1 atoms stay fixed, and smaller units nest inside them or touch
-   them.
+2. `pan-build --overlap limited --max-partial-overlap 0.05 --m-per-outer 10 --n-min 3 --init-dictionary STAGE1`:
+   the stage-1 atoms stay fixed, and smaller units nest inside them.
 
-This covers 0.512 of the time bins with 0.689 of the energy explained: more
-than free overlap's 0.488, which covered each column 4.5 times. 148 of its 171
-overlapping pairs are units inside phrases.
+This covers 0.506 of the time bins with 0.701 of the energy explained: more
+than free overlap's 0.488, which covered each column 4.5 times. Of its 132
+overlapping pairs, 131 are units inside phrases; the other shares one
+column. With `--max-partial-overlap 0.1` and 5 seeds a pass the coverage is
+about the same (0.512), with 23 partial pairs.
 
 
 ## Setup
@@ -310,6 +311,37 @@ the wall time includes #7's own 90 s build.
   that added nothing stopped after one pass of 5 seeds, so more seeds per pass
   might still find something there.
 
+### Just enough partial overlap for nesting
+
+Partial overlap is a fraction of the narrower width, rounded down to whole
+columns. With atoms of 8, 16, 24 and 33 columns:
+
+| `--max-partial-overlap` | 8-col pair | 16 | 24 | 33 |
+|---|---|---|---|---|
+| 0.03 | 0 | 0 | 0 | 0 |
+| 0.05 | 0 | 0 | 1 | 1 |
+| 0.07 | 0 | 1 | 1 | 2 |
+| 0.10 | 0 | 1 | 2 | 3 |
+
+Stage 2 from #7, nested 0.5 (0.03 is the same as 0):
+
+| Partial | Seeds a pass | Wall | Coverage | Energy explained | Atoms | Placements | Nested pairs | Partial pairs (most shared columns) | Stop |
+|---|---|---|---|---|---|---|---|---|---|
+| 0.05 | 5 | 76 s | 0.438 | 0.613 | 21 | 171 | 62 | 8 (1) | no survivors, pass 8 |
+| 0.07 | 5 | 80 s | 0.434 | 0.658 | 27 | 205 | 89 | 14 (2) | no survivors, pass 8 |
+| 0.10 | 5 | 111 s | 0.512 | 0.689 | 36 | 288 | 148 | 23 (2) | coverage, pass 10 |
+| **0.05** | **10** | **106 s** | **0.506** | **0.701** | **38** | 282 | **131** | **1 (1)** | **coverage**, pass 8 |
+
+- **The stopping rule held back the tight settings, not the limit.** With 5
+  seeds a pass, 0.05 and 0.07 each stopped at pass 8, when one pass kept no
+  atom. With 10 seeds, 0.05 keeps finding atoms and reaches the 0.5 target.
+- **The result has almost no partial overlap.** One pair, sharing a single
+  column; every other overlap is a unit inside a phrase. Its energy explained
+  is the highest of any run.
+- **New atoms:** 38 − 10 = 28. Registered in pmp as dictionary 14, a
+  `refinement` of #7. Backup first:
+  `catalog.sqlite.bak.20261109T130926_before_stage2_p05`.
+
 Registered in pmp as dictionaries 12 (partial 0.10) and 13 (partial 0.25),
 both `refinement`s of #7. Backup first:
 `catalog.sqlite.bak.20261109T125952_before_stage2`.
@@ -353,7 +385,8 @@ Registered in the production pmp catalog
 before each batch: `catalog.sqlite.bak.20261109T113751_before_overlap_exp`
 (before 2–5), `catalog.sqlite.bak.20261109T120729_before_less_overlap`
 (before 6–8), `catalog.sqlite.bak.20261109T124419_before_mp_on_7` (before 9–11) and
-`catalog.sqlite.bak.20261109T125952_before_stage2` (before 12–13).
+`catalog.sqlite.bak.20261109T125952_before_stage2` (before 12–13) and
+`catalog.sqlite.bak.20261109T130926_before_stage2_p05` (before 14).
 
 | Dictionary id | Label | Folder |
 |---|---|---|
@@ -369,6 +402,7 @@ before each batch: `catalog.sqlite.bak.20261109T113751_before_overlap_exp`
 | 11 | overlap experiment: MP of #7, partial overlap 0.25, gate 0.9 | `.../mp_on_7/p25_gated` |
 | 12 | overlap experiment: #7 then stage 2, partial 0.10 + units in phrases, n_min 3 | `~rivo/whale_runs/014845_overlap/stage2/p10_n50` |
 | 13 | overlap experiment: #7 then stage 2, partial 0.25 + units in phrases, n_min 3 | `.../stage2/p25_n50` |
+| 14 | overlap experiment: #7 then stage 2, partial 0.05 + units in phrases, 10 seeds/pass, n_min 3 | `.../stage2/p05_n50_m10` |
 
 ## Reproducing
 
