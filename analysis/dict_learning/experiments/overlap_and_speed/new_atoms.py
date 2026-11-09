@@ -19,9 +19,14 @@ import numpy as np
 from analysis.dict_learning.code.learn.shape_match import shape_similarity
 
 
+def _first(atom: np.ndarray) -> np.ndarray:
+    """A (k, F, W) subspace atom compares by its first component."""
+    return atom[0] if atom.ndim == 3 else atom
+
+
 def _atoms(folder: Path) -> dict[int, np.ndarray]:
     summary = json.loads((folder / "summary.json").read_text())
-    return {int(a["template_id"]): np.load(folder / a["path"]) for a in summary["atoms"]}
+    return {int(a["template_id"]): _first(np.load(folder / a["path"])) for a in summary["atoms"]}
 
 
 def main() -> None:

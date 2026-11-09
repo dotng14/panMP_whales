@@ -409,6 +409,79 @@ Registered in pmp (backup first:
 - 18: stage 1, `n_min` 5, registered without a label as the parent of 19;
 - 19: → partial 0.05, `n_min` 5.
 
+## 8. Five-component atoms
+
+Yoav's `m8x32 refine2` dictionary (pmp #20) stores 5 principal components
+per atom. Every run above used 1 (`--n-components` defaults to 1): an atom
+is the top uncentered principal component of its placed patches (close to
+their average shape), and each placement fits one amplitude. Here the
+two-stage recipe runs with `--n-components 5`. Each atom becomes the top 5
+uncentered components of its patches, and each placement fits 5
+coefficients.
+
+This is our subspace atom, not a port of Yoav's. His subtracts the mean of
+the patches first, stores it (`mean_NNN.npy`), and fits mean + 5
+variations without subtracting anything from the spectrogram. A fixed mean
+can't scale with a louder or quieter call, so it doesn't fit a build that
+subtracts each placement.
+
+Same 10 windows, `--n-min 3 --refine-iters 1`, stage 1 with 5 seeds a pass
+and stage 2 with 10. Round 1 used `--max-outer 10 --min-coverage 0.5`;
+round 2 used `--max-outer 20 --min-coverage 0.7`, so that stage 2 can run.
+Stage-2 wall times don't include their stage 1.
+
+| Run | Components | Wall | Coverage | Energy explained | Atoms | Placements | Columns > 1 | Nested pairs | Stop |
+|---|---|---|---|---|---|---|---|---|---|
+| stage 1, no overlap, target 0.7 | 1 | 16 s | 0.309 | 0.485 | 10 | 87 | 0% | 0 | no survivors, pass 5 |
+| → partial 0.05, target 0.7 | 1 | +70 s | **0.560** | 0.716 | 49 | 329 | 77% | 172 | no survivors, pass 15 |
+| → partial 0.10, target 0.7 | 1 | +39 s | 0.558 | 0.700 | 44 | 327 | 72% | 152 | no survivors, pass 11 |
+| stage 1, no overlap, target 0.5 | 5 | 74 s | 0.490 | 0.850 | 18 | 197 | 0% | 0 | pass limit (10) |
+| stage 1, no overlap, 10 seeds a pass | 5 | 110 s | 0.231 | 0.548 | 11 | 74 | 0% | 0 | no survivors, pass 4 |
+| **stage 1, no overlap, target 0.7** | 5 | 155 s | **0.710** | **0.895** | 31 | 341 | **0%** | 0 | **coverage**, pass 17 |
+| → partial 0.05 or 0.10, target 0.7 | 5 | +6 s | 0.710 | 0.895 | 32 | 346 | 3% | 5 | coverage, pass 1 |
+
+The rank-1 stage 1 at target 0.7 is #7 again: the same 87 placements. It
+took 16 s here against 90 s for #7; the cause was not investigated.
+
+- **Five components make stage 1 enough on its own.** With no overlap at
+  all, it reaches the 0.7 target: more coverage than any rank-1 run, two
+  stages included (0.560), with no overlapping placements. Stage 2 then
+  has nothing to do: the target is met after its first pass.
+- **It doesn't hit the early stop.** Every pass kept 1–3 atoms, up to
+  pass 17. Likely because a 5-dimensional atom also fits a call's varied
+  copies, so more of them reach the placement minimum.
+- **Energy explained isn't comparable.** Each placement fits 5 numbers
+  instead of 1. Component 1 alone explains 0.593 of the energy (0.565 at
+  target 0.5); components 2–5 add the rest.
+- **The placement minimum is 5, not 3.** A 5-component atom needs at least
+  5 patches (`min_keep = max(n_min, n_components)`), so no atom has fewer
+  than 5 placements (median 7). Of the rank-1 two-stage run's 49 atoms, 27
+  have only 3–4.
+- **More near-duplicates.** 7 atom pairs have a shifted cosine above 0.8
+  (by component 1), against 2 in the rank-1 runs:
+  - 3 pairs are a shorter atom that matches part of a longer one: two 1 s
+    atoms in a 4 s atom (0.95, 0.89) and a 2 s atom in a 4 s atom (0.86).
+    With no overlap, a unit can't nest in its phrase, so a separate atom
+    learns it.
+  - 4 are among 1 s atoms: one pair at 0.87, and three atoms that are all
+    0.88–0.94 alike.
+
+  The duplicate checks (at seeding and when merging) compare only
+  component 1.
+- **10 seeds a pass hurts stage 1.** Half the seeds of pass 1 were pruned:
+  near-copies of the same calls split their placements, and too few were
+  left for each to reach the minimum. The build stopped at pass 4 (0.231).
+  Stage 2 from it kept nothing.
+- **Slower.** A subspace atom runs MP in `global` mode, without the cached
+  per-window loop: 155 s for 17 passes, about 9 s a pass, against 3–5 s
+  for rank 1.
+
+Not registered in pmp: the write to the production catalog was not
+permitted this time. Folders: `~rivo/whale_runs/014845_overlap/pc5/`
+(`s1_m5`, `s1_m10`, `s1_m5_p05`, `s1_m5_p10`, `s1_m10_p05`, `s1_m10_p10`,
+`t70_k5_s1`, `t70_k5_p05`, `t70_k5_p10`, `t70_k1_s1`, `t70_k1_p05`,
+`t70_k1_p10`). Script: `run_pc5.sh` (round 2 with `ROUND2=1`).
+
 ## How this differs from Yoav's limited-overlap learner
 
 `analysis/dictionary_learning_limited_overlap/` (commit `dd8e21f`) also

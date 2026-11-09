@@ -15,6 +15,11 @@ from analysis.dict_learning.code.mp import OverlapRule
 RULE = OverlapRule()
 
 
+def _first(atom: np.ndarray) -> np.ndarray:
+    """A (k, F, W) subspace atom compares by its first component."""
+    return atom[0] if atom.ndim == 3 else atom
+
+
 def wall_and_rss(log: Path):
     text = log.read_text() if log.is_file() else ""
     m = re.search(r"Elapsed \(wall clock\) time \(h:mm:ss or m:ss\): (\S+)", text)
@@ -31,7 +36,7 @@ def stats(folder: Path) -> dict:
     rows = json.loads((folder / "matchings.json").read_text())
     rows = rows if isinstance(rows, list) else rows["matchings"]
     widths = {int(a["template_id"]): int(a["width"]) for a in s["atoms"]}
-    atoms = [np.load(folder / a["path"]) for a in s["atoms"]]
+    atoms = [_first(np.load(folder / a["path"])) for a in s["atoms"]]
     by_window = {}
     for r in rows:
         t = int(r["t_start"])
