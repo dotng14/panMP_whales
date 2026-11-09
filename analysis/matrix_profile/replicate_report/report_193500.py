@@ -29,11 +29,35 @@ except ImportError:  # run from this directory: another ``analysis`` may shadow 
     from analysis.matrix_profile import mpx_fast
 
 CACHE = Path(__file__).resolve().parent / "cache_193500"
-WAV = Path(r"C:\Users\hoang\Downloads\SOCAL_H_76_230426_193500_df100.x.x.wav")
 RATE = 10.0
 WHALE_MFCC = Path(r"C:\Users\hoang\project\stumpy\Whales_Song")
 
+_WAV_CANDIDATES = (
+    Path(r"C:\Users\hoang\Downloads\SOCAL_H_76_230426_193500_df100.x.x.wav"),
+    WHALE_MFCC / "SOCAL_H_76_230426_193500_df100.x.x.wav",
+)
+
+
+def resolve_wav(wav_path=None) -> Path:
+    """Return an existing 193500 WAV path."""
+    if wav_path is not None:
+        path = Path(wav_path)
+        if not path.exists():
+            raise FileNotFoundError(path)
+        return path
+    for path in _WAV_CANDIDATES:
+        if path.exists():
+            return path
+    raise FileNotFoundError(
+        "193500 WAV not found; tried:\n" + "\n".join(str(p) for p in _WAV_CANDIDATES)
+    )
+
+
+WAV = resolve_wav()
+
 SCAN_MINUTES = (2, 4, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20)
+FINE_MINUTES = (6, 7, 8, 9, 10)
+COARSE_MINUTES = (2, 4, 8, 16)
 PHRASE_MINUTES = 1.0
 SONG_MINUTES = 7.0
 
@@ -41,6 +65,11 @@ MOTIF_COLUMN = 2
 ENERGY_COLUMN = 1
 COARSE_PAIRS = ((2, 4), (4, 8), (8, 16))
 FINE_PAIRS = ((6, 7), (7, 8), (8, 9), (9, 10))
+
+# Prefer Audio Toolbox MFCC when present (coeffs_matlab_10hz.mat / .npz).
+MATLAB_COEFFS_MAT = CACHE / "coeffs_matlab_10hz.mat"
+MATLAB_COEFFS_NPZ = CACHE / "coeffs_matlab_10hz.npz"
+PROFILE_PREFIX = "profile_c1"  # overridden to profile_ml_c1 when using MATLAB MFCC
 
 THREADS = max(1, os.cpu_count() or 1)
 
@@ -63,32 +92,65 @@ def _matlab_mfcc(x, fs):
     )
 
 
-def load_features(wav_path=WAV):
-    """Return ``(c1, c0)`` at 10 Hz.
+def _load_matlab_coeffs():
+    """Load Audio Toolbox MFCC cache written by ``run_mfcc_full.m``."""
+    global PROFILE_PREFIX
+    if MATLAB_COEFFS_NPZ.exists():
+        coeffs = np.load(MATLAB_COEFFS_NPZ)["coeffs"]
+        PROFILE_PREFIX = "profile_ml_c1"
+        return np.asarray(coeffs, dtype=np.float64)
+    if MATLAB_COEFFS_MAT.exists():
+        try:
+            import scipy.io as sio
 
-    Motif profiles use cepstral coefficient c1. The slow energy curve uses c0,
-    coefficient 0: a prominence
-    of 0.01 on that curve is the setting that yields the report's minima. The
-    appended log-energy column is too small after the 30-minute mean is removed
-    for that same threshold. Both arrays are copies, so later searches cannot
-    write back into the cached coefficients.
+            data = sio.loadmat(MATLAB_COEFFS_MAT)
+            coeffs = np.asarray(data["coeffs"], dtype=np.float64)
+            fs = int(np.asarray(data.get("fs", 2000)).flat[0])
+        except NotImplementedError:
+            import h5py
+
+            with h5py.File(MATLAB_COEFFS_MAT, "r") as f:
+                raw = np.array(f["coeffs"])
+                coeffs = raw.T if raw.shape[0] < raw.shape[1] else raw
+                fs = int(np.array(f["fs"]).flat[0]) if "fs" in f else 2000
+            coeffs = np.asarray(coeffs, dtype=np.float64)
+        np.savez(MATLAB_COEFFS_NPZ, coeffs=coeffs, fs=fs)
+        PROFILE_PREFIX = "profile_ml_c1"
+        return coeffs
+    return None
+
+
+def load_features(wav_path=None):
+    """Return ``(motif_coeff, energy_coeff)`` at 10 Hz.
+
+    Prefers MATLAB Audio Toolbox MFCC (``coeffs_matlab_10hz``) when available.
+    Motif profiles use column index 2 (cepstral c1 after appended log-energy).
+    Energy minima use column index 1 (c0). Both arrays are copies.
     """
+    global PROFILE_PREFIX
     CACHE.mkdir(parents=True, exist_ok=True)
-    path = CACHE / "coeffs_10hz.npz"
-    if path.exists():
-        coeffs = np.load(path)["coeffs"]
-    else:
-        import scipy.io.wavfile as wavfile
+    coeffs = _load_matlab_coeffs()
+    if coeffs is None:
+        PROFILE_PREFIX = "profile_c1"
+        path = CACHE / "coeffs_10hz.npz"
+        if path.exists():
+            coeffs = np.load(path)["coeffs"]
+        else:
+            import scipy.io.wavfile as wavfile
 
-        fs, x = wavfile.read(wav_path)
-        if fs != 2000:
-            raise RuntimeError(f"expected 2000 Hz audio, found {fs}")
-        coeffs = _matlab_mfcc(np.asarray(x), int(fs))
-        np.savez(path, coeffs=coeffs, fs=fs)
+            fs, x = wavfile.read(resolve_wav(wav_path))
+            if fs != 2000:
+                raise RuntimeError(f"expected 2000 Hz audio, found {fs}")
+            coeffs = _matlab_mfcc(np.asarray(x), int(fs))
+            np.savez(path, coeffs=coeffs, fs=fs)
     if coeffs.shape[1] <= MOTIF_COLUMN:
         raise RuntimeError(
             f"MFCC cache has {coeffs.shape[1]} columns, need coefficient 2"
         )
+    print(
+        f"features: shape={coeffs.shape} profile_prefix={PROFILE_PREFIX}",
+        flush=True,
+    )
     motif = np.ascontiguousarray(coeffs[:, MOTIF_COLUMN], dtype=np.float64)
     energy = np.ascontiguousarray(coeffs[:, ENERGY_COLUMN], dtype=np.float64)
     return motif, energy
@@ -98,7 +160,7 @@ def profile_for(series, minutes, rate=RATE):
     """Non-overlapping matrix profile at a motif length of ``minutes``."""
     CACHE.mkdir(parents=True, exist_ok=True)
     samples = int(round(minutes * 60.0 * rate))
-    path = CACHE / f"profile_c1_{samples}.npz"
+    path = CACHE / f"{PROFILE_PREFIX}_{samples}.npz"
     if path.exists():
         cached = np.load(path)
         return cached["mp"], int(cached["w"])
@@ -292,19 +354,36 @@ def rayleigh_p(locations):
 
 
 def phrase_groups(series, mp, w, r_min=0.35, max_copies=30, max_groups=30):
-    """Greedy groups. Seeds and copies need ``r_min``, with no overlaps."""
+    """Greedy groups. Seeds and copies need ``r_min``, with no overlaps.
+
+    ``taken`` blocks accepted group copies (and a single failed seed index),
+    matching the MATLAB search. A separate ``tried`` mask skips re-FFTing
+    every one-sample shift of a seed that was already evaluated.
+    """
     r = correlation(mp, w)
     taken = np.zeros(len(r), dtype=bool)
+    tried = np.zeros(len(r), dtype=bool)
     groups = []
     order = np.argsort(r)[::-1]
+    attempts = 0
     for seed in order:
         if len(groups) >= max_groups:
             break
         seed = int(seed)
         if not np.isfinite(r[seed]) or r[seed] < r_min:
             break
-        if taken[seed]:
+        if taken[seed] or tried[seed]:
             continue
+        attempts += 1
+        if attempts % 25 == 1:
+            print(
+                f"  phrase attempt {attempts}: seed={seed} r={r[seed]:.3f} "
+                f"groups={len(groups)}",
+                flush=True,
+            )
+        # Do not retry one-sample shifts of this seed.
+        lo = max(0, seed - w + 1)
+        tried[lo : seed + w] = True
         prof = corr_to_seed(series, seed, w)
         prof[~np.isfinite(prof)] = -np.inf
         prof[taken] = -np.inf
@@ -317,15 +396,15 @@ def phrase_groups(series, mp, w, r_min=0.35, max_copies=30, max_groups=30):
             if blocked[idx]:
                 continue
             copies.append(idx)
-            lo = max(0, idx - w + 1)
-            blocked[lo : idx + w] = True
+            clo = max(0, idx - w + 1)
+            blocked[clo : idx + w] = True
         others = [idx for idx in copies if idx != seed]
         if not others:
             taken[seed] = True
             continue
-        for idx in copies:
-            lo = max(0, idx - w + 1)
-            taken[lo : idx + w] = True
+        for idx in copies[:max_copies]:
+            clo = max(0, idx - w + 1)
+            taken[clo : idx + w] = True
         groups.append(
             {
                 "seed": seed,
@@ -334,7 +413,41 @@ def phrase_groups(series, mp, w, r_min=0.35, max_copies=30, max_groups=30):
                 "n_matches": len(copies),
             }
         )
+    print(f"  phrase groups done: {len(groups)} (attempts={attempts})", flush=True)
     return groups
+
+
+def dedupe_phrase_groups(series, groups, w, corr_max=0.5, min_copies=8, max_keep=7):
+    """Keep diverse groups: drop a later seed if it correlates with an earlier kept seed.
+
+    Discovery order is already by matrix-profile match strength. MATLAB's write-up
+    keeps seven groups with at least eight occurrences (G1–G7).
+    """
+    kept = []
+    for g in groups:
+        if len(g["starts"]) < min_copies:
+            continue
+        seed = int(g["seed"])
+        duplicate = False
+        for prev in kept:
+            # Correlation of this seed window with the previous group's seed.
+            a = np.asarray(series[seed : seed + w], dtype=np.float64)
+            b = np.asarray(
+                series[int(prev["seed"]) : int(prev["seed"]) + w], dtype=np.float64
+            )
+            a = a - a.mean()
+            b = b - b.mean()
+            denom = np.sqrt(np.dot(a, a) * np.dot(b, b))
+            rho = float(np.dot(a, b) / denom) if denom > 0 else 1.0
+            if rho >= corr_max:
+                duplicate = True
+                break
+        if duplicate:
+            continue
+        kept.append(g)
+        if len(kept) >= max_keep:
+            break
+    return kept
 
 
 def _merge_runs(labels):
@@ -457,6 +570,36 @@ def _scan_one(series, minutes, rate):
     }
 
 
+def length_summary(scan, rate=RATE):
+    """Per-length row for the fine/coarse motif tables."""
+    starts = scan["starts"]
+    gaps = start_intervals_min(starts, rate)
+    n = int(len(starts))
+    under = int(np.sum(gaps < 10.0)) if len(gaps) else 0
+    if len(gaps):
+        # Hazen / MATLAB-like percentiles (matches the published IQR rounding).
+        q1, med, q3 = np.percentile(gaps, [25, 50, 75], method="hazen")
+        median_iqr = f"{med:.1f} ({q1:.1f}–{q3:.1f})"
+        median = float(med)
+        iqr = (float(q1), float(q3))
+    else:
+        median_iqr = "—"
+        median = float("nan")
+        iqr = (float("nan"), float("nan"))
+    return {
+        "minutes": float(scan["minutes"]),
+        "occurrences": n,
+        "threshold": float(scan["threshold"]),
+        "best_r": float(scan["best_r"]),
+        "median_interval_min": median,
+        "iqr": iqr,
+        "median_iqr": median_iqr,
+        "under_10": under,
+        "n_gaps": int(len(gaps)),
+        "gaps": gaps,
+    }
+
+
 def _pair_table(scans, pairs, rate):
     table = []
     for shorter, longer in pairs:
@@ -467,28 +610,177 @@ def _pair_table(scans, pairs, rate):
             scans[longer]["w"],
             rate,
         )
+        n_a, n_b = compared["n_a"], compared["n_b"]
+        base = max(n_a, n_b)
         compared["pair"] = f"{shorter:g} vs {longer:g}"
+        compared["count_diff_pct"] = (
+            float("nan") if base == 0 else 100.0 * abs(n_a - n_b) / base
+        )
         table.append(compared)
     return table
 
 
-def build_report(wav_path=WAV, rate=RATE):
+def pairwise_order(seqs, labels, pairs=None):
+    """Count how often label A precedes B within the same song."""
+    if pairs is None:
+        pairs = [
+            ("G6", "G2"),
+            ("G1", "G4"),
+            ("G6", "G1"),
+            ("G6", "G3"),
+            ("G1", "G2"),
+        ]
+    index = {lab: i for i, lab in enumerate(labels)}
+    rows = []
+    for earlier, later in pairs:
+        if earlier not in index or later not in index:
+            continue
+        ia, ib = index[earlier], index[later]
+        n_ok = 0
+        n_both = 0
+        for seq in seqs:
+            if ia not in seq or ib not in seq:
+                continue
+            n_both += 1
+            if seq.index(ia) < seq.index(ib):
+                n_ok += 1
+        # Two-sided binomial against 0.5; indicative only (report note).
+        from math import comb
+
+        if n_both == 0:
+            p = float("nan")
+        else:
+            tail = sum(comb(n_both, k) for k in range(n_ok, n_both + 1))
+            p = min(1.0, 2.0 * tail / (2**n_both))
+        rows.append(
+            {
+                "earlier": earlier,
+                "later": later,
+                "n_ok": n_ok,
+                "n_both": n_both,
+                "p": float(p),
+            }
+        )
+    return rows
+
+
+def _circular_agrees(seq, pos, nlab):
+    """True if ``seq`` is increasing along the cycle ``pos`` (any start)."""
+    present = [g for g in seq if g in pos]
+    if len(set(present)) < 2:
+        return False
+    vals = [pos[g] for g in present]
+    # Lift into a linear order starting at the first group's position.
+    start = vals[0]
+    lifted = [(v - start) % nlab for v in vals]
+    return all(lifted[i] < lifted[i + 1] for i in range(len(lifted) - 1))
+
+
+def circular_consensus(seqs, labels):
+    """Best cyclic order: most songs agree up to rotation."""
+    usable = [s for s in seqs if len(set(s)) >= 2]
+    best_n = -1
+    best = None
+    nlab = len(labels)
+    if nlab == 0:
+        return [], 0, 0
+    for perm in permutations(range(nlab)):
+        pos = {lab: i for i, lab in enumerate(perm)}
+        n_ok = sum(1 for seq in usable if _circular_agrees(seq, pos, nlab))
+        if n_ok > best_n:
+            best_n = n_ok
+            best = perm
+    named = [labels[i] for i in best]
+    return named, int(best_n), len(usable)
+
+
+def shuffle_null(seqs, labels, n_shuffles=100, seed=0):
+    """Repeat linear/circular consensus after shuffling order inside each song."""
+    rng = np.random.default_rng(seed)
+    linear_scores = []
+    circular_scores = []
+    for _ in range(n_shuffles):
+        shuffled = []
+        for seq in seqs:
+            if len(seq) < 2:
+                shuffled.append(list(seq))
+                continue
+            arr = list(seq)
+            rng.shuffle(arr)
+            shuffled.append(arr)
+        _order, n_lin, _n = consensus(shuffled, labels)
+        _corder, n_circ, _nc = circular_consensus(shuffled, labels)
+        linear_scores.append(n_lin)
+        circular_scores.append(n_circ)
+    return {
+        "n_shuffles": int(n_shuffles),
+        "linear_mean": float(np.mean(linear_scores)),
+        "linear_max": int(np.max(linear_scores)) if linear_scores else 0,
+        "circular_mean": float(np.mean(circular_scores)),
+        "circular_max": int(np.max(circular_scores)) if circular_scores else 0,
+        "linear_scores": [int(x) for x in linear_scores],
+        "circular_scores": [int(x) for x in circular_scores],
+    }
+
+
+def marker_offset_stats(minima_times_sec, marker_centres_sec):
+    """Offset of each energy minimum from the nearest 7-min marker centre."""
+    times = np.asarray(minima_times_sec, dtype=np.float64)
+    centres = np.asarray(marker_centres_sec, dtype=np.float64)
+    if len(times) == 0 or len(centres) == 0:
+        return {
+            "n_inside_marker": 0,
+            "median_offset_min": float("nan"),
+            "iqr_offset_min": (float("nan"), float("nan")),
+            "n_before_centre": 0,
+        }
+    half = 3.5 * 60.0  # half of a 7-min marker
+    offsets = []
+    inside = 0
+    before = 0
+    for t in times:
+        j = int(np.argmin(np.abs(centres - t)))
+        off = t - centres[j]
+        offsets.append(off)
+        if abs(off) <= half:
+            inside += 1
+        if off < 0:
+            before += 1
+    offsets = np.asarray(offsets) / 60.0
+    q1, med, q3 = np.percentile(offsets, [25, 50, 75])
+    return {
+        "n_inside_marker": int(inside),
+        "median_offset_min": float(med),
+        "iqr_offset_min": (float(q1), float(q3)),
+        "n_before_centre": int(before),
+        "offsets_min": offsets,
+    }
+
+
+def build_report(wav_path=None, rate=RATE, n_shuffles=100):
+    wav_path = resolve_wav(wav_path)
     motif, energy = load_features(wav_path)
-    scans = {m: _scan_one(motif, m, rate) for m in SCAN_MINUTES}
+    scans = {}
+    for m in SCAN_MINUTES:
+        print(f"scan {m:g} min", flush=True)
+        scans[m] = _scan_one(motif, m, rate)
+    print("phrase profile 1 min", flush=True)
     phrase_mp, phrase_w = profile_for(motif, PHRASE_MINUTES, rate)
 
     song = scans[SONG_MINUTES]
     centres = midpoint_sec(song["starts"], song["w"], rate)
     bounds, lengths_min = song_boundaries_sec(centres)
 
+    print("phrase groups", flush=True)
     groups = phrase_groups(motif, phrase_mp, phrase_w)
-    kept = [g for g in groups if len(g["starts"]) >= 8]
+    kept = [g for g in groups if len(g["starts"]) >= 8][:7]
     labels = [f"G{i}" for i in range(1, len(kept) + 1)]
 
     mids = []
     raw_rel = []
     per_song = [[] for _ in range(max(len(bounds) - 1, 0))]
     group_locs = []
+    kept_duration_h = 0.0
     for gi, g in enumerate(kept):
         times = midpoint_sec(g["starts"], phrase_w, rate)
         song_i, rel = assign_song(times, bounds)
@@ -502,6 +794,7 @@ def build_report(wav_path=WAV, rate=RATE):
             per_song[s].append((gi, float(rv)))
         songs_hit = len({int(s) for s in song_i if s >= 0})
         mean, conc = circular_stats(locs)
+        kept_duration_h += len(g["starts"]) * (phrase_w / rate) / 3600.0
         group_locs.append(
             {
                 "label": labels[gi],
@@ -510,21 +803,94 @@ def build_report(wav_path=WAV, rate=RATE):
                 "seed_r": g["seed_r"],
                 "circular_mean": mean,
                 "concentration": conc,
+                "relative_locations": locs,
+                "times_sec": times.tolist(),
             }
         )
+
+    all_duration_h = sum(len(g["starts"]) for g in groups) * (phrase_w / rate) / 3600.0
 
     finite_rel = np.asarray([v for v in raw_rel if np.isfinite(v)], dtype=np.float64)
     cut = largest_empty_cut(finite_rel)
     seqs = song_sequences(per_song, cut)
+    print("consensus order", flush=True)
     order, n_agree, n_usable = consensus(seqs, labels)
+    circ_order, n_circ_agree, n_circ_usable = circular_consensus(seqs, labels)
+    print(f"shuffle null ({n_shuffles})", flush=True)
+    shuffle = shuffle_null(seqs, labels, n_shuffles=n_shuffles)
+    # p-value: fraction of shuffles with score >= observed (min 1/n for 100 shuffles).
+    lin_ge = sum(1 for s in shuffle["linear_scores"] if s >= n_agree)
+    circ_ge = sum(1 for s in shuffle["circular_scores"] if s >= n_circ_agree)
+    shuffle["linear_p"] = max(1.0 / max(n_shuffles, 1), lin_ge / max(n_shuffles, 1))
+    shuffle["circular_p"] = max(1.0 / max(n_shuffles, 1), circ_ge / max(n_shuffles, 1))
+    # Fixed random order baseline: mean agreements of one random perm.
+    rng = np.random.default_rng(1)
+    fixed_scores = []
+    for _ in range(200):
+        perm = list(range(len(labels)))
+        rng.shuffle(perm)
+        pos = {i: p for p, i in enumerate(perm)}
+        fixed_scores.append(sum(_agrees(s, pos) for s in seqs if len(set(s)) >= 2))
+    shuffle["fixed_random_linear_mean"] = float(np.mean(fixed_scores)) if fixed_scores else float("nan")
+
+    pair_orders = pairwise_order(seqs, labels)
 
     coarse_pairs = _pair_table(scans, COARSE_PAIRS, rate)
     fine_pairs = _pair_table(scans, FINE_PAIRS, rate)
+    fine_lengths = [length_summary(scans[m], rate) for m in FINE_MINUTES]
+    coarse_lengths = [length_summary(scans[m], rate) for m in COARSE_MINUTES]
+    # Drop non-JSON gaps arrays from the serialized summaries.
+    fine_lengths_json = [
+        {k: v for k, v in row.items() if k != "gaps"} for row in fine_lengths
+    ]
+    coarse_lengths_json = [
+        {k: v for k, v in row.items() if k != "gaps"} for row in coarse_lengths
+    ]
+
     minima = energy_minima(energy, rate, bounds)
+    offsets = marker_offset_stats(minima["times_sec"], centres)
+    intervals = np.diff(minima["times_sec"]) / 60.0
+    minima_extra = {
+        "median_interval_min": float(np.median(intervals)) if len(intervals) else float("nan"),
+        "iqr_interval_min": (
+            tuple(float(x) for x in np.percentile(intervals, [25, 75]))
+            if len(intervals)
+            else (float("nan"), float("nan"))
+        ),
+        "relative_median": (
+            float(np.nanmedian(minima["relative"]))
+            if np.any(np.isfinite(minima["relative"]))
+            else float("nan")
+        ),
+        "relative_iqr": (
+            tuple(
+                float(x)
+                for x in np.nanpercentile(
+                    minima["relative"][np.isfinite(minima["relative"])], [25, 75]
+                )
+            )
+            if np.any(np.isfinite(minima["relative"]))
+            else (float("nan"), float("nan"))
+        ),
+        "songs_with_minimum": int(np.sum(np.isfinite(minima["relative"]))),
+        **{k: offsets[k] for k in (
+            "n_inside_marker",
+            "median_offset_min",
+            "iqr_offset_min",
+            "n_before_centre",
+        )},
+    }
+
+    # JSON-safe group locs (drop bulky arrays from the written file's main view
+    # but keep them available on the returned object via a separate key).
+    group_locs_json = [
+        {k: v for k, v in g.items() if k not in ("relative_locations", "times_sec")}
+        for g in group_locs
+    ]
 
     report = {
         "n_frames": int(len(motif)),
-        "motif_coefficient": 1,
+        "motif_coefficient": 2,
         "best_r": {str(m): scans[m]["best_r"] for m in SCAN_MINUTES},
         "n_copies": {str(m): int(len(scans[m]["starts"])) for m in SCAN_MINUTES},
         "thresholds": {str(m): scans[m]["threshold"] for m in SCAN_MINUTES},
@@ -532,6 +898,8 @@ def build_report(wav_path=WAV, rate=RATE):
         "fine_pairs": fine_pairs,
         "coarse_2_vs_4": coarse_pairs[0],
         "fine_6_vs_7": fine_pairs[0],
+        "fine_lengths": fine_lengths_json,
+        "coarse_lengths": coarse_lengths_json,
         "n_song_markers": int(len(song["starts"])),
         "n_songs": int(len(lengths_min)),
         "song_length_median_min": (
@@ -545,29 +913,95 @@ def build_report(wav_path=WAV, rate=RATE):
         ),
         "n_phrase_groups": len(groups),
         "n_kept": len(kept),
-        "groups": group_locs,
+        "phrase_coverage_kept_h": kept_duration_h,
+        "phrase_coverage_all_h": all_duration_h,
+        "groups": group_locs_json,
         "order_cut": cut,
         "consensus_order": order,
         "songs_agree": n_agree,
         "songs_compared": n_usable,
-        "minima": {
-            k: minima[k]
+        "circular_order": circ_order,
+        "circular_songs_agree": n_circ_agree,
+        "circular_songs_compared": n_circ_usable,
+        "pairwise_order": pair_orders,
+        "shuffle": {
+            k: shuffle[k]
             for k in (
-                "n_minima",
-                "n_inside",
-                "median_interval_min",
+                "n_shuffles",
+                "linear_mean",
+                "linear_max",
                 "circular_mean",
-                "concentration",
-                "rayleigh_p",
-                "n_locations",
+                "circular_max",
+                "linear_p",
+                "circular_p",
+                "fixed_random_linear_mean",
+                "linear_scores",
+                "circular_scores",
             )
         },
+        "minima": {
+            **{
+                k: minima[k]
+                for k in (
+                    "n_minima",
+                    "n_inside",
+                    "median_interval_min",
+                    "circular_mean",
+                    "concentration",
+                    "rayleigh_p",
+                    "n_locations",
+                )
+            },
+            **minima_extra,
+        },
+        # Runtime-only (not written to the slim JSON below when huge):
+        "_fine_gaps": {str(int(r["minutes"])): r["gaps"].tolist() for r in fine_lengths},
+        "_group_details": group_locs,
+        "_marker_centres_sec": centres.tolist(),
+        "_song_bounds_sec": bounds.tolist(),
+        "_minima_times_sec": minima["times_sec"].tolist(),
+        "_minima_relative": minima["relative"].tolist(),
     }
+
+    def _jsonable(obj):
+        if isinstance(obj, dict):
+            return {k: _jsonable(v) for k, v in obj.items()}
+        if isinstance(obj, (list, tuple)):
+            return [_jsonable(v) for v in obj]
+        if isinstance(obj, (np.floating, float)):
+            return float(obj)
+        if isinstance(obj, (np.integer, int)):
+            return int(obj)
+        if isinstance(obj, np.ndarray):
+            return obj.tolist()
+        return obj
+
     CACHE.mkdir(parents=True, exist_ok=True)
-    (CACHE / "report.json").write_text(json.dumps(report, indent=2), encoding="utf-8")
+    slim = {
+        k: _jsonable(v)
+        for k, v in report.items()
+        if not str(k).startswith("_")
+    }
+    # Keep shuffle score histograms out of the on-disk JSON (large, PDF-only).
+    if "shuffle" in slim:
+        slim["shuffle"] = {
+            k: v
+            for k, v in slim["shuffle"].items()
+            if k not in ("linear_scores", "circular_scores")
+        }
+    (CACHE / "report.json").write_text(json.dumps(slim, indent=2), encoding="utf-8")
+    # Full payload with arrays for the PDF writer.
+    np.savez(
+        CACHE / "report_arrays.npz",
+        marker_centres_sec=centres,
+        song_bounds_sec=bounds,
+        minima_times_sec=minima["times_sec"],
+        minima_relative=minima["relative"],
+    )
     return report
 
 
 if __name__ == "__main__":
     report = build_report()
-    print(json.dumps(report, indent=2))
+    slim = {k: v for k, v in report.items() if not str(k).startswith("_")}
+    print(json.dumps(slim, indent=2))

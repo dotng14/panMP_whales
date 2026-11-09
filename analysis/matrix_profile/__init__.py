@@ -434,18 +434,20 @@ def pan_minlag(length: int) -> int:
     return max(int(length) - 2, 4)
 
 
-def length_profile(signal, length: int, *, engine: str = "fast", nthreads: int = 1):
+def length_profile(signal, length: int, *, engine: str = "fast", nthreads: int = 1, minlag: int | None = None):
     """Matrix profile ``(distance, neighbor)`` of a ``(rows, T)`` signal at one length.
 
     One row uses ``mpx_fast`` (``engine="fast"``) or the MATLAB-parity
     ``mpxForPan`` (``engine="reference"``, slow). Several rows use
     ``mpx_channels``, the sum of per-row z-normalized distances; the reference
-    engine is one row only. The exclusion zone is :func:`pan_minlag`.
+    engine is one row only. The exclusion zone is :func:`pan_minlag` unless
+    ``minlag`` is set. ``minlag`` equal to ``length`` keeps the two copies
+    from overlapping.
     """
     rows = np.atleast_2d(np.asarray(signal, dtype=np.float64))
     if engine not in ENGINES:
         raise ValueError(f"engine must be one of {ENGINES}, got {engine!r}")  # no-pipeline-cover: argparse limits --engine
-    minlag = pan_minlag(length)
+    minlag = pan_minlag(length) if minlag is None else int(minlag)
     if rows.shape[0] > 1:
         if engine == "reference":
             raise ValueError("the reference engine takes a single row")
@@ -607,8 +609,20 @@ class PanProfile:
     surface: np.ndarray
 
 
-def pan_profile(signal, lengths, *, engine: str = "fast", nthreads: int = 1) -> PanProfile:
-    """Pan matrix profile of a 1-D or ``(rows, T)`` signal."""
+def pan_profile(
+    signal,
+    lengths,
+    *,
+    engine: str = "fast",
+    nthreads: int = 1,
+    disallow_overlap: bool = False,
+    show_progress: bool = False,
+) -> PanProfile:
+    """Pan matrix profile of a 1-D or ``(rows, T)`` signal.
+
+    ``disallow_overlap`` sets the exclusion zone to the motif length, so the
+    two copies cannot overlap. ``show_progress`` draws one bar over the lengths.
+    """
     rows = np.atleast_2d(np.asarray(signal, dtype=np.float64))
     if rows.ndim != 2:
         raise ValueError(f"signal must be 1-D or (rows, T), got shape {rows.shape}")  # no-pipeline-cover: load_series rejects other shapes first
@@ -616,15 +630,23 @@ def pan_profile(signal, lengths, *, engine: str = "fast", nthreads: int = 1) -> 
     if not lengths:  # no-pipeline-cover: pan_lengths returns at least one length
         raise ValueError("need at least one motif length")
     n = rows.shape[1]
-    if n < max(lengths) + pan_minlag(max(lengths)):
+    zone = (lambda length: int(length)) if disallow_overlap else pan_minlag
+    if n < max(lengths) + zone(max(lengths)):
         raise ValueError(
             f"signal has {n} samples, too short for motif length {max(lengths)}"
         )
     distances = []
     neighbors = []
     surface = np.full((len(lengths), n), np.nan)
-    for k, length in enumerate(lengths):
-        distance, neighbor = length_profile(rows, length, engine=engine, nthreads=nthreads)
+    steps = list(enumerate(lengths))
+    if show_progress:
+        from tqdm.auto import tqdm
+
+        steps = tqdm(steps, desc="motif length", unit="length")
+    for k, length in steps:
+        distance, neighbor = length_profile(
+            rows, length, engine=engine, nthreads=nthreads, minlag=zone(length)
+        )
         distances.append(np.asarray(distance, dtype=np.float64))
         neighbors.append(np.asarray(neighbor, dtype=np.float64))
         surface[k, : len(distance)] = _zscore(np.asarray(distance) / np.sqrt(length))
@@ -635,11 +657,12 @@ def pan_profile(signal, lengths, *, engine: str = "fast", nthreads: int = 1) -> 
     return PanProfile(lengths=lengths, distances=distances, neighbors=neighbors, surface=surface)
 
 
-def pan_top_pairs(profile: PanProfile, k: int) -> list[dict]:
+def pan_top_pairs(profile: PanProfile, k: int, *, disallow_overlap: bool = False) -> list[dict]:
     """Most unusual pairs across lengths (``top_pairs_by_zscore``).
 
-    Each new pair starts outside every copy already chosen, at every length.
-    Its nearest neighbour is not checked, so it can repeat an earlier copy.
+    Each new pair's query start lies outside every copy already chosen.
+    ``disallow_overlap`` also rejects a pair whose nearest neighbour overlaps
+    a copy already chosen.
     """
     scored = {
         length: (-distance, np.nan_to_num(neighbor, nan=-1.0), length)
@@ -655,7 +678,9 @@ def pan_top_pairs(profile: PanProfile, k: int) -> list[dict]:
             "distance": float(-score),
             "zscore": float(unusual),
         }
-        for length, i, j, score, unusual in top_pairs_by_zscore(scored, k)
+        for length, i, j, score, unusual in top_pairs_by_zscore(
+            scored, k, disallow_overlap=disallow_overlap
+        )
     ]
 
 
@@ -746,7 +771,7 @@ def top_pairs(correlation: np.ndarray, neighbor: np.ndarray, window: int, k: int
     return chosen
 
 
-def top_pairs_by_zscore(profiles: dict, k: int):
+def top_pairs_by_zscore(profiles: dict, k: int, *, disallow_overlap: bool = False):
     """Most unusual pairs for their length.
 
     ``profiles`` maps a length key to ``(correlation, neighbor, window)``.
@@ -770,7 +795,14 @@ def top_pairs_by_zscore(profiles: dict, k: int):
         best = None
         for length, (unusual, neighbor, window, corr) in scored.items():
             score = np.array(unusual, copy=True)
-            score[blocked[length]] = -np.inf
+            taken = blocked[length]
+            score[taken] = -np.inf
+            if disallow_overlap:
+                partner = np.rint(neighbor).astype(np.int64)
+                inside = (partner >= 0) & (partner < len(taken))
+                overlaps_partner = np.ones(len(score), dtype=bool)
+                overlaps_partner[inside] = taken[partner[inside]]
+                score[overlaps_partner] = -np.inf
             i = int(np.nanargmax(score))
             if not np.isfinite(score[i]):
                 continue
