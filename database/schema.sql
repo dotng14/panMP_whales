@@ -113,7 +113,7 @@ CREATE TABLE IF NOT EXISTS learning_round_logs (
 CREATE TABLE IF NOT EXISTS tool_runs (
     tool_run_id          INTEGER PRIMARY KEY AUTOINCREMENT,
     tool                 TEXT NOT NULL
-        CHECK (tool IN ('randomized_build', 'pan_build', 'matching_pursuit')),
+        CHECK (tool IN ('randomized_build', 'pan_build', 'matching_pursuit', 'split')),
     input_dictionary_id  INTEGER REFERENCES dictionaries(dictionary_id) ON DELETE SET NULL,
     output_dictionary_id INTEGER REFERENCES dictionaries(dictionary_id) ON DELETE SET NULL,
     segmentation_id      INTEGER REFERENCES gpl_segmentations(segmentation_id) ON DELETE SET NULL,

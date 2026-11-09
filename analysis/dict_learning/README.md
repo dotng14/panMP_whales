@@ -204,6 +204,39 @@ Measurements: [`experiments/overlap_and_speed/`](experiments/overlap_and_speed/R
 | `--loop-stats` | `DICT_LEARNING_LOOP_STATS=1` | off | Count MP loops, steps and wall time. |
 | `--progress` | | off | tqdm bars on stderr. |
 
+### `split`
+
+```bash
+python -m analysis.dict_learning split --gpl-dir GPL_OUT --dictionary DICT_DIR \
+  --template 3 --out SPLIT_DIR [--matchings MP_DIR] [--seed 0]
+```
+
+Replaces one atom by two (`learn/split_template.py`, ported unchanged from
+gplrev3):
+
+1. Cut the atom's patches: from its placements in the dictionary's
+   `matchings.json`, or with `--matchings` from a `matching-pursuit` run of
+   that dictionary.
+2. For each of `--n-trials` starts, perturb the atom by a random ±ε (norm
+   `--epsilon` × the atom's). Assign each patch to the candidate that explains
+   more of its energy, then alternate refitting each side's first principal
+   component and reassigning, up to `--max-refine` rounds.
+3. Keep the start with the smallest residual error. Accept it when it cuts
+   the error of the single atom by at least `--min-relative-reduction` and
+   each side has at least `--min-size` patches.
+
+When the split is accepted, the output is a dictionary folder in the build
+layout:
+
+- The split atom becomes half `a`, keeping its id; half `b` gets a new id.
+- Each half keeps the placements assigned to it.
+- Everything else carries over.
+
+`matching-pursuit`, another `split` and the catalog read the folder like a
+build's. The catalog records it as an `edit` dictionary of its parent. A
+rejected split exits 1 and writes only `summary.json`, which gives the
+reduction it found.
+
 ## Python API
 
 ### Randomized build (`code/learn/randomized_dictionary.py`)
