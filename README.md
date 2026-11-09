@@ -136,6 +136,7 @@ Plus the shared MP options below.
 | Option | Default | Meaning |
 |---|---|---|
 | `--mp-mode` | `per_window` | `per_window`: each window on its own, in parallel. `global`: one best atom per step over all windows |
+| `--overlap` | `free` | `free`: placements may overlap freely. `limited`: at most a quarter of the narrower width, or wholly inside a placement at least twice as wide (a unit in a phrase). With `limited`, use a lower `--n-min` (3 on 014845): each call then counts once |
 | `--workers` | all CPUs | Processes for `per_window`; `1` runs serially |
 | `--compute` | `auto` | `cpu`, `cuda`, or `auto` (GPU only when it works and the problem is large) |
 | `--eps-step-fraction` | 0.01 | Stop when a step removes less than this fraction of the first step's energy |

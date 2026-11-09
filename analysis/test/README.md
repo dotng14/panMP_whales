@@ -284,6 +284,33 @@ that would leave the window, and a distinct atom is untouched. In
 `refine_dictionary`, two seeds of one planted motif (one shifted a column)
 end as one atom with `merge_corr=0.9` and as two without.
 
+### `--overlap limited`
+
+`unit/dict_learning/test_overlap_rule.py`:
+
+- `OverlapRule.allows` on named cases (touching, a quarter, one column on,
+  stacked, a unit inside a phrase, too wide to nest).
+- `forbid` agrees with `allows` at every start, for 300 random spans and
+  widths.
+- On two copies of one call 4 columns apart, free MP places both, and limited
+  places one.
+- The cached per-window loop and the full-rescan global loop place the same
+  atoms with the rule and a fixed span from an earlier pass. Neither breaks
+  the rule.
+- A two-pass pan-build outer loop keeps every pass's placements within the
+  rule.
+- The merge drops a moved twin placement that the rule forbids.
+
+`integration/test_overlap_cli.py` runs both builds with `free` and `limited`.
+It then runs matching-pursuit in `per_window` and `global` mode on each
+dictionary, and checks that no `limited` run has a pair the rule forbids. The
+pan-build case uses `--lengths-s 0.06,0.12`, so 6-column atoms can nest in
+12-column ones.
+
+`unit/dict_learning/test_mp_fast.py::test_per_window_inplace_matches_manual_copy_loop`
+checks that the cached loop gives exactly what the full-rescan step API gives,
+neither applying the step the eps rule rejects.
+
 ## The coverage gate
 
 `integration/.coveragerc` measures `analysis.dict_learning`,
@@ -330,7 +357,7 @@ To review them:
 grep -rn "no-pipeline-cover:\|no-pipeline-branch:\|gpu-only" analysis database --include=*.py
 ```
 
-At the time of writing there are 171 `no-pipeline-cover` and 15
+At the time of writing there are 177 `no-pipeline-cover` and 15
 `no-pipeline-branch` markers, in `dict_learning/code/{core,io,mp,tools}.py`,
 `learn/{randomized_dictionary,pan_seeds}.py`, `dict_learning/__init__.py`,
 `matrix_profile/{__init__,signals}.py`, `bands.py` and `database/catalog.py`.

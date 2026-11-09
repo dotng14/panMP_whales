@@ -170,11 +170,30 @@ Places the atoms of a `randomized-build` or `pan-build` output on the windows an
 `matchings.json` and `summary.json` (energy before and after, stop reason,
 time and window coverage).
 
+**How a window is pursued** (`mp._run_mp_loop_one_window`). Each atom's
+shift scores and each width's patch energies are computed once. A placement
+at `[t, t + W)` changes only the patches that overlap it, so after each step
+only those positions are rescored: the same placements as rescoring the
+whole window every step, at a fraction of the cost. A step the
+`--eps-step-fraction` rule rejects is not applied, so the residual matches
+the matchings. The GPU scorer does one batched FFT over all frequency rows.
+
+**Overlap** (`--overlap`, `mp.OverlapRule`). Matching pursuit subtracts the
+best fit at one position; the leftover of a call still correlates with the
+same atom one column over, so with `free` the same call is placed again and
+again (on 014845, each covered column was covered 3–4 times). With `limited`,
+two placements in a window may overlap by at most a quarter of the narrower
+width, or one may lie wholly inside the other when it is at most half its
+width (a unit in a phrase). The builds apply the rule to every refine pass,
+to the spans of earlier outer passes, and to the placements a merge moves.
+Measurements: [`experiments/overlap_and_speed/`](experiments/overlap_and_speed/README.md).
+
 ### Shared MP knobs
 
 | Flag | Env fallback | Default | Meaning |
 |---|---|---|---|
 | `--mp-mode` | `DICT_LEARNING_MP_MODE` | `per_window` | `per_window`: independent Mallat per window (parallel; atoms never straddle windows). `global`: one best atom per step over the whole stack. |
+| `--overlap` | | `free` | `free` or `limited` (see above). Recorded in `summary.json`. |
 | `--workers` | `DICT_LEARNING_MP_WORKERS` | all CPUs | Worker processes for `per_window`. `1` runs serially. |
 | `--compute` | `DICT_LEARNING_MP_COMPUTE`, then `GPL_COMPUTE` | `auto` | `score_shifts` backend. `auto`: CuPy when it works and the problem is large (`DICT_LEARNING_MP_GPU_MIN_OPS`, default 2e6), else numba, else NumPy. `cuda` forces the GPU when usable. `cpu` never uses it. |
 | `--eps-step-fraction` | | 0.01 | Stop when a step removes less than this fraction of the first step's energy. |

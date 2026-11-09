@@ -94,13 +94,12 @@ def test_numba_score_shifts_releases_gil():
 
 
 def test_per_window_inplace_matches_manual_copy_loop():
-    """Regression lock for the mp_step.py copy-elision fix (Plan 13 item #5).
+    """The cached per-window loop places exactly what a full rescan does.
 
-    ``_run_mp_loop_one_window`` now owns one private residual array and
-    mutates it in place via ``_mp_step_one_window_inplace`` instead of
-    re-copying the whole ``(F, T)`` array through ``mp_step_one_window`` on
-    every step. Manually drive the old, always-copies public API by hand and
-    assert the hot loop's output is bit-identical.
+    ``_run_mp_loop_one_window`` keeps every atom's shift scores and rescores
+    only the starts a placement changed. Drive the full-rescan public step
+    API by hand and assert the loop's output is bit-identical. Neither applies
+    the step the eps rule rejects.
     """
     from analysis.dict_learning.code.mp import mp_step_one_window
 
@@ -116,7 +115,7 @@ def test_per_window_inplace_matches_manual_copy_loop():
     manual_matchings = []
     first_delta = None
     while True:
-        manual_resid, step = mp_step_one_window(
+        stepped, step = mp_step_one_window(
             manual_resid, dictionary, window_id="w0", normalize=True,
         )
         if step.matching is None or step.delta_energy <= 0.0:
@@ -124,7 +123,8 @@ def test_per_window_inplace_matches_manual_copy_loop():
         if first_delta is None:
             first_delta = step.delta_energy
         elif step.delta_energy < eps_step_fraction * first_delta:
-            break
+            break  # the rejected step is not applied
+        manual_resid = stepped
         manual_matchings.append(step.matching)
 
     loop = run_mp_loop(

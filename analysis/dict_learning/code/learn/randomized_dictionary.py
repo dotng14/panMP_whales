@@ -48,7 +48,7 @@ from ..core import (
     patch_template_relative_distance,
 )
 from ..io import Detection
-from ..mp import refit_and_deflate, residual_energy
+from ..mp import IntervalMap, OverlapRule, refit_and_deflate, residual_energy
 from ..tools import matching_pursuit, rebuild_template_from_matchings
 from ..io import detections_to_segments
 from .shape_match import best_shift
@@ -428,6 +428,7 @@ def merge_similar_atoms(
     min_corr: float,
     n_components: int = defaults.N_COMPONENTS,
     max_relative_distance: float | None = defaults.MAX_RELATIVE_DISTANCE,
+    overlap: OverlapRule | None = None,
 ) -> tuple[Dictionary, list[Matching], int]:
     """Fold each atom into a busier one with the same shape.
 
@@ -435,7 +436,8 @@ def merge_similar_atoms(
     (:func:`~.shape_match.best_shift`, on the first basis vector) with an atom
     already kept reaches ``min_corr`` hands its placements to that atom, moved
     by the shift. Placements that would leave their window, or that the kept
-    atom already has at the same start, are dropped. Every atom that gained
+    atom already has at the same start, are dropped; so, with ``overlap``,
+    is a moved placement the rule forbids next to one already kept. Every atom that gained
     placements is rebuilt from all of them, from ``stack``. Returns the
     dictionary, the matchings (amplitudes not refitted) and the number of
     atoms folded.
@@ -459,25 +461,36 @@ def merge_similar_atoms(
     if not folded:
         return dictionary, list(matchings), 0
 
-    out: list[Matching] = []
+    accepted: dict[int, Matching] = {}
     seen: set[tuple[int, str, int]] = set()
-    for matching in matchings:
+    spans: dict[str, list[tuple[int, int]]] = {}
+    # With the overlap rule, the kept atoms' own placements are checked first,
+    # so a moved one never displaces them. Either way they are returned in
+    # their original order: the sequential refit after the merge depends on it.
+    order = list(range(len(matchings)))
+    if overlap is not None:
+        order.sort(key=lambda i: int(matchings[i].template_id) in folded)
+    for index in order:
+        matching = matchings[index]
         template_id, shift = folded.get(int(matching.template_id), (int(matching.template_id), 0))
         t_start = int(matching.t_start) + shift
         width = int(kept[template_id].width)
         key = (template_id, str(matching.window_id), t_start)
         if t_start < 0 or t_start + width > stack[matching.window_id].shape[1] or key in seen:
             continue
+        held = spans.setdefault(str(matching.window_id), [])
+        if overlap is not None and not all(overlap.allows(t_start, t_start + width, a, b) for a, b in held):
+            continue  # no-pipeline-cover: needs a moved twin placement next to a kept one; unit-tested
         seen.add(key)
-        out.append(
-            Matching(
-                template_id=template_id,
-                window_id=str(matching.window_id),
-                t_start=t_start,
-                amplitude=float(matching.amplitude),
-                coeffs=None if matching.coeffs is None else np.asarray(matching.coeffs).copy(),
-            )
+        held.append((t_start, t_start + width))
+        accepted[index] = Matching(
+            template_id=template_id,
+            window_id=str(matching.window_id),
+            t_start=t_start,
+            amplitude=float(matching.amplitude),
+            coeffs=None if matching.coeffs is None else np.asarray(matching.coeffs).copy(),
         )
+    out = [accepted[index] for index in sorted(accepted)]
 
     gained = {target for target, _ in folded.values()}
     merged = Dictionary()
@@ -512,6 +525,8 @@ def refine_dictionary(
     n_workers: int | None = None,
     show_progress: bool | None = False,
     merge_corr: float | None = None,
+    overlap: OverlapRule | None = None,
+    fixed_spans: IntervalMap | None = None,
 ) -> RandomizedRefineResult:
     """RefineDictionary: whole-dictionary MP, top-K PCA rebuild, prune.
 
@@ -533,6 +548,9 @@ def refine_dictionary(
     With ``merge_corr`` set, atoms that came out of the iterations with the
     same shape are folded together first (:func:`merge_similar_atoms`), and
     the residual is re-deflated even without the gate.
+
+    ``overlap`` limits how the pass's placements may overlap each other and
+    the ``fixed_spans`` of earlier passes (see :class:`~..mp.OverlapRule`).
 
     Overlaps are allowed (``disallow_overlap=False``).
     """
@@ -579,6 +597,8 @@ def refine_dictionary(
             mp_mode=eff_mode,
             n_workers=n_workers,
             max_relative_distance=max_relative_distance,
+            overlap=overlap,
+            fixed_spans=fixed_spans,
         )
         matchings = list(mp.loop.matchings)
         residual_after = {
@@ -617,6 +637,7 @@ def refine_dictionary(
             min_corr=float(merge_corr),
             n_components=n_components,
             max_relative_distance=max_relative_distance,
+            overlap=overlap,
         )
 
     # Post-refine: drop placements with dnorm(x, A) > tau, then re-prune atoms.
@@ -824,6 +845,7 @@ def learn_randomized_outer(
     progress_callback: Callable[[RandomizedOuterPassLog], None] | None = None,
     seeder: Seeder | None = None,
     merge_corr: float | None = None,
+    overlap: OverlapRule | None = None,
 ) -> RandomizedOuterResult:
     """Coverage-gated residual outer loop over Create→Refine.
 
@@ -851,6 +873,10 @@ def learn_randomized_outer(
 
     ``merge_corr`` is passed to every refine: atoms of one pass that refine
     to the same shape are folded together (off by default).
+
+    ``overlap`` is passed to every refine, with the spans of every earlier
+    pass's placements, so a later atom cannot stack on an earlier one either
+    (off by default).
 
     Default recipe (CLI ``randomized-build``)::
 
@@ -913,6 +939,13 @@ def learn_randomized_outer(
     propose = seeder if seeder is not None else random_seeds
 
     for outer in range(1, int(max_outer) + 1):
+        widths = {int(t.template_id): int(t.width) for t in accum}
+        earlier: IntervalMap = {}
+        for matching in accum_matchings if overlap is not None else []:
+            start = int(matching.t_start)
+            earlier.setdefault(str(matching.window_id), []).append(
+                (start, start + widths[int(matching.template_id)])
+            )
         created = propose(residual_stack, m_per_outer, accum)
         if created.n_sampled == 0 or len(created.dictionary) == 0:
             stop_reason = "empty_pool"
@@ -931,6 +964,8 @@ def learn_randomized_outer(
             n_workers=n_workers,
             show_progress=show_progress,
             merge_corr=merge_corr,
+            overlap=overlap,
+            fixed_spans=earlier,
         )
         if energy_start is None and refined.energies:
             energy_start = refined.energies[0]

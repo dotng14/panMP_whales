@@ -405,17 +405,13 @@ def _score_shifts_cupy(  # gpu-only: needs a CUDA device
         f, w = int(g_tmpl.shape[0]), int(g_tmpl.shape[1])
         t = int(g_resid.shape[1])
         n = t - w + 1
-        scores = cp.zeros(n, dtype=cp.float64)
-        # Prefer cupyx.scipy when importable; else FFT/convolve via cupy.
-        try:
-            import cupyx.scipy.signal as cs  # type: ignore[import]
-
-            for fi in range(f):
-                scores += cs.correlate(g_resid[fi], g_tmpl[fi], mode="valid")
-        except Exception:  # no-pipeline-cover: fallback when cupyx.scipy is missing
-            for fi in range(f):
-                # correlate(a, v) valid == convolve(a, v[::-1]) valid
-                scores += cp.convolve(g_resid[fi], g_tmpl[fi, ::-1], mode="valid")
+        # All frequency rows in one batched FFT: the valid correlation of each
+        # row is a convolution with the reversed template row, and the sum
+        # over rows is taken in the frequency domain. (One small kernel per
+        # row cost about 0.2 s per call on 1637-row spectrograms.)
+        length = 1 << (t + w - 2).bit_length()
+        spectrum = cp.fft.rfft(g_resid, length, axis=1) * cp.fft.rfft(g_tmpl[:, ::-1], length, axis=1)
+        scores = cp.fft.irfft(cp.sum(spectrum, axis=0), length)[w - 1 : w - 1 + n]
         if normalize:
             denom = float(cp.asnumpy(cp.sum(g_tmpl * g_tmpl)))
             if denom <= 0.0:  # no-pipeline-cover: atoms always have energy
@@ -553,6 +549,70 @@ from .core import Dictionary, Matching, Template, Window
 IntervalMap = dict[str, list[tuple[int, int]]]
 MpMode = Literal["global", "per_window"]
 
+OVERLAP_MODES = ("free", "limited")
+DEFAULT_MAX_PARTIAL_OVERLAP = 0.25
+DEFAULT_MAX_NESTED_RATIO = 0.5
+
+
+@dataclass(frozen=True)
+class OverlapRule:
+    """Which placements in one window may overlap (``--overlap limited``).
+
+    Two placements may overlap by at most ``max_partial`` of the narrower
+    width, so neighbouring calls can touch. One may lie wholly inside the
+    other when it is at most ``max_nested`` of the outer width: a unit inside
+    a phrase. Two placements of one atom have the same width, so they never
+    nest and overlap by at most ``max_partial``.
+    """
+
+    max_partial: float = DEFAULT_MAX_PARTIAL_OVERLAP
+    max_nested: float = DEFAULT_MAX_NESTED_RATIO
+
+    def __post_init__(self) -> None:
+        if not 0.0 <= self.max_partial < 1.0:
+            raise ValueError(f"max_partial must be in [0, 1), got {self.max_partial}")  # no-pipeline-cover: the CLIs build the default rule
+        if not 0.0 <= self.max_nested < 1.0:
+            raise ValueError(f"max_nested must be in [0, 1), got {self.max_nested}")  # no-pipeline-cover: the CLIs build the default rule
+
+    def allows(self, start_a: int, end_a: int, start_b: int, end_b: int) -> bool:
+        """True when spans ``[start_a, end_a)`` and ``[start_b, end_b)`` may both be kept."""
+        overlap = min(end_a, end_b) - max(start_a, start_b)
+        width_a, width_b = end_a - start_a, end_b - start_b
+        if overlap <= int(self.max_partial * min(width_a, width_b)):
+            return True
+        if width_a <= self.max_nested * width_b and start_b <= start_a and end_a <= end_b:
+            return True
+        return width_b <= self.max_nested * width_a and start_a <= start_b and end_b <= end_a
+
+    def forbid(self, valid: np.ndarray, width: int, start: int, end: int) -> None:
+        """Clear the starts in ``valid`` where a ``width``-wide placement may not sit next to ``[start, end)``."""
+        held = end - start
+        max_overlap = int(self.max_partial * min(width, held))
+        # Starts whose overlap with [start, end) exceeds max_overlap.
+        lo = max(0, start - width + max_overlap + 1)
+        hi = min(len(valid), end - max_overlap)
+        if lo >= hi:
+            return  # no-pipeline-cover: a held span past the last start of a wider atom; unit-tested
+        block = np.ones(hi - lo, dtype=bool)
+        if width <= self.max_nested * held:
+            nest_lo, nest_hi = max(lo, start), min(hi, end - width + 1)  # inside the held span
+        elif held <= self.max_nested * width:
+            nest_lo, nest_hi = max(lo, end - width), min(hi, start + 1)  # around it
+        else:
+            nest_lo = nest_hi = lo
+        if nest_lo < nest_hi:
+            block[nest_lo - lo : nest_hi - lo] = False
+        valid[lo:hi] &= ~block
+
+
+def overlap_rule(mode: str | None) -> OverlapRule | None:
+    """The rule for an ``--overlap`` mode: ``None`` for ``free``."""
+    if mode in (None, "free"):
+        return None
+    if mode != "limited":
+        raise ValueError(f"overlap must be one of {OVERLAP_MODES}, got {mode!r}")  # no-pipeline-cover: argparse limits --overlap
+    return OverlapRule()
+
 
 @dataclass
 class MpStepResult:
@@ -682,6 +742,46 @@ def _placement_beats(candidate: PlacementScore, current: PlacementScore) -> bool
     return False  # no-pipeline-cover: an exact tie in both fit and energy
 
 
+def _select_rank1(
+    scores: np.ndarray,
+    tmpl_energy: float,
+    patch_energy: np.ndarray,
+    valid: np.ndarray,
+    *,
+    normalize: bool,
+    max_relative_distance: float | None,
+) -> tuple[int, float, PlacementScore] | None:
+    """Best start of one rank-1 atom from its shift scores: ``(t_start, amplitude, score)``.
+
+    The start with the largest ``|amplitude|`` among the ``valid`` ones (and,
+    with ``max_relative_distance``, close enough to the atom); ``score`` ranks
+    it against other atoms. Neither input array is changed.
+    """
+    # explained = ⟨x, T⟩² / ||T||²; `scores` is ⟨x,T⟩/||T||² when
+    # normalized, else the raw inner product.
+    inner = scores * tmpl_energy if normalize else scores
+    explained = (inner * inner) / tmpl_energy
+    if max_relative_distance is not None:
+        valid = valid & _close_enough_mask(explained, patch_energy, float(max_relative_distance))
+    valid_indices = np.flatnonzero(valid)
+    if valid_indices.size == 0:
+        return None
+    score_index = int(np.argmax(np.abs(scores[valid_indices])))
+    t_start = int(valid_indices[score_index])
+    amp = float(scores[t_start])
+    if amp == 0.0:  # no-pipeline-cover: needs a residual exactly orthogonal to the atom
+        return None
+    patch_energy_at_t = float(patch_energy[t_start])
+    if patch_energy_at_t <= 0.0:  # no-pipeline-cover: placed patches always have energy
+        return None
+    explained_at_t = float(explained[t_start])
+    # explained <= patch_energy always (Bessel's inequality); clip so
+    # floating-point overshoot past a perfect fit can't beat an exact 1.0
+    # and starve the absolute-energy tiebreak.
+    relative_fit = min(1.0, explained_at_t / patch_energy_at_t)
+    return t_start, amp, (relative_fit, explained_at_t)
+
+
 def _best_placement_on_window(
     basis: np.ndarray,
     resid: np.ndarray,
@@ -694,6 +794,8 @@ def _best_placement_on_window(
     pc1_screen: bool = False,
     screen_top: int = 8,
     max_relative_distance: float | None = None,
+    overlap: OverlapRule | None = None,
+    spans: list[tuple[int, int]] | None = None,
 ) -> tuple[PlacementScore, Matching, np.ndarray] | None:
     """Best placement of one atom on one window.
 
@@ -716,6 +818,9 @@ def _best_placement_on_window(
     ``1 − ||Π_V x||² / ||x||²``, is within the threshold. The best *qualifying*
     shift wins, so a rejected peak falls through to the next-best candidate
     instead of stopping the search. Rejected shifts are never deflated.
+
+    With ``overlap``, starts the rule forbids next to the placed ``spans`` are
+    skipped as well.
     """
     k = int(basis.shape[0])
     width = int(basis.shape[2])
@@ -723,6 +828,9 @@ def _best_placement_on_window(
     if n_shifts <= 0:  # no-pipeline-cover: windows are wider than atoms
         return None
     valid = _valid_shift_mask(n_shifts, width, occupied_intervals)
+    if overlap is not None:
+        for start, end in spans or []:
+            overlap.forbid(valid, width, int(start), int(end))
     if not np.any(valid):  # no-pipeline-cover: a window is never fully reserved
         return None
 
@@ -737,45 +845,22 @@ def _best_placement_on_window(
         scores = score_shifts(tdata, resid, normalize=normalize, gpu_id=gpu_id)
         if scores.size == 0:  # no-pipeline-cover: follows from n_shifts > 0
             return None
-        scores = np.array(scores, copy=True)
         tmpl_energy = float(np.sum(tdata * tdata))
         if tmpl_energy <= 0.0:  # no-pipeline-cover: atoms always have energy
             return None
-        # explained = ⟨x, T⟩² / ||T||²; `scores` is ⟨x,T⟩/||T||² when
-        # normalized, else the raw inner product.
-        inner = scores * tmpl_energy if normalize else scores
-        explained = (inner * inner) / tmpl_energy
-        if gated:
-            valid = valid & _close_enough_mask(
-                explained, patch_energy, float(max_relative_distance)
-            )
-            if not np.any(valid):
-                return None
-        scores[~valid] = 0.0
-        # Preserve argmax-|amp| among valid (zeros on invalid).
-        valid_indices = np.flatnonzero(valid)
-        if valid_indices.size == 0:  # no-pipeline-cover: valid is non-empty here
+        picked = _select_rank1(
+            scores, tmpl_energy, patch_energy, valid,
+            normalize=normalize, max_relative_distance=max_relative_distance if gated else None,
+        )
+        if picked is None:
             return None
-        score_index = int(np.argmax(np.abs(scores[valid_indices])))
-        t_start = int(valid_indices[score_index])
-        amp = float(scores[t_start])
-        if amp == 0.0:  # no-pipeline-cover: needs a residual exactly orthogonal to the atom
-            return None
-        patch_energy_at_t = float(patch_energy[t_start])
-        if patch_energy_at_t <= 0.0:  # no-pipeline-cover: placed patches always have energy
-            return None
+        t_start, amp, score = picked
         matching = Matching(
             template_id=template_id,
             window_id=window_id,
             t_start=t_start,
             amplitude=amp,
         )
-        explained_at_t = float(explained[t_start])
-        # explained <= patch_energy always (Bessel's inequality); clip so
-        # floating-point overshoot past a perfect fit can't beat an exact 1.0
-        # and starve the absolute-energy tiebreak.
-        relative_fit = min(1.0, explained_at_t / patch_energy_at_t)
-        score = (relative_fit, explained_at_t)
         return score, matching, basis
 
     # Subspace (k > 1): orthonormal modes → raw inner products.
@@ -949,7 +1034,7 @@ def refit_and_deflate(
     return refitted, occupied
 
 
-def _mp_step_one_window_inplace(
+def _mp_step_one_window_inplace(  # no-pipeline-cover: only mp_step_one_window (the single-window test API) uses it; the loop keeps its own cached scores
     resid: np.ndarray,
     atoms: list[tuple[int, np.ndarray, int]],
     *,
@@ -1063,6 +1148,8 @@ def mp_step(
     pc1_screen: bool = False,
     screen_top: int = 8,
     max_relative_distance: float | None = None,
+    overlap: OverlapRule | None = None,
+    spans: IntervalMap | None = None,
 ) -> tuple[dict[str, np.ndarray], MpStepResult]:
     """One Mallat MP iteration over the residual stack (global best atom).
 
@@ -1075,6 +1162,8 @@ def mp_step(
     with the largest absolute amplitude or explained energy; ties in that
     fraction fall back to absolute explained energy. Placements whose
     unexplained energy fraction exceeds ``max_relative_distance`` are rejected.
+    With ``overlap``, starts the rule forbids next to ``spans[window_id]`` are
+    excluded too.
     """
     resid = _as_residual_map(residual_stack)
     e_before = residual_energy(resid)
@@ -1101,6 +1190,8 @@ def mp_step(
                 pc1_screen=pc1_screen,
                 screen_top=screen_top,
                 max_relative_distance=max_relative_distance,
+                overlap=overlap,
+                spans=(spans or {}).get(wid, []),
             )
             if placed is None:
                 continue
@@ -1156,9 +1247,12 @@ def _run_mp_loop_global(
     pc1_screen: bool = False,
     screen_top: int = 8,
     max_relative_distance: float | None = None,
+    overlap: OverlapRule | None = None,
+    fixed_spans: IntervalMap | None = None,
 ) -> MpLoopResult:
 
     template_widths = {template.template_id: template.width for template in dictionary}
+    spans: IntervalMap = {wid: list(held) for wid, held in (fixed_spans or {}).items()}
     matchings: list[Matching] = []
     energies = [residual_energy(resid)]
     reason = "no_improvement"
@@ -1182,6 +1276,8 @@ def _run_mp_loop_global(
                 pc1_screen=pc1_screen,
                 screen_top=screen_top,
                 max_relative_distance=max_relative_distance,
+                overlap=overlap,
+                spans=spans,
             )
             if step.matching is None or step.delta_energy <= 0.0:
                 reason = "no_improvement"
@@ -1193,6 +1289,11 @@ def _run_mp_loop_global(
                 break
             matchings.append(step.matching)
             energies.append(step.energy_after)
+            if overlap is not None:
+                width = template_widths[step.matching.template_id]
+                spans.setdefault(step.matching.window_id, []).append(
+                    (step.matching.t_start, step.matching.t_start + width)
+                )
             if disallow_overlap:
                 width = template_widths[step.matching.template_id]
                 occupied.setdefault(step.matching.window_id, []).append(
@@ -1218,6 +1319,18 @@ def _run_mp_loop_global(
     )
 
 
+@dataclass
+class _AtomScores:
+    """One rank-1 atom's cached shift scores on one window."""
+
+    template_id: int
+    data: np.ndarray  # (F, W)
+    width: int
+    energy: float  # ||atom||²
+    scores: np.ndarray  # score_shifts at every start
+    valid: np.ndarray  # starts not reserved and not forbidden by the overlap rule
+
+
 def _run_mp_loop_one_window(
     window_id: str,
     residual: np.ndarray,
@@ -1232,57 +1345,109 @@ def _run_mp_loop_one_window(
     gpu_id: int = 0,
     copy_residual: bool = True,
     max_relative_distance: float | None = None,
+    overlap: OverlapRule | None = None,
+    fixed_spans: list[tuple[int, int]] | None = None,
 ) -> tuple[str, np.ndarray, list[Matching], list[float], str]:
-    """Mallat loop on one window; returns picklable tuple for process pools.
+    """Mallat loop on one window of rank-1 atoms; returns a picklable tuple for process pools.
 
-    Mutates a private ``resid`` via :func:`_mp_step_one_window_inplace` and
-    converts the dictionary once up front.
+    Every atom's shift scores and every width's patch energies are computed
+    once. A placement at ``[t, t + W)`` changes only the patches that overlap
+    it, so after each step only those starts are rescored and re-checked:
+    the same placements as rescoring the whole window every step, at a
+    fraction of the cost. A step is applied only once it is accepted, so the
+    returned residual matches the returned matchings.
+
+    With ``overlap``, starts the rule forbids next to a kept placement, or
+    next to a span in ``fixed_spans`` (placements made elsewhere, such as
+    earlier outer passes), are skipped.
 
     When ``copy_residual`` is True (default), copies ``residual`` on entry so
     any caller is safe. :func:`run_mp_loop` already deep-copies the stack, so
     :func:`_run_mp_loop_per_window` passes ``copy_residual=False`` to avoid a
-    second full ``(F, T)`` memcpy per window per trial (same math).
+    second full ``(F, T)`` memcpy per window per trial.
     """
     if copy_residual:
         resid = np.array(residual, dtype=np.float64, copy=True)  # no-pipeline-cover: run_mp_loop passes copy_residual=False
     else:
         resid = np.asarray(residual, dtype=np.float64)
-    atoms = _dictionary_arrays(dictionary)
+    n_time = int(resid.shape[1])
     occupied = list(occupied_intervals or [])
-    template_widths = {t.template_id: t.width for t in dictionary}
+    held = [(int(a), int(b)) for a, b in fixed_spans or []]
+
+    patch_energy: dict[int, np.ndarray] = {}
+    atoms: list[_AtomScores] = []
+    for template_id, basis, width in _dictionary_arrays(dictionary):
+        n_shifts = n_time - width + 1
+        data = basis[0]
+        energy = float(np.sum(data * data))
+        if n_shifts <= 0 or energy <= 0.0:  # no-pipeline-cover: windows are wider than atoms, and atoms have energy
+            continue
+        if width not in patch_energy:
+            patch_energy[width] = _sliding_patch_energy(resid, width, n_shifts)
+        valid = _valid_shift_mask(n_shifts, width, occupied)
+        if overlap is not None:
+            for start, end in held:
+                overlap.forbid(valid, width, start, end)
+        scores = np.array(score_shifts(data, resid, normalize=normalize, gpu_id=gpu_id), copy=True)
+        atoms.append(_AtomScores(int(template_id), data, int(width), energy, scores, valid))
+
+    energy_now = float(np.sum(resid**2))
     matchings: list[Matching] = []
-    energies = [float(np.sum(resid**2))]
+    energies = [energy_now]
     reason = "no_improvement"
     first_delta: float | None = None
 
     while True:
-        step = _mp_step_one_window_inplace(
-            resid,
-            atoms,
-            window_id=window_id,
-            normalize=normalize,
-            occupied_intervals=occupied,
-            gpu_id=gpu_id,
-            max_relative_distance=max_relative_distance,
-        )
-        if step.matching is None or step.delta_energy <= 0.0:
+        best: tuple[PlacementScore, _AtomScores, int, float] | None = None
+        for atom in atoms:
+            picked = _select_rank1(
+                atom.scores, atom.energy, patch_energy[atom.width], atom.valid,
+                normalize=normalize, max_relative_distance=max_relative_distance,
+            )
+            if picked is None:
+                continue
+            t_start, amp, score = picked
+            if best is None or _placement_beats(score, best[0]):
+                best = (score, atom, t_start, amp)
+        if best is None or best[0][0] <= 0.0:
+            reason = "no_improvement"
+            break
+
+        _score, atom, t0, amp = best
+        t1 = t0 + atom.width
+        patch = resid[:, t0:t1]
+        deflated = patch - amp * atom.data
+        delta = float(np.sum(patch * patch)) - float(np.sum(deflated * deflated))
+        if delta <= 0.0:  # no-pipeline-cover: the projection onto a scored atom always removes energy
             reason = "no_improvement"
             break
         if first_delta is None:
-            first_delta = step.delta_energy
-        elif step.delta_energy < eps_step_fraction * first_delta:
+            first_delta = delta
+        elif delta < eps_step_fraction * first_delta:
             reason = "eps_step_fraction"
             break
-        matchings.append(step.matching)
-        energies.append(step.energy_after)
-        if disallow_overlap:
-            width = template_widths[step.matching.template_id]
-            occupied.append(
-                (step.matching.t_start, step.matching.t_start + width)
-            )
 
+        resid[:, t0:t1] = deflated
+        energy_now -= delta
+        matchings.append(Matching(template_id=atom.template_id, window_id=window_id, t_start=t0, amplitude=amp))
+        energies.append(energy_now)
         loop_stats.incr("mp.step.accepted")
-        if energy_floor is not None and step.energy_after <= energy_floor:  # no-pipeline-cover: --energy-floor is not exposed by the CLIs
+
+        # Starts whose patch overlaps [t0, t1) see the new residual.
+        for width, energy_map in patch_energy.items():
+            lo, hi = max(0, t0 - width + 1), min(len(energy_map), t1)
+            energy_map[lo:hi] = _sliding_patch_energy(resid[:, lo : hi + width - 1], width, hi - lo)
+        for other in atoms:
+            lo, hi = max(0, t0 - other.width + 1), min(len(other.scores), t1)
+            other.scores[lo:hi] = score_shifts(
+                other.data, resid[:, lo : hi + other.width - 1], normalize=normalize, gpu_id=gpu_id
+            )
+            if disallow_overlap:
+                other.valid[lo:hi] = False
+            if overlap is not None:
+                overlap.forbid(other.valid, other.width, t0, t1)
+
+        if energy_floor is not None and energy_now <= energy_floor:  # no-pipeline-cover: --energy-floor is not exposed by the CLIs
             reason = "energy_floor"
             break
         if max_repeats is not None and len(matchings) >= int(max_repeats):
@@ -1308,6 +1473,8 @@ def _per_window_job(
         gpu_id,
         copy_residual,
         max_relative_distance,
+        overlap,
+        fixed_spans,
     ) = payload
     dictionary = Dictionary()
     for template_id, basis, _width in atoms:
@@ -1327,6 +1494,8 @@ def _per_window_job(
         gpu_id=int(gpu_id),
         copy_residual=bool(copy_residual),
         max_relative_distance=max_relative_distance,
+        overlap=overlap,
+        fixed_spans=fixed_spans,
     )
 
 
@@ -1344,6 +1513,8 @@ def _run_mp_loop_per_window(
     show_progress: bool | None,
     progress_desc: str,
     max_relative_distance: float | None = None,
+    overlap: OverlapRule | None = None,
+    fixed_spans: IntervalMap | None = None,
 ) -> MpLoopResult:
 
     atoms = _dictionary_arrays(dictionary)
@@ -1367,6 +1538,8 @@ def _run_mp_loop_per_window(
             (i % n_gpus) if n_gpus else 0,
             False,  # copy_residual: run_mp_loop already copied the stack
             max_relative_distance,
+            overlap,
+            list((fixed_spans or {}).get(wid, [])),
         )
         for i, wid in enumerate(window_ids)
     ]
@@ -1464,6 +1637,8 @@ def run_mp_loop(
     pc1_screen: bool = False,
     screen_top: int = 8,
     max_relative_distance: float | None = None,
+    overlap: OverlapRule | None = None,
+    fixed_spans: IntervalMap | None = None,
 ) -> MpLoopResult:
     """Repeat Mallat steps until a stopping rule fires.
 
@@ -1490,6 +1665,11 @@ def run_mp_loop(
     ``max_relative_distance`` (``tau`` on ``[0, 1]``, ``None`` = off) rejects
     placements that leave more than ``tau`` of the patch energy unexplained;
     MP then falls through to the next-best qualifying shift.
+
+    ``overlap`` limits how placements in one window may overlap
+    (:class:`OverlapRule`); ``fixed_spans`` are spans placed elsewhere (for
+    example by earlier outer passes) that the rule also respects, without
+    reserving them outright as ``occupied_intervals`` does.
     """
     if eps_step_fraction <= 0.0:
         raise ValueError(f"eps_step_fraction must be > 0, got {eps_step_fraction}")
@@ -1529,6 +1709,8 @@ def run_mp_loop(
             pc1_screen=pc1_screen,
             screen_top=screen_top,
             max_relative_distance=max_relative_distance,
+            overlap=overlap,
+            fixed_spans=fixed_spans,
         )
     else:
         workers = resolve_mp_workers(n_workers)
@@ -1545,6 +1727,8 @@ def run_mp_loop(
             show_progress=show_progress,
             progress_desc=progress_desc,
             max_relative_distance=max_relative_distance,
+            overlap=overlap,
+            fixed_spans=fixed_spans,
         )
     elapsed = time.perf_counter() - t0
 

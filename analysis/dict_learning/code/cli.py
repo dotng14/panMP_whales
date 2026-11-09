@@ -184,6 +184,7 @@ def _outer_loop_kwargs(args: argparse.Namespace) -> dict[str, Any]:
         "mp_mode": args.mp_mode,
         "n_workers": args.workers,
         "show_progress": args.progress,
+        "overlap": mp_module.overlap_rule(args.overlap),
     }
 
 
@@ -263,6 +264,7 @@ def _write_build(
         "eps_step_fraction": args.eps_step_fraction,
         "max_relative_distance": args.max_relative_distance,
         "post_refine_max_relative_distance": args.post_refine_max_relative_distance,
+        "overlap": args.overlap,
         "stop_reason": result.stop_reason,
         "n_outer_completed": result.n_outer_completed,
         "n_atoms": result.n_atoms,
@@ -418,6 +420,7 @@ def run_matching_pursuit(args: argparse.Namespace) -> int:
                 mp_mode=args.mp_mode,
                 n_workers=args.workers,
                 max_relative_distance=args.max_relative_distance,
+                overlap=mp_module.overlap_rule(args.overlap),
             )
         except ValueError as exc:
             raise CliError(str(exc)) from exc
@@ -434,6 +437,7 @@ def run_matching_pursuit(args: argparse.Namespace) -> int:
         "window_offset": args.window_offset,
         "n_atoms": len(dictionary),
         "n_matchings": len(loop.matchings),
+        "overlap": args.overlap,
         "stop_reason": loop.stopped_reason,
         "energy_before": loop.energies[0],
         "energy_after": loop.energies[-1],
@@ -501,6 +505,11 @@ def _add_mp_args(parser: argparse.ArgumentParser) -> None:
         help="Reject placements leaving more than this energy fraction unexplained ('none' = off)",
     )
     parser.add_argument("--mp-mode", choices=("global", "per_window"), default=None)
+    parser.add_argument(
+        "--overlap", choices=mp_module.OVERLAP_MODES, default="free",
+        help="free: placements may overlap freely. limited: at most 25%% of the narrower width, "
+        "or wholly inside a placement at least twice as wide (a unit in a phrase)",
+    )
     parser.add_argument("--workers", type=int, default=None, help="MP worker processes")
     parser.add_argument("--compute", choices=("cpu", "cuda", "auto"), default=None)
     parser.add_argument("--progress", action="store_true", help="Show progress bars")

@@ -14,7 +14,7 @@ from typing import Sequence
 
 import numpy as np
 
-from .mp import IntervalMap, MpLoopResult, run_mp_loop
+from .mp import IntervalMap, MpLoopResult, OverlapRule, run_mp_loop
 from .core import Dictionary, Matching, Template, Window
 
 
@@ -317,11 +317,14 @@ def matching_pursuit(
     mp_mode: str | None = None,
     n_workers: int | None = None,
     max_relative_distance: float | None = None,
+    overlap: OverlapRule | None = None,
+    fixed_spans: IntervalMap | None = None,
 ) -> MatchingPursuitResult:
     """A: Mallat matching pursuit.
 
     ``max_relative_distance`` rejects placements that leave more than that
-    fraction of the patch energy unexplained by the atom.
+    fraction of the patch energy unexplained by the atom. ``overlap`` and
+    ``fixed_spans`` limit overlapping placements (see :func:`~.mp.run_mp_loop`).
     """
     loop = run_mp_loop(
         _as_stack(residual),
@@ -337,6 +340,8 @@ def matching_pursuit(
         mp_mode=mp_mode,
         n_workers=n_workers,
         max_relative_distance=max_relative_distance,
+        overlap=overlap,
+        fixed_spans=fixed_spans,
     )
     return MatchingPursuitResult(loop=loop, dictionary=_copy_dictionary(dictionary))
 
