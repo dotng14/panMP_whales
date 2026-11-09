@@ -60,6 +60,7 @@ Written by `randomized-build`, `pan-build` and `split`, in one layout, so
 | `atoms/template_<id>.npy` | `float64` atom: `(F, W)` (rank 1, unit norm) or `(k, F, W)` (a `k`-dimensional subspace, `--n-components k`). `F` matches the GPL windows; `W` is its width in columns. |
 | `summary.json` | `command` (`randomized-build`, `pan-build` or `split`), `gpl_dir`, `n_windows`, `window_ids`, `window_offset`, `sec_per_bin`, every option of the run, `stop_reason`, `n_atoms`, `n_matchings`, `time_coverage_fraction`, `window_coverage_fraction`, `energy_before`, `energy_after`, and `atoms`: one entry per atom with `template_id`, `width`, `n_freq`, `n_components`, `n_patches` (its placements), `source_segment_id` (where it came from) and `path`. |
 | `matchings.json` | List of placements: `template_id`, `window_id`, `t_start` (column in that window), `amplitude`, `energy`, and `coeffs` for subspace atoms. These are the placements the atom was learned from. |
+| (in `summary.json`) | Builds also record `overlap` (and its two limits when `limited`) and `init_dictionary`: the folder a second-stage build started from, or `null`. |
 | `outer_logs.jsonl` | Builds only. One JSON line per outer pass: `outer`, `pool_size`, `n_sampled`, `n_atoms_this_pass`, `n_matchings_this_pass`, `n_pruned`, `n_distance_filtered`, `n_merged`, running `n_atoms` / `n_matchings`, time and window coverage, `energy_before` / `energy_after`. |
 | `pan_seeds.jsonl` | `pan-build` only. One line per pass: the search signal's `signal_rows` / `signal_columns`, `n_pairs_tried`, `n_masked`, `n_too_few_copies`, `n_duplicates`, and `picks` (each seed's pair, distance, z-score and copies as `(window_id, t_start)`). |
 | `loop_stats.json` | With `--loop-stats`: `counts` (matching-pursuit steps, scoring calls), `series` and `timings_s` (wall time of each matching-pursuit loop). |
@@ -110,7 +111,7 @@ One SQLite file (`database/schema.sql`). The web viewer reads it; its path is
 | `learning_runs`, `learning_round_logs` | Dictionary folder, and each of its outer passes |
 | `tool_runs` | Command output folder: `randomized_build`, `pan_build`, `split` or `matching_pursuit` |
 | `templates` | Atom (the `.npy` path stays on disk) |
-| `dictionaries`, `dictionary_templates`, `dictionary_windows` | Dictionary: `seed` (a build), `matching` (a matching-pursuit run of a dictionary), `edit` (a split of its parent), `refinement`; with its atoms and windows |
+| `dictionaries`, `dictionary_templates`, `dictionary_windows` | Dictionary: `seed` (a build), `matching` (a matching-pursuit run of a dictionary), `edit` (a split of its parent), `refinement` (a build from `--init-dictionary`); with its atoms and windows |
 | `matchings`, `matching_feedback` | Placement, with its time in seconds; good/bad labels from the viewer |
 | `annotation_csvs` | `*.motif_segments.csv` file (hand-labelled song units) |
 | `action_history` | Viewer command (status, parameters) |

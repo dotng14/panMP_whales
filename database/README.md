@@ -20,7 +20,7 @@ DB file; it never touches gplrev3's catalog.
 | `learning_round_logs` | Outer pass of a build (`outer_logs.jsonl`) |
 | `tool_runs` | Registered folder: tool (`randomized_build` / `pan_build` / `split` / `matching_pursuit`), input and output dictionary |
 | `templates` | Atom (`atoms/template_NNN.npy`); `template_pk` is its global id |
-| `dictionaries` | List of atoms: `seed` (either build), `matching` (MP with a parent's atoms) or `edit` (a `split` of its parent); `refinement` reserved |
+| `dictionaries` | List of atoms: `seed` (either build), `matching` (MP with a parent's atoms), `edit` (a `split` of its parent) or `refinement` (a build started from `--init-dictionary`, child of that dictionary) |
 | `dictionary_templates` | Atom in a dictionary (position, user label) |
 | `dictionary_windows` | Window a dictionary's MP ran over |
 | `matchings` | MP placement: atom, window, `t_start`, amplitude, and `start_sec` / `end_sec` from the WAV start |

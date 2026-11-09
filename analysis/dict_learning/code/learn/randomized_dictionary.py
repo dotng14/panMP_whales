@@ -846,6 +846,7 @@ def learn_randomized_outer(
     seeder: Seeder | None = None,
     merge_corr: float | None = None,
     overlap: OverlapRule | None = None,
+    initial: tuple[Dictionary, Sequence[Matching]] | None = None,
 ) -> RandomizedOuterResult:
     """Coverage-gated residual outer loop over Create→Refine.
 
@@ -877,6 +878,13 @@ def learn_randomized_outer(
     ``overlap`` is passed to every refine, with the spans of every earlier
     pass's placements, so a later atom cannot stack on an earlier one either
     (off by default).
+
+    ``initial`` starts the loop from an existing dictionary and its
+    placements, which stay fixed: they are refitted and subtracted from the
+    input, and the passes look for new atoms in what is left. Their spans count
+    as earlier passes' for ``overlap``, and a seeder sees the atoms as already
+    accumulated. Coverage and ``energy_before`` count from the input, so they
+    include the initial atoms.
 
     Default recipe (CLI ``randomized-build``)::
 
@@ -920,6 +928,12 @@ def learn_randomized_outer(
     outer_logs: list[RandomizedOuterPassLog] = []
     energy_start: float | None = None
     stop_reason = "max_outer"
+    if initial is not None:
+        accum, accum_matchings = _reindex_dictionary(initial[0], list(initial[1]))
+        accum_matchings, _occupied = refit_and_deflate(
+            residual_stack, accum, accum_matchings, normalize=accum.max_n_components == 1
+        )
+        energy_start = residual_energy(original)
 
     def random_seeds(
         residual_now: dict[str, np.ndarray], m: int, _accumulated: Dictionary

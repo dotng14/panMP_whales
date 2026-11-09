@@ -70,6 +70,7 @@ subtracts them from the residual. It stops at the first of: coverage reached,
 | `--min-template-width` / `--max-template-width` | 10 / 20 columns | Detections outside this width are not sampled (`none` = no limit) |
 | `--post-refine-max-relative-distance` | 0.9 | After refining, drop placements leaving more than this fraction of energy unexplained (`none` = off) |
 | `--verbose` | off | One line per outer pass on stderr |
+| `--init-dictionary` | off | Start from this dictionary folder: its atoms and placements stay fixed, and the passes look for new atoms in what they leave. With `--overlap limited`, new placements keep to the rule against the fixed ones. Used for a second stage after a no-overlap build |
 | `--n-windows`, `--window-offset` | all, 0 | Use a slice of the windows |
 | `--catalog DB` | off | Also register the output in the catalog |
 

@@ -151,3 +151,27 @@ def test_merge_drops_a_moved_placement_the_rule_forbids():
             stack, dictionary, matchings, min_corr=0.9, n_components=1, overlap=overlap
         )
         assert n_merged == 1 and sorted(m.t_start for m in out) == starts
+
+
+def test_outer_loop_continues_from_a_fixed_dictionary():
+    planted = planted_stack(seed=1)
+    first = learn_randomized_outer(
+        planted.stack, None, seeder=PanSeeder(PanSeedConfig(lengths=(12,), start_freq=10.0, end_freq=130.0)),
+        m_per_outer=1, n_min=2, min_coverage=1.0, max_outer=1, refine_iters=1, n_workers=1,
+        overlap=OverlapRule(max_partial=0.0, max_nested=0.0),
+    )
+    assert len(first.dictionary) == 1
+    second = learn_randomized_outer(
+        planted.stack, None, seeder=PanSeeder(PanSeedConfig(lengths=(12, 6), start_freq=10.0, end_freq=130.0)),
+        m_per_outer=2, n_min=2, min_coverage=1.0, max_outer=2, refine_iters=1, n_workers=1,
+        overlap=RULE, initial=(first.dictionary, first.matchings),
+    )
+    # The first atom and its placements are kept as they were; new atoms follow it.
+    kept = {int(t.template_id): t for t in second.dictionary}
+    np.testing.assert_array_equal(kept[0].data, first.dictionary.templates[0].data)
+    key = lambda m: (m.window_id, m.t_start)  # noqa: E731
+    assert sorted(map(key, (m for m in second.matchings if m.template_id == 0))) == sorted(map(key, first.matchings))
+    assert len(second.dictionary) > 1 and second.energy_before == pytest.approx(first.energy_before)
+    assert second.time_coverage_fraction > first.time_coverage_fraction
+    widths = {int(t.template_id): int(t.width) for t in second.dictionary}
+    assert not _breaks_rule(second.matchings, widths)

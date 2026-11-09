@@ -23,9 +23,17 @@ Branch `richard/experiments`.
    bins, against 0.488 free (each column covered 4.5 times there) and 0.348
    for the old 3-pass run. randomized-build covers 0.352 ± 0.033.
 
-Recommended: `pan-build --overlap limited --n-min 3`. To remove every
-overlap except units inside phrases, add `--max-partial-overlap 0`. That gives
-0.429 coverage (section 4).
+Recommended: two stages (section 6).
+
+1. `pan-build --overlap limited --max-partial-overlap 0 --max-nested-ratio 0 --n-min 3`:
+   no overlap, so every atom is learned on whole calls.
+2. `pan-build --overlap limited --max-partial-overlap 0.1 --n-min 3 --init-dictionary STAGE1`:
+   the stage-1 atoms stay fixed, and smaller units nest inside them or touch
+   them.
+
+This covers 0.512 of the time bins with 0.689 of the energy explained: more
+than free overlap's 0.488, which covered each column 4.5 times. 148 of its 171
+overlapping pairs are units inside phrases.
 
 
 ## Setup
@@ -258,6 +266,54 @@ Registered in pmp as matching-pursuit dictionaries of #7: 9 (no overlap,
 ungated), 10 (partial 0.25, ungated) and 11 (partial 0.25, gated). Backup
 first: `catalog.sqlite.bak.20261109T124419_before_mp_on_7`.
 
+## 6. Two stages: no overlap, then nesting and a little partial overlap
+
+Section 5 kept #7's atoms and only placed them again. Here the build
+continues from #7 with `--init-dictionary`:
+
+- #7's 10 atoms and 87 placements stay fixed, and are subtracted from the
+  spectrogram.
+- New passes seed and refine atoms in what is left. Their placements may nest
+  in, or touch, the fixed ones under a looser rule.
+- The pan seeder's duplicate check compares seeds against #7's atoms too.
+
+Same 10 windows, `--n-min 3 --m-per-outer 5 --max-outer 10 --min-coverage 0.5`;
+the wall time includes #7's own 90 s build.
+
+| Run | Wall | Coverage | Energy explained | Atoms | Placements | Columns > 1 | Overlapping pairs | Nested | Partial | Stop |
+|---|---|---|---|---|---|---|---|---|---|---|
+| #7 (stage 1, no overlap) | 90 s | 0.309 | 0.485 | 10 | 87 | 0% | 0 | 0 | 0 | no survivors |
+| #7 → no overlap | +5 s | 0.309 | 0.485 | 10 | 87 | 0% | 0 | 0 | 0 | no survivors, pass 1 |
+| #7 → partial 0, nested 0.5 | +12 s | 0.309 | 0.485 | 10 | 87 | 0% | 0 | 0 | 0 | no survivors, pass 1 |
+| **#7 → partial 0.10, nested 0.5** | **+111 s** | **0.512** | **0.689** | **36** | 288 | 35% | 171 | 148 | 23 | **coverage**, pass 10 |
+| #7 → partial 0.25, nested 0.5 | +174 s | 0.481 | 0.654 | 25 | 224 | 30% | 144 | 78 | 66 | no survivors, pass 8 |
+| one stage, partial 0, nested 0.5 | 139 s | 0.429 | 0.640 | 23 | 247 | 32% | 101 | 101 | 0 | no survivors |
+| one stage, partial 0.10, nested 0.5 | 105 s | 0.338 | 0.578 | 16 | 143 | 15% | 46 | 40 | 6 | no survivors |
+| one stage, partial 0.25, nested 0.5 | 48 s | 0.469 | 0.577 | 18 | 206 | 32% | 132 | 81 | 51 | no survivors |
+| free overlap, `n_min` 10 | 78 s | 0.488 | 0.657 | 27 | 801 | 79% | 4,797 | 1,431 | 3,366 | 10 passes |
+
+- **The two stages beat any single stage.** At the same limits (partial
+  0.10, nested 0.5), one stage reaches 0.338 and two reach 0.512. Learning the
+  long calls first with no overlap gives clean atoms that cover whole calls;
+  the later passes only fill in.
+- **The new atoms are mostly short:**
+  - 13 at 1 s (8 columns), 9 at 2 s, 1 at 3 s and 3 at 4 s;
+  - 148 of the 171 overlapping pairs are a unit inside a longer placement;
+  - the other 23 share at most 10% of the narrower width.
+- **Nesting alone adds nothing.** With partial 0 the first new pass kept no
+  atom, so the build stopped there. A unit that sits a column or two past the
+  edge of a fixed call needs a little partial overlap.
+- **Partial 0.25 finds fewer atoms than 0.10** (25 against 36) and stops
+  early. The looser rule lets the first new atoms take more placements each,
+  which leaves fewer copies for later seeds to reach `--n-min`.
+- **Caveat:** a build stops at its first pass that keeps no atom. The two runs
+  that added nothing stopped after one pass of 5 seeds, so more seeds per pass
+  might still find something there.
+
+Registered in pmp as dictionaries 12 (partial 0.10) and 13 (partial 0.25),
+both `refinement`s of #7. Backup first:
+`catalog.sqlite.bak.20261109T125952_before_stage2`.
+
 ## How this differs from Yoav's limited-overlap learner
 
 `analysis/dictionary_learning_limited_overlap/` (commit `dd8e21f`) also
@@ -296,7 +352,8 @@ Registered in the production pmp catalog
 (`production-pmp-webserver/backend/data/catalog.sqlite`). Backups were taken
 before each batch: `catalog.sqlite.bak.20261109T113751_before_overlap_exp`
 (before 2–5), `catalog.sqlite.bak.20261109T120729_before_less_overlap`
-(before 6–8) and `catalog.sqlite.bak.20261109T124419_before_mp_on_7` (before 9–11).
+(before 6–8), `catalog.sqlite.bak.20261109T124419_before_mp_on_7` (before 9–11) and
+`catalog.sqlite.bak.20261109T125952_before_stage2` (before 12–13).
 
 | Dictionary id | Label | Folder |
 |---|---|---|
@@ -310,6 +367,8 @@ before each batch: `catalog.sqlite.bak.20261109T113751_before_overlap_exp`
 | 9 | overlap experiment: MP of #7, no overlap, ungated | `~rivo/whale_runs/014845_overlap/mp_on_7/none` |
 | 10 | overlap experiment: MP of #7, partial overlap 0.25, ungated | `.../mp_on_7/p25` |
 | 11 | overlap experiment: MP of #7, partial overlap 0.25, gate 0.9 | `.../mp_on_7/p25_gated` |
+| 12 | overlap experiment: #7 then stage 2, partial 0.10 + units in phrases, n_min 3 | `~rivo/whale_runs/014845_overlap/stage2/p10_n50` |
+| 13 | overlap experiment: #7 then stage 2, partial 0.25 + units in phrases, n_min 3 | `.../stage2/p25_n50` |
 
 ## Reproducing
 
@@ -320,6 +379,8 @@ R=~/whale_runs/014845_overlap/grid bash analysis/dict_learning/experiments/overl
 R=~/whale_runs/014845_overlap/less bash analysis/dict_learning/experiments/overlap_and_speed/run_less.sh
 # The re-placements of section 5 (under a minute)
 bash analysis/dict_learning/experiments/overlap_and_speed/run_mp_on_7.sh
+# The two-stage builds of section 6 (about 5 min)
+bash analysis/dict_learning/experiments/overlap_and_speed/run_stage2.sh
 # The measures, for any build folders (FOLDER.log holds the /usr/bin/time -v output)
 python analysis/dict_learning/experiments/overlap_and_speed/compare.py \
   pan_limited_n3=$R/pan_limited_n3 rand_limited_n3_s0=$R/rand_limited_n3_s0

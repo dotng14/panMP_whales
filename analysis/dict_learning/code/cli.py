@@ -211,10 +211,26 @@ def _outer_loop_kwargs(args: argparse.Namespace) -> dict[str, Any]:
     }
 
 
+def _initial(args: argparse.Namespace, windows: list[Window]) -> tuple[Dictionary, list[Matching]] | None:
+    """The ``--init-dictionary`` atoms and placements, checked against the windows."""
+    if args.init_dictionary is None:
+        return None
+    dictionary = load_dictionary(args.init_dictionary)
+    matchings = _read_matchings(args.init_dictionary)
+    if any(t.n_freq != windows[0].n_freq for t in dictionary):
+        raise CliError(f"the atoms of {args.init_dictionary} and the windows have different frequency rows")
+    ids = {w.window_id for w in windows}
+    outside = sorted({m.window_id for m in matchings} - ids)
+    if outside:
+        raise CliError(f"{len(outside)} placement windows of {args.init_dictionary} are not among the windows used, e.g. {outside[0]}")
+    return dictionary, matchings
+
+
 def _run_build(args: argparse.Namespace, windows: list[Window], partition, **extra) -> rd.RandomizedOuterResult:
     """Run the outer loop with ``--verbose`` lines, ``--loop-stats`` and ``--compute``."""
     _probability("--max-relative-distance", args.max_relative_distance)
     _probability("--post-refine-max-relative-distance", args.post_refine_max_relative_distance)
+    initial = _initial(args, windows)
     _apply_compute(args.compute)
     args.out.mkdir(parents=True, exist_ok=True)
 
@@ -229,7 +245,7 @@ def _run_build(args: argparse.Namespace, windows: list[Window], partition, **ext
     def build() -> rd.RandomizedOuterResult:
         try:
             return rd.learn_randomized_outer(
-                windows, partition, **_outer_loop_kwargs(args), progress_callback=on_log, **extra
+                windows, partition, **_outer_loop_kwargs(args), progress_callback=on_log, initial=initial, **extra
             )
         except ValueError as exc:
             raise CliError(str(exc)) from exc
@@ -288,6 +304,7 @@ def _write_build(
         "max_relative_distance": args.max_relative_distance,
         "post_refine_max_relative_distance": args.post_refine_max_relative_distance,
         **_overlap_params(args),
+        "init_dictionary": None if args.init_dictionary is None else str(args.init_dictionary.resolve()),
         "stop_reason": result.stop_reason,
         "n_outer_completed": result.n_outer_completed,
         "n_atoms": result.n_atoms,
@@ -659,6 +676,11 @@ def _add_outer_loop_args(parser: argparse.ArgumentParser) -> None:
         default=rd.DEFAULT_OUTER_POST_REFINE_TAU,
     )
     parser.add_argument("--verbose", action="store_true", help="Print one line per outer pass")
+    parser.add_argument(
+        "--init-dictionary", type=Path, default=None,
+        help="Start from this dictionary folder: its atoms and placements stay fixed and the passes "
+        "look for new atoms in what they leave",
+    )
 
 
 def _add_mp_args(parser: argparse.ArgumentParser) -> None:

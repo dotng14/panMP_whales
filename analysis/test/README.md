@@ -304,7 +304,12 @@ end as one atom with `merge_corr=0.9` and as two without.
 
 `integration/test_overlap_cli.py` runs both builds with `free` and `limited`.
 With `--max-partial-overlap 0 --max-nested-ratio 0`, no two placements share
-a column. Limits outside [0, 1) exit 2.
+a column. Limits outside [0, 1) exit 2. Both builds continue a no-overlap
+pan-build with `--init-dictionary`. Its atoms must come through unchanged,
+and the catalog must record a `refinement` of it. Placements in windows the
+run doesn't load, or atoms with other frequency rows, exit 2. The unit test
+`test_outer_loop_continues_from_a_fixed_dictionary` checks the same in the
+library: fixed placements, new ids, and the rule across both stages.
 It then runs matching-pursuit in `per_window` and `global` mode on each
 dictionary, and checks that no `limited` run has a pair the rule forbids. The
 pan-build case uses `--lengths-s 0.06,0.12`, so 6-column atoms can nest in

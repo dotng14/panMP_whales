@@ -43,13 +43,18 @@ MOTIF_CSV_COLUMNS = frozenset(
     {"motif", "song", "theme", "phrase_id", "phrase_count", "start_unix", "end_unix"}
 )
 # The build knobs kept on the dictionary row (the rest stay in summary.json).
-# A randomized build leaves `seeder` out; a pan build leaves out `epsilon`,
-# the width limits and `seed`.
+# A randomized build has no `seeder`; a pan build has no `epsilon`, width
+# limits or `seed` (kept as null).
 _BUILD_PARAMS = (
     "m_per_outer", "min_coverage", "max_outer", "refine_iters", "n_components", "n_min",
     "epsilon", "min_template_width", "max_template_width", "eps_step_fraction",
     "max_relative_distance", "post_refine_max_relative_distance", "seed", "seeder",
-    "n_windows", "window_offset",
+    "n_windows", "window_offset", "overlap", "max_partial_overlap", "max_nested_ratio", "init_dictionary",
+)
+# Kept only when the build's summary.json has them (pan-build's seeder, the
+# overlap settings, --init-dictionary).
+_OPTIONAL_BUILD_PARAMS = frozenset(
+    {"seeder", "overlap", "max_partial_overlap", "max_nested_ratio", "init_dictionary"}
 )
 # A split folder's knobs and result (the rest stay in summary.json).
 _SPLIT_PARAMS = (
@@ -926,12 +931,15 @@ def _register_build(
     segmentation_id = _index_recorded_gpl_dir(conn, summary, out)
     window_ids = _window_ids(summary, matchings)
     created_at = _mtime_iso(out / "summary.json")
+    # A split edits its parent; a build started from --init-dictionary refines it.
     if summary["command"] == "split":
         params = {k: summary.get(k) for k in _SPLIT_PARAMS}
         parent_id: int | None = _parent_dictionary_id(conn, summary, out)
+        source = "edit"
     else:
-        params = {k: summary.get(k) for k in _BUILD_PARAMS if k != "seeder" or "seeder" in summary}
-        parent_id = None
+        params = {k: summary.get(k) for k in _BUILD_PARAMS if k in summary or k not in _OPTIONAL_BUILD_PARAMS}
+        parent_id = _parent_dictionary_id(conn, summary, out, key="init_dictionary") if summary.get("init_dictionary") else None
+        source = "seed" if parent_id is None else "refinement"
 
     conn.execute(
         """
@@ -1039,7 +1047,7 @@ def _register_build(
         conn,
         out_dir=str(out),
         name=out.name,
-        source="seed" if parent_id is None else "edit",
+        source=source,
         parent_dictionary_id=parent_id,
         learning_run_id=run_id,
         segmentation_id=segmentation_id,
@@ -1062,9 +1070,11 @@ def _register_build(
     return {"kind": summary["command"], "dictionary_id": dictionary_id, "run_id": run_id, "tool_run_id": tool_run_id}
 
 
-def _parent_dictionary_id(conn: sqlite3.Connection, summary: dict[str, Any], out: Path) -> int:
-    """The catalog id of the dictionary folder ``summary`` names, registering it first if needed."""
-    dictionary_dir = _resolve_recorded_path(summary.get("dictionary"), out)
+def _parent_dictionary_id(
+    conn: sqlite3.Connection, summary: dict[str, Any], out: Path, key: str = "dictionary"
+) -> int:
+    """The catalog id of the dictionary folder ``summary[key]`` names, registering it first if needed."""
+    dictionary_dir = _resolve_recorded_path(summary.get(key), out)
     if dictionary_dir is None:
         raise CatalogError(f"{out / 'summary.json'} does not name its dictionary folder")
     parent = _one(conn, "SELECT dictionary_id FROM dictionaries WHERE out_dir = ?", (str(dictionary_dir),))

@@ -189,6 +189,13 @@ placements share a column. The builds apply the rule to every refine pass,
 to the spans of earlier outer passes, and to the placements a merge moves.
 Measurements: [`experiments/overlap_and_speed/`](experiments/overlap_and_speed/README.md).
 
+**Two stages** (`--init-dictionary DIR`, both builds). The loop starts from
+a dictionary folder: its atoms and placements stay fixed, are refitted and
+subtracted, and the passes look for new atoms in what is left. Their spans
+count as earlier passes' for `--overlap`, and the pan seeder treats the
+atoms as already taken. On 014845 the best dictionary so far comes from a
+no-overlap build continued with `--max-partial-overlap 0.1`.
+
 ### Shared MP knobs
 
 | Flag | Env fallback | Default | Meaning |
