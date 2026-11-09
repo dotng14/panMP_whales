@@ -184,7 +184,8 @@ same atom one column over, so with `free` the same call is placed again and
 again (on 014845, each covered column was covered 3–4 times). With `limited`,
 two placements in a window may overlap by at most a quarter of the narrower
 width, or one may lie wholly inside the other when it is at most half its
-width (a unit in a phrase). The builds apply the rule to every refine pass,
+width (a unit in a phrase). Both limits are options; with both at 0 no two
+placements share a column. The builds apply the rule to every refine pass,
 to the spans of earlier outer passes, and to the placements a merge moves.
 Measurements: [`experiments/overlap_and_speed/`](experiments/overlap_and_speed/README.md).
 
@@ -194,6 +195,8 @@ Measurements: [`experiments/overlap_and_speed/`](experiments/overlap_and_speed/R
 |---|---|---|---|
 | `--mp-mode` | `DICT_LEARNING_MP_MODE` | `per_window` | `per_window`: independent Mallat per window (parallel; atoms never straddle windows). `global`: one best atom per step over the whole stack. |
 | `--overlap` | | `free` | `free` or `limited` (see above). Recorded in `summary.json`. |
+| `--max-partial-overlap` | | 0.25 | `limited` only: the fraction of the narrower width two placements may share. |
+| `--max-nested-ratio` | | 0.5 | `limited` only: a placement may lie inside another at most this fraction of its width; 0 allows no nesting. |
 | `--workers` | `DICT_LEARNING_MP_WORKERS` | all CPUs | Worker processes for `per_window`. `1` runs serially. |
 | `--compute` | `DICT_LEARNING_MP_COMPUTE`, then `GPL_COMPUTE` | `auto` | `score_shifts` backend. `auto`: CuPy when it works and the problem is large (`DICT_LEARNING_MP_GPU_MIN_OPS`, default 2e6), else numba, else NumPy. `cuda` forces the GPU when usable. `cpu` never uses it. |
 | `--eps-step-fraction` | | 0.01 | Stop when a step removes less than this fraction of the first step's energy. |

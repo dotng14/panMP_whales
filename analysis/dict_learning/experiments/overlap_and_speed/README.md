@@ -23,7 +23,10 @@ Branch `richard/experiments`.
    bins, against 0.488 free (each column covered 4.5 times there) and 0.348
    for the old 3-pass run. randomized-build covers 0.352 ± 0.033.
 
-Recommended: `pan-build --overlap limited --n-min 3`.
+Recommended: `pan-build --overlap limited --n-min 3`. To remove every
+overlap except units inside phrases, add `--max-partial-overlap 0`. That gives
+0.429 coverage (section 4).
+
 
 ## Setup
 
@@ -179,6 +182,66 @@ seconds:
   atom. A higher `--m-per-outer` or all 30 windows (more copies of each
   call) are the next things to try.
 
+## 4. Less overlap
+
+The two limits are options: `--max-partial-overlap` (default 0.25) and
+`--max-nested-ratio` (default 0.5; 0 forbids nesting). All runs here use
+`--n-min 3` and stop as in section 3. Two extra measures:
+
+- **Columns > 1:** the share of covered columns that more than one placement
+  covers.
+- **Overlapping pairs:** pairs of placements that share at least one column.
+
+| Setting | Build | Wall | Coverage | Energy explained | Atoms | Placements | Cover per column | Columns > 1 | Overlapping pairs | Nested pairs |
+|---|---|---|---|---|---|---|---|---|---|---|
+| free (`n_min` 10) | pan | 78 s | 0.488 | 0.657 | 27 | 801 | 4.51 | 79% | 4,797 | 1,431 |
+| | randomized | 30 s | 0.395 ± 0.001 | 0.594 | 34 | 1,214 | 6.83 | 81% | 13,314 | 2,376 |
+| partial 0.25, nested 0.5 | pan | 48 s | 0.469 | 0.577 | 18 | 206 | 1.33 | 32% | 132 | 81 |
+| | randomized | 6 s | 0.352 ± 0.033 | 0.463 | 12 | 152 | 1.04 | 3.9% | 37 | 0 |
+| partial 0.10, nested 0.5 | pan | 105 s | 0.338 | 0.578 | 16 | 143 | 1.16 | 15% | 46 | 40 |
+| | randomized | 9 s | 0.372 ± 0.020 | 0.453 | 17 | 153 | 1.01 | 1.0% | 23 | 0 |
+| **partial 0, nested 0.5** | **pan** | 139 s | **0.429** | 0.640 | 23 | 247 | 1.32 | 32% | 101 | **101** |
+| | randomized | 7 s | 0.300 ± 0.060 | 0.426 | 12 | 118 | 1.00 | 0% | 0 | 0 |
+| partial 0, nested 0 (none) | pan | 90 s | 0.309 | 0.485 | 10 | 87 | 1.00 | 0% | 0 | 0 |
+| | randomized | 6 s | 0.300 ± 0.060 | 0.426 | 12 | 118 | 1.00 | 0% | 0 | 0 |
+
+- **What overlap is left at partial 0.25:** in pan-build, mostly nesting
+  (81 of 132 pairs). The rest are calls that touch by up to a quarter of a
+  width. At partial 0, every one of pan-build's 101 overlapping pairs is a
+  unit inside a phrase, the case you said is fine. randomized-build has
+  nothing left to remove, because it never nests.
+- **Coverage:** banning all overlap costs pan-build a third of its coverage
+  (0.429 to 0.309). Without nesting it can't keep a 1 s unit inside a 4 s
+  phrase, so one of the two atoms loses its placements and gets pruned.
+- **Partial 0.10 is not on the way from 0.25 to 0:** pan-build drops to 0.338.
+  One less-good seed in pass 2 changes every later pass; on one recording
+  that is within the noise. randomized-build's spread across seeds
+  (± 0.02–0.06) shows how large the noise is.
+
+Registered in pmp as dictionaries 6 (pan-build, partial 0, nested 0.5),
+7 (pan-build, no overlap at all) and 8 (randomized-build seed 0, no overlap
+at all).
+
+## How this differs from Yoav's limited-overlap learner
+
+`analysis/dictionary_learning_limited_overlap/` (commit `dd8e21f`) also
+limits overlap, but by a different rule and on a different signal:
+
+| | `--overlap limited` here | Yoav's learner |
+|---|---|---|
+| What a placement does | Subtracts its fit from the residual (matching pursuit) | Leaves the spectrogram unchanged; adds 1 to a cover count on each of its columns |
+| The limit | Geometric, between each pair of placements: shared columns at most `max_partial` of the narrower width, or nested inside one at least 1 ÷ `max_nested` times as wide | At most `k` placements on any one column (default `k = 1`) |
+| Same atom, same call | Never stacked (equal widths never nest) | With `k ≥ 2`, the same peak can be placed up to `k` times, because nothing is subtracted (its plan says so) |
+| Unit inside a phrase | Allowed (`max_nested` 0.5) | Only with `k ≥ 2`, and then any two placements may stack too |
+| `k = 1` / partial 0 + nested 0 | — | The same constraint: no column is shared |
+| Seeds | Random detection crops or the pan matrix profile | Random detection crops of width `w_min`–`w_max` (10–40) |
+| Lives in | The shared MP, so every build and `matching-pursuit` can use it | Its own learner and CLI |
+
+So they agree only at the extreme of no shared columns. At that setting,
+mine still subtracts each placement before choosing the next; Yoav's scores
+every placement on the untouched spectrogram. His `k` can't express "a unit
+inside a phrase, but no stacking"; the pairwise rule can.
+
 ## Not done, and caveats
 
 - **One recording and 10 windows.** randomized-build has 3 seeds; pan-build is
@@ -194,8 +257,10 @@ seconds:
 ## Viewing the runs
 
 Registered in the production pmp catalog
-(`production-pmp-webserver/backend/data/catalog.sqlite`; backup
-`catalog.sqlite.bak.20261109T113751_before_overlap_exp`):
+(`production-pmp-webserver/backend/data/catalog.sqlite`). Backups were taken
+before each batch: `catalog.sqlite.bak.20261109T113751_before_overlap_exp`
+(before 2–5) and `catalog.sqlite.bak.20261109T120729_before_less_overlap`
+(before 6–8).
 
 | Dictionary id | Label | Folder |
 |---|---|---|
@@ -203,12 +268,17 @@ Registered in the production pmp catalog
 | 3 | overlap experiment: pan-build, limited overlap, n_min 3 | `.../grid/pan_limited_n3` |
 | 4 | overlap experiment: randomized-build seed 0, free overlap | `.../grid/rand_free_n10_s0` |
 | 5 | overlap experiment: randomized-build seed 0, limited overlap, n_min 3 | `.../grid/rand_limited_n3_s0` |
+| 6 | overlap experiment: pan-build, no partial overlap, units inside phrases allowed, n_min 3 | `~rivo/whale_runs/014845_overlap/less/pan_p00_n50` |
+| 7 | overlap experiment: pan-build, no overlap at all, n_min 3 | `.../less/pan_p00_n00` |
+| 8 | overlap experiment: randomized-build seed 0, no overlap at all, n_min 3 | `.../less/rand_p00_n00_s0` |
 
 ## Reproducing
 
 ```bash
 # The grid of section 3 (about 10 min on 2 cores); folders and logs in $R
 R=~/whale_runs/014845_overlap/grid bash analysis/dict_learning/experiments/overlap_and_speed/run_grid.sh
+# The tighter limits of section 4 (about 10 min on 2 cores)
+R=~/whale_runs/014845_overlap/less bash analysis/dict_learning/experiments/overlap_and_speed/run_less.sh
 # The measures, for any build folders (FOLDER.log holds the /usr/bin/time -v output)
 python analysis/dict_learning/experiments/overlap_and_speed/compare.py \
   pan_limited_n3=$R/pan_limited_n3 rand_limited_n3_s0=$R/rand_limited_n3_s0

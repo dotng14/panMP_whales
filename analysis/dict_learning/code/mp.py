@@ -562,7 +562,8 @@ class OverlapRule:
     width, so neighbouring calls can touch. One may lie wholly inside the
     other when it is at most ``max_nested`` of the outer width: a unit inside
     a phrase. Two placements of one atom have the same width, so they never
-    nest and overlap by at most ``max_partial``.
+    nest and overlap by at most ``max_partial``. With both at 0 no two
+    placements share a column.
     """
 
     max_partial: float = DEFAULT_MAX_PARTIAL_OVERLAP
@@ -570,9 +571,9 @@ class OverlapRule:
 
     def __post_init__(self) -> None:
         if not 0.0 <= self.max_partial < 1.0:
-            raise ValueError(f"max_partial must be in [0, 1), got {self.max_partial}")  # no-pipeline-cover: the CLIs build the default rule
+            raise ValueError(f"max partial overlap must be in [0, 1), got {self.max_partial}")
         if not 0.0 <= self.max_nested < 1.0:
-            raise ValueError(f"max_nested must be in [0, 1), got {self.max_nested}")  # no-pipeline-cover: the CLIs build the default rule
+            raise ValueError(f"max nested ratio must be in [0, 1), got {self.max_nested}")
 
     def allows(self, start_a: int, end_a: int, start_b: int, end_b: int) -> bool:
         """True when spans ``[start_a, end_a)`` and ``[start_b, end_b)`` may both be kept."""
@@ -605,13 +606,17 @@ class OverlapRule:
         valid[lo:hi] &= ~block
 
 
-def overlap_rule(mode: str | None) -> OverlapRule | None:
+def overlap_rule(
+    mode: str | None,
+    max_partial: float = DEFAULT_MAX_PARTIAL_OVERLAP,
+    max_nested: float = DEFAULT_MAX_NESTED_RATIO,
+) -> OverlapRule | None:
     """The rule for an ``--overlap`` mode: ``None`` for ``free``."""
     if mode in (None, "free"):
         return None
     if mode != "limited":
         raise ValueError(f"overlap must be one of {OVERLAP_MODES}, got {mode!r}")  # no-pipeline-cover: argparse limits --overlap
-    return OverlapRule()
+    return OverlapRule(max_partial=float(max_partial), max_nested=float(max_nested))
 
 
 @dataclass

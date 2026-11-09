@@ -302,6 +302,8 @@ end as one atom with `merge_corr=0.9` and as two without.
 - The merge drops a moved twin placement that the rule forbids.
 
 `integration/test_overlap_cli.py` runs both builds with `free` and `limited`.
+With `--max-partial-overlap 0 --max-nested-ratio 0`, no two placements share
+a column. Limits outside [0, 1) exit 2.
 It then runs matching-pursuit in `per_window` and `global` mode on each
 dictionary, and checks that no `limited` run has a pair the rule forbids. The
 pan-build case uses `--lengths-s 0.06,0.12`, so 6-column atoms can nest in
@@ -357,7 +359,7 @@ To review them:
 grep -rn "no-pipeline-cover:\|no-pipeline-branch:\|gpu-only" analysis database --include=*.py
 ```
 
-At the time of writing there are 177 `no-pipeline-cover` and 15
+At the time of writing there are 176 `no-pipeline-cover` and 15
 `no-pipeline-branch` markers, in `dict_learning/code/{core,io,mp,tools}.py`,
 `learn/{randomized_dictionary,pan_seeds}.py`, `dict_learning/__init__.py`,
 `matrix_profile/{__init__,signals}.py`, `bands.py` and `database/catalog.py`.

@@ -44,6 +44,7 @@ def test_builds_and_pursuit_keep_to_the_rule(command, gpl_dir, tmp_path):
         assert main(argv) == 0
         summary = read_json(out / "summary.json")
         assert summary["overlap"] == mode
+        assert ("max_partial_overlap" in summary) == (mode == "limited")
         widths = {int(a["template_id"]): int(a["width"]) for a in summary["atoms"]}
         runs[mode] = _overlaps(out, widths)
         for mp_mode in ("per_window", "global"):
@@ -57,3 +58,30 @@ def test_builds_and_pursuit_keep_to_the_rule(command, gpl_dir, tmp_path):
     # show a case), and they still overlap where the rule allows.
     assert runs["limited"][1] == 0
     assert runs["limited"][0] <= runs["free"][0]
+
+
+def test_no_overlap_at_all(gpl_dir, tmp_path):
+    # Two lengths, so nesting would be possible if it were allowed.
+    out = tmp_path / "pan_none"
+    argv = ["pan-build", "--gpl-dir", str(gpl_dir), "--out", str(out), *BUILDS["pan-build"], *COMMON,
+            "--overlap", "limited", "--max-partial-overlap", "0", "--max-nested-ratio", "0"]
+    assert main(argv) == 0
+    summary = read_json(out / "summary.json")
+    assert (summary["max_partial_overlap"], summary["max_nested_ratio"]) == (0.0, 0.0)
+    widths = {int(a["template_id"]): int(a["width"]) for a in summary["atoms"]}
+    assert summary["n_matchings"] > 0 and _overlaps(out, widths)[0] == 0
+
+
+@pytest.mark.parametrize(
+    "extra, message",
+    [
+        (["--max-partial-overlap", "1"], "max partial overlap must be in [0, 1)"),
+        (["--max-nested-ratio", "-0.1"], "max nested ratio must be in [0, 1)"),
+    ],
+)
+def test_bad_limits_exit_2(gpl_dir, tmp_path, capsys, extra, message):
+    argv = ["pan-build", "--gpl-dir", str(gpl_dir), "--out", str(tmp_path / "pan"), *BUILDS["pan-build"], *COMMON,
+            "--overlap", "limited", *extra]
+    assert main(argv) == 2
+    assert message in capsys.readouterr().err
+    assert pursue(gpl_dir, tmp_path / "pan", tmp_path / "mp", "--overlap", "limited", *extra) == 2

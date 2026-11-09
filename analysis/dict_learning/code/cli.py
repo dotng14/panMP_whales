@@ -169,6 +169,24 @@ def _probability(name: str, value: float | None) -> float | None:
 # ── randomized-build and pan-build ───────────────────────────────────────────
 
 
+def _overlap(args: argparse.Namespace) -> mp_module.OverlapRule | None:
+    try:
+        return mp_module.overlap_rule(args.overlap, args.max_partial_overlap, args.max_nested_ratio)
+    except ValueError as exc:
+        raise CliError(str(exc)) from exc
+
+
+def _overlap_params(args: argparse.Namespace) -> dict[str, Any]:
+    """``overlap`` and, when limited, its two limits, for ``summary.json``."""
+    if args.overlap != "limited":
+        return {"overlap": args.overlap}
+    return {
+        "overlap": args.overlap,
+        "max_partial_overlap": args.max_partial_overlap,
+        "max_nested_ratio": args.max_nested_ratio,
+    }
+
+
 def _outer_loop_kwargs(args: argparse.Namespace) -> dict[str, Any]:
     """Options both builds pass to ``learn_randomized_outer``."""
     return {
@@ -184,7 +202,7 @@ def _outer_loop_kwargs(args: argparse.Namespace) -> dict[str, Any]:
         "mp_mode": args.mp_mode,
         "n_workers": args.workers,
         "show_progress": args.progress,
-        "overlap": mp_module.overlap_rule(args.overlap),
+        "overlap": _overlap(args),
     }
 
 
@@ -264,7 +282,7 @@ def _write_build(
         "eps_step_fraction": args.eps_step_fraction,
         "max_relative_distance": args.max_relative_distance,
         "post_refine_max_relative_distance": args.post_refine_max_relative_distance,
-        "overlap": args.overlap,
+        **_overlap_params(args),
         "stop_reason": result.stop_reason,
         "n_outer_completed": result.n_outer_completed,
         "n_atoms": result.n_atoms,
@@ -420,7 +438,7 @@ def run_matching_pursuit(args: argparse.Namespace) -> int:
                 mp_mode=args.mp_mode,
                 n_workers=args.workers,
                 max_relative_distance=args.max_relative_distance,
-                overlap=mp_module.overlap_rule(args.overlap),
+                overlap=_overlap(args),
             )
         except ValueError as exc:
             raise CliError(str(exc)) from exc
@@ -437,7 +455,7 @@ def run_matching_pursuit(args: argparse.Namespace) -> int:
         "window_offset": args.window_offset,
         "n_atoms": len(dictionary),
         "n_matchings": len(loop.matchings),
-        "overlap": args.overlap,
+        **_overlap_params(args),
         "stop_reason": loop.stopped_reason,
         "energy_before": loop.energies[0],
         "energy_after": loop.energies[-1],
@@ -507,8 +525,16 @@ def _add_mp_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--mp-mode", choices=("global", "per_window"), default=None)
     parser.add_argument(
         "--overlap", choices=mp_module.OVERLAP_MODES, default="free",
-        help="free: placements may overlap freely. limited: at most 25%% of the narrower width, "
-        "or wholly inside a placement at least twice as wide (a unit in a phrase)",
+        help="free: placements may overlap freely. limited: see --max-partial-overlap and --max-nested-ratio",
+    )
+    parser.add_argument(
+        "--max-partial-overlap", type=float, default=mp_module.DEFAULT_MAX_PARTIAL_OVERLAP,
+        help="With --overlap limited: two placements may share at most this fraction of the narrower width",
+    )
+    parser.add_argument(
+        "--max-nested-ratio", type=float, default=mp_module.DEFAULT_MAX_NESTED_RATIO,
+        help="With --overlap limited: a placement may sit wholly inside another at most this fraction of its "
+        "width (a unit in a phrase); 0 allows no nesting",
     )
     parser.add_argument("--workers", type=int, default=None, help="MP worker processes")
     parser.add_argument("--compute", choices=("cpu", "cuda", "auto"), default=None)

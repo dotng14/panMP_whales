@@ -66,6 +66,17 @@ def test_forbid_agrees_with_allows_at_every_start():
 def test_overlap_modes():
     assert overlap_rule("free") is None and overlap_rule(None) is None
     assert overlap_rule("limited") == OverlapRule()
+    assert overlap_rule("limited", 0.0, 0.0) == OverlapRule(max_partial=0.0, max_nested=0.0)
+
+
+def test_no_overlap_rule_allows_only_disjoint_spans():
+    none = OverlapRule(max_partial=0.0, max_nested=0.0)
+    assert none.allows(0, 12, 12, 24)
+    assert not none.allows(0, 12, 11, 23)
+    assert not none.allows(4, 10, 0, 24)  # not even a unit in a phrase
+    valid = np.ones(50, dtype=bool)
+    none.forbid(valid, 6, 20, 32)
+    np.testing.assert_array_equal(np.flatnonzero(~valid), np.arange(15, 32))
 
 
 def _one_call_window():

@@ -469,7 +469,7 @@ def merge_similar_atoms(
     # their original order: the sequential refit after the merge depends on it.
     order = list(range(len(matchings)))
     if overlap is not None:
-        order.sort(key=lambda i: int(matchings[i].template_id) in folded)
+        order.sort(key=lambda i: int(matchings[i].template_id) in folded)  # no-pipeline-cover: needs a merge under the overlap rule; unit-tested
     for index in order:
         matching = matchings[index]
         template_id, shift = folded.get(int(matching.template_id), (int(matching.template_id), 0))
