@@ -476,8 +476,13 @@ took 16 s here against 90 s for #7; the cause was not investigated.
   per-window loop: 155 s for 17 passes, about 9 s a pass, against 3–5 s
   for rank 1.
 
-Not registered in pmp: the write to the production catalog was not
-permitted this time. Folders: `~rivo/whale_runs/014845_overlap/pc5/`
+Registered in pmp (backup first: `catalog.sqlite.bak.20261109T173238_before_pc5`):
+
+- 21: 5 components, stage 1, target 0.7;
+- 22: rank 1, stage 1, target 0.7 (the same placements as #7), the parent of 23;
+- 23: rank 1, → partial 0.05, target 0.7.
+
+Folders: `~rivo/whale_runs/014845_overlap/pc5/`
 (`s1_m5`, `s1_m10`, `s1_m5_p05`, `s1_m5_p10`, `s1_m10_p05`, `s1_m10_p10`,
 `t70_k5_s1`, `t70_k5_p05`, `t70_k5_p10`, `t70_k1_s1`, `t70_k1_p05`,
 `t70_k1_p10`). Script: `run_pc5.sh` (round 2 with `ROUND2=1`).
@@ -523,7 +528,9 @@ before each batch: `catalog.sqlite.bak.20261109T113751_before_overlap_exp`
 (before 6–8), `catalog.sqlite.bak.20261109T124419_before_mp_on_7` (before 9–11) and
 `catalog.sqlite.bak.20261109T125952_before_stage2` (before 12–13) and
 `catalog.sqlite.bak.20261109T130926_before_stage2_p05` (before 14) and
-`catalog.sqlite.bak.20261109T134523_before_full_file` (before 15–19).
+`catalog.sqlite.bak.20261109T134523_before_full_file` (before 15–19) and
+`catalog.sqlite.bak.20261109T173238_before_pc5` (before 21–23). #20 is Yoav's
+`m8x32 refine2`, not part of these experiments.
 
 | Dictionary id | Label | Folder |
 |---|---|---|
@@ -545,6 +552,9 @@ before each batch: `catalog.sqlite.bak.20261109T113751_before_overlap_exp`
 | 17 | overlap experiment: whole file, stage 2 partial 0.10 + units in phrases, n_min 3 | `.../full/s2_n3_p10` |
 | 18 | (no label: stage 1, n_min 5, registered as 19's parent) | `.../full/s1_n5` |
 | 19 | overlap experiment: whole file, stage 2 partial 0.05 + units in phrases, n_min 5 | `.../full/s2_n5_p05` |
+| 21 | overlap experiment: 5 components, stage 1 no overlap, target 0.7 | `~rivo/whale_runs/014845_overlap/pc5/t70_k5_s1` |
+| 22 | overlap experiment: rank 1, stage 1 no overlap, target 0.7 (same result as #7) | `.../pc5/t70_k1_s1` |
+| 23 | overlap experiment: rank 1, stage 2 partial 0.05 + units in phrases, target 0.7 | `.../pc5/t70_k1_p05` |
 
 ## Reproducing
 
