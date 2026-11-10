@@ -466,10 +466,14 @@ def _residual_summary(
             "n_placements": int(counts[motif_id]),
             "n_columns": len(columns[motif_id]),
             "residual": float(np.mean(own_values[motif_id])) if own_values[motif_id] else float("nan"),
+            "residual_median": (
+                float(np.median(own_values[motif_id])) if own_values[motif_id] else float("nan")
+            ),
             "runner_residual": (
                 float(np.mean(runner_values[motif_id])) if runner_values[motif_id] else float("nan")
             ),
             "gap": mean_gap,
+            "gap_median": float(np.median(gaps[motif_id])) if gaps[motif_id] else float("nan"),
             "runner_id": votes.most_common(1)[0][0] if votes else None,
         }
     column_counts = [len(covered) for covered in columns.values()]

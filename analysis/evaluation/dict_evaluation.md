@@ -12,9 +12,9 @@ Add `evaluate_dictionary` in `analysis/evaluation/core.py`. The input is a wave 
 
 `‖patch − reconstruction‖² / ‖patch‖²`.
 
-A motif's residual is the average of this fraction over its own placements.
+A motif's residual is the average of this fraction over its own placements. The median of those fractions is reported beside the average.
 
-**Residual gap.** The runner-up at a placement is the other motif with the smallest residual there. The gap is the runner-up residual minus the assigned motif's residual. A motif's gap is the average of those differences over its placements. The dictionary's gap is the smallest of the motif gaps. The usual runner-up of a motif is the other motif that is the runner-up on the most of its placements.
+**Residual gap.** The runner-up at a placement is the other motif with the smallest residual there. The gap is the runner-up residual minus the assigned motif's residual. A motif's gap is the average of those differences over its placements, and the median of the same differences is reported beside it. The dictionary's gap is the smallest of the motif averages. The usual runner-up of a motif is the other motif that is the runner-up on the most of its placements.
 
 **Coverage ratio.** A motif's coverage is the number of distinct time columns its placements cover. The coverage ratio is the largest of these counts divided by the smallest. The ratio is undefined when a motif covers no columns.
 
@@ -34,4 +34,4 @@ Parameters of `evaluate_dictionary`:
 2. Wave file. Default: `/home/yfreund/whale_processing/LeiData/SOCAL_H_76_230427_014845.x.wav`, the third LeiData recording. Dictionary 276 was learned on the whitened spectrogram of this file.
 3. `k`, the standard deviation of the smoothing Gaussian, in spectrogram columns. For a motif of width `W`, the default is `k = W // 2`, so each motif has its own standard deviation.
 
-The function returns coverage, over-coverage, the maximum cover count, the coverage ratio, the placement ratio, the minimum gap, and, for each motif, the mean residual, the mean runner-up residual, the mean gap, the usual runner-up, the column coverage, the placement count, the component count, and the specificity distribution with its 90th percentile. Report coverage, over-coverage, and those 90th percentiles for dictionary 276 on the default wave file in `analysis/dict_learning/notebooks/dict276_014845_convolution.ipynb`.
+The function returns coverage, over-coverage, the maximum cover count, the coverage ratio, the placement ratio, the minimum gap, and, for each motif, the mean and median residual, the mean runner-up residual, the mean and median gap, the usual runner-up, the column coverage, the placement count, the component count, and the specificity distribution with its 90th percentile. Report coverage, over-coverage, and those 90th percentiles for dictionary 276 on the default wave file in `analysis/dict_learning/notebooks/dict276_014845_convolution.ipynb`.
