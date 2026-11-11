@@ -173,6 +173,42 @@ def test_csvs(conn, tmp_path):
     assert catalog.list_annotation_csvs(conn) == []
 
 
+def test_register_limited_overlap(conn, tmp_path):
+    gpl = write_gpl_folder(tmp_path / "gpl", stem=STEM, n_windows=1).root
+    window = sorted(p.stem for p in (gpl / "spectrogram_npy").glob(f"spwhiten_{STEM}_w000001*e*[0-9].json"))[0]
+    out = tmp_path / "ten"
+    (out / "atoms").mkdir(parents=True)
+    basis = np.ones((5, 12, 8))
+    mean = np.full((12, 8), 2.0)
+    np.save(out / "atoms" / "template_000.npy", basis)
+    np.save(out / "atoms" / "mean_000.npy", mean)
+    (out / "summary.json").write_text(json.dumps({
+        "command": "balanced-ten",
+        "gpl_dir": str(gpl),
+        "coverage": 0.25,
+        "stop_reason": "accepted",
+        "motifs": [{
+            "motif_id": 0, "width": 8, "n_freq": 12, "n_components": 5, "n_placements": 1,
+            "seed_window_id": window, "path": "atoms/template_000.npy",
+        }],
+    }))
+    (out / "matchings.json").write_text(json.dumps([
+        {"motif_id": 0, "window_id": window, "t_start": 4, "amplitude": 1.5, "coeffs": [1.0, 0.2]},
+    ]))
+    result = catalog.register_run_dir(conn, out, label="ten balanced motifs")
+    row = catalog.get_dictionary(conn, result["dictionary_id"])
+    assert (row["source"], row["wav_stem"], row["n_templates"], row["n_matchings"], row["label"]) == (
+        "seed", STEM, 1, 1, "ten balanced motifs")
+    assert row["time_coverage_fraction"] == pytest.approx(0.25)
+    template = catalog.list_dictionary_templates(conn, result["dictionary_id"])[0]
+    assert (template["template_id"], template["n_components"], template["width"]) == (0, 5, 8)
+    matching = catalog.list_matchings(conn, result["dictionary_id"])[0]
+    assert matching["template_id"] == 0 and matching["start_sec"] is not None
+    again = catalog.register_run_dir(conn, out)
+    assert again["dictionary_id"] == result["dictionary_id"]
+    assert catalog.get_dictionary(conn, result["dictionary_id"])["label"] == "ten balanced motifs"
+
+
 def test_reindex_counts(tmp_path):
     gpl = write_gpl_folder(tmp_path / "gpl", stem=STEM, n_windows=1).root
     make_build(tmp_path / "runs", gpl)

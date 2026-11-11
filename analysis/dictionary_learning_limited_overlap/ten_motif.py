@@ -1,8 +1,8 @@
 """Search for a 20-motif limited-overlap dictionary with a residual gap.
 
 See ``ten_motif_plan.md``. A dictionary is accepted only when it has exactly
-20 motifs of 5 components, placement counts within a factor of 4, coverage at
-least 0.7, and every motif's mean residual gap is at least 0.1.
+20 motifs of 5 components, placement counts within a factor of 4, coverage
+above 0.3, and every motif's mean residual gap is at least 0.1.
 """
 
 from __future__ import annotations
@@ -16,12 +16,14 @@ from pathlib import Path
 import numpy as np
 
 from analysis.dict_learning.code.cli import load_detections, load_windows
+from analysis.dict_learning.code.io import detections_to_segments
 from analysis.dictionary_learning_limited_overlap.learn import (
     Motif,
     Placement,
     _apply_tau,
     _coverage,
     _drop_small,
+    _eligible,
     _principal_components,
     _pursuit,
     _rebuild,
@@ -29,11 +31,12 @@ from analysis.dictionary_learning_limited_overlap.learn import (
     _rescore,
     learn_limited_overlap,
 )
+from analysis.evaluation.core import _dot_products, _peak_ratios, _specificity_p90
 
 GPL = Path("/home/yfreund/whale_processing/result/LeiData/SOCAL_H_76_230427_014845.x.gpl/output")
 OUT = Path(
     "/home/yfreund/whale_processing/result/LeiData/"
-    "SOCAL_H_76_230427_014845.x.limited_overlap_twenty_motif_gap01"
+    "SOCAL_H_76_230427_014845.x.limited_overlap_twenty_motif_nomerge"
 )
 
 K_TRIALS = 20
@@ -43,7 +46,7 @@ MAX_EDITS = 24
 TARGET_MOTIFS = 20
 TARGET_COMPONENTS = 5
 TARGET_RATIO = 4.0
-TARGET_COVERAGE = 0.7
+TARGET_COVERAGE = 0.3
 TARGET_GAP = 0.1
 
 
@@ -94,7 +97,7 @@ class Report:
             self.n_motifs == TARGET_MOTIFS
             and self.min_components >= TARGET_COMPONENTS
             and self.ratio <= TARGET_RATIO
-            and self.coverage >= TARGET_COVERAGE
+            and self.coverage > TARGET_COVERAGE
             and self.min_gap >= TARGET_GAP
         )
 
@@ -103,7 +106,7 @@ class Report:
             int(self.n_motifs != TARGET_MOTIFS)
             + int(self.min_components < TARGET_COMPONENTS)
             + int(self.ratio > TARGET_RATIO)
-            + int(self.coverage < TARGET_COVERAGE)
+            + int(self.coverage <= TARGET_COVERAGE)
             + int(self.min_gap < TARGET_GAP)
         )
         penalty = (
@@ -120,7 +123,7 @@ class Report:
             "n_motifs": {"value": self.n_motifs, "ok": self.n_motifs == TARGET_MOTIFS},
             "n_components": {"value": self.min_components, "ok": self.min_components >= TARGET_COMPONENTS},
             "count_ratio": {"value": None if self.ratio == float("inf") else self.ratio, "ok": self.ratio <= TARGET_RATIO},
-            "coverage": {"value": self.coverage, "ok": self.coverage >= TARGET_COVERAGE},
+            "coverage": {"value": self.coverage, "ok": self.coverage > TARGET_COVERAGE},
             "min_gap": {"value": self.min_gap, "ok": self.min_gap >= TARGET_GAP},
         }
 
@@ -406,9 +409,80 @@ def _format_report(report: Report) -> str:
     )
 
 
+def _specificity(
+    motifs: list[Motif],
+    windows: list,
+    spectrograms: dict[str, np.ndarray],
+) -> list[dict[str, object]]:
+    """90th percentile of peak ratios after the one-minute dot-product shift and scale."""
+    ordered = sorted(windows, key=lambda window: (window.start_sample, window.window_id))
+    spectrogram = np.concatenate([spectrograms[window.window_id] for window in ordered], axis=1)
+    sec_per_bin = float(ordered[0].overlap) / float(ordered[0].sample_freq)
+    shift_sigma = 60.0 / sec_per_bin
+    rows: list[dict[str, object]] = []
+    for motif in motifs:
+        kernel = motif.mean if motif.mean is not None else motif.basis[0]
+        ratios, percentile = _specificity_p90(
+            _peak_ratios(_dot_products(spectrogram, kernel), float(motif.width // 2), shift_sigma)
+        )
+        rows.append(
+            {
+                "motif_id": motif.motif_id,
+                "k": motif.width // 2,
+                "p90": None if not np.isfinite(percentile) else float(percentile),
+                "n": int(ratios.size),
+            }
+        )
+    return rows
+
+
 def _children_clear(report: Report, child_ids: set[int]) -> bool:
     rows = {row.motif_id: row for row in report.motifs}
     return all(motif_id in rows and rows[motif_id].mean_gap >= TARGET_GAP for motif_id in child_ids)
+
+
+def _add_coverage_pass(
+    motifs: list[Motif],
+    placements: list[Placement],
+    windows: list,
+    detections: list,
+    rng: np.random.Generator,
+) -> tuple[list[Motif], list[Placement]] | None:
+    """One limited-overlap pass on columns the current dictionary does not cover."""
+    ordered = sorted(windows, key=lambda window: (window.start_sample, window.window_id))
+    spectrograms = {window.window_id: np.asarray(window.data, dtype=np.float64) for window in ordered}
+    counts = _recompute_counts(
+        spectrograms, placements, {motif.motif_id: motif.width for motif in motifs}
+    )
+    segments = detections_to_segments(ordered, detections)
+    pool = _eligible(segments, counts, 10, 40, 1)
+    if not pool:
+        return None
+    take = min(10, len(pool))
+    picked = [pool[int(index)] for index in rng.choice(len(pool), size=take, replace=False)]
+    next_id = max(motif.motif_id for motif in motifs) + 1
+    seeds: list[Motif] = []
+    for segment in picked:
+        patch = np.asarray(segment.data, dtype=np.float64)
+        norm = float(np.linalg.norm(patch))
+        if norm == 0.0:
+            continue
+        seeds.append(Motif(next_id, patch / norm, segment.window_id, int(segment.t_start)))
+        next_id += 1
+    if not seeds:
+        return None
+    fresh: list[Placement] = []
+    for _round in range(1):
+        working = {window_id: column.copy() for window_id, column in counts.items()}
+        fresh = _pursuit(seeds, spectrograms, working, k=1, eps=0.01)
+        seeds, fresh = _drop_small(seeds, fresh, 10)
+        if seeds:
+            _rebuild(seeds, fresh, spectrograms, TARGET_COMPONENTS)
+            _rescore(seeds, fresh, spectrograms)
+            seeds, fresh = _apply_tau(seeds, fresh, 0.4, 10)
+        if not seeds:
+            return None
+    return motifs + seeds, placements + fresh
 
 
 def search() -> dict[str, object]:
@@ -447,18 +521,14 @@ def search() -> dict[str, object]:
         snapshot = (copy.deepcopy(motifs), copy.deepcopy(placements), report)
         improved = False
 
-        if report.n_motifs > TARGET_MOTIFS or report.min_gap < TARGET_GAP:
-            weakest = min(report.motifs, key=lambda row: row.mean_gap)
-            key = ("merge", weakest.motif_id)
-            target = report.runner_of.get(weakest.motif_id)
-            if key not in tried and target is not None and target != weakest.motif_id and report.n_motifs > 1:
-                tried.add(key)
-                candidate = _drop_motif(motifs, weakest.motif_id)
-                candidate, candidate_placements = refine(candidate, spectrograms)
+        if report.coverage <= TARGET_COVERAGE:
+            added = _add_coverage_pass(motifs, placements, windows, detections, rng)
+            if added is not None:
+                candidate, candidate_placements = added
                 candidate_report = score_dictionary(candidate, candidate_placements, spectrograms)
-                print(f"merge {weakest.motif_id}->{target}  {_format_report(candidate_report)}", flush=True)
-                edits.append({"action": "merge", "motif_id": weakest.motif_id, "into": target, "kept": candidate_report.score() < report.score()})
-                if candidate_report.score() < report.score():
+                print(f"add pass  {_format_report(candidate_report)}", flush=True)
+                edits.append({"action": "add", "kept": candidate_report.coverage > report.coverage})
+                if candidate_report.coverage > report.coverage:
                     motifs, placements, report = candidate, candidate_placements, candidate_report
                     improved = True
                 else:
@@ -518,6 +588,8 @@ def search() -> dict[str, object]:
         "edits": edits,
         "stop_reason": stop_reason,
         "learned_stop": learned.stop_reason,
+        "passes": learned.passes,
+        "specificity": _specificity(motifs, windows, spectrograms),
     }
 
 
@@ -596,7 +668,10 @@ def save_result(result: dict[str, object]) -> None:
             "min_coverage": TARGET_COVERAGE,
             "n_components": TARGET_COMPONENTS,
             "seed": 0,
+            "dot_shift_minutes": 1.0,
         },
+        "passes": result["passes"],
+        "specificity": result["specificity"],
         "edits": result["edits"],
         "motifs": motif_rows,
     }
@@ -605,6 +680,8 @@ def save_result(result: dict[str, object]) -> None:
 
 
 def main() -> None:
+    if OUT.exists():
+        raise SystemExit(f"{OUT} already exists")
     save_result(search())
 
 

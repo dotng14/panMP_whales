@@ -6,7 +6,7 @@ dictionary ← empty
 
 for pass = 1 .. max_outer:
     eligible ← detection crops with width in [w_min, w_max]
-               and every column covered at most k − 1 times
+               and every column still uncovered
     if eligible is empty: stop
     seeds ← m crops drawn from eligible, each divided by its norm
 
@@ -32,9 +32,9 @@ pursuit(motifs):
         keep best and add 1 to each column it covers
 ```
 
-Learn rank-1 motifs on GPL whitened spectrogram windows. The loop is the same shape as a randomized dictionary build: sample seed motifs from detection crops, place them, rebuild each motif from the patches that selected it, and repeat on what is still available. The difference is placement. A placement does not subtract from the spectrogram. It semi-blocks: it increments a cover count, and a time column may be covered by at most `k` placements.
+Learn rank-1 motifs on GPL whitened spectrogram windows. The loop is the same shape as a randomized dictionary build: sample seed motifs from detection crops, place them, rebuild each motif from the patches that selected it, and repeat on what is still available. The difference is placement. A placement does not subtract from the spectrogram. It blocks the columns it covers: a time column is covered by at most one placement, so its cover count is 0 or 1.
 
-The spectrogram is never changed. The same peak therefore stays the best match until its columns reach count `k`, so the same patch can be stacked up to `k` times.
+The spectrogram is never changed. The same peak therefore stays the best match until one of its columns is covered.
 
 ### Data
 
@@ -45,7 +45,6 @@ The spectrogram is never changed. The same peak therefore stays the best match u
 
 ### Knobs
 
-- `k`, a positive integer. Maximum number of placements that may cover one time column. Default 1.
 - `eps`. Stop a pursuit when the best explained energy falls below `eps` times the explained energy of that pursuit's first placement. Default 0.01.
 - `w_min`, `w_max`. Inclusive width range of a detection crop that may become a seed. Default 10 and 40.
 - `m`. Number of seed motifs sampled per pass. Default 10.
@@ -57,7 +56,7 @@ The spectrogram is never changed. The same peak therefore stays the best match u
 
 ### Admission and score
 
-Start `t` is admissible when `[t, t+W)` lies inside the window and every column there has count at most `k - 1`.
+Start `t` is admissible when `[t, t+W)` lies inside the window and every column there has count 0.
 
 On the original spectrogram, let `X` be the patch at that start and `A` the unit-norm motif. `α = ⟨X, A⟩`. The explained fraction is `α² / ‖X‖²`. The unexplained fraction is `r = 1 - α² / ‖X‖²`. Among admissible starts, take the one with the largest explained fraction.
 
@@ -89,4 +88,4 @@ Up to `max_outer` passes. Each pass creates, refines, and merges the survivors i
 
 ### Output
 
-Motifs, kept placements, per-column cover counts, and coverage. Every cover count is at most `k`.
+Motifs, kept placements, per-column cover counts, and coverage. Every cover count is 0 or 1.
