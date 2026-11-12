@@ -3,11 +3,16 @@
 A CSV is picked from the catalog (``load_song_structure_csv``), or, when the
 viewer asks without one, looked up by WAV stem under
 ``backend/data/song_structure/<wav_stem>.motif_segments.csv``.
+
+CSV times are unix seconds; the WAV's start comes from a date-time in its stem,
+or, for a stem without one (``wav23``), from ``wav_starts.json`` in the same
+folder, which maps stem to ``YYMMDD_HHMMSS``.
 """
 
 from __future__ import annotations
 
 import csv
+import json
 import re
 from datetime import datetime, timezone
 from pathlib import Path
@@ -16,14 +21,24 @@ from typing import Any
 from app.config import BACKEND_DIR
 
 SONG_STRUCTURE_DIR = BACKEND_DIR / "data" / "song_structure"
+WAV_STARTS_FILE = SONG_STRUCTURE_DIR / "wav_starts.json"
 
 # SOCAL stems often use YYMMDD_HHMMSS; some libraries use YYYYMMDD_HHMMSS.
 _WAV_DATETIME_RE = re.compile(r"(?<!\d)(\d{6,8})_(\d{6})(?!\d)")
 
 
 def wav_start_unix(stem: str) -> float | None:
-    """Parse recording-start unix seconds from a WAV stem, if present."""
-    for m in _WAV_DATETIME_RE.finditer(stem):
+    """Recording-start unix seconds from the stem's date-time, else from ``wav_starts.json``."""
+    start = _parse_datetime(stem)
+    if start is None and WAV_STARTS_FILE.is_file():
+        given = json.loads(WAV_STARTS_FILE.read_text()).get(stem)
+        if isinstance(given, str):
+            start = _parse_datetime(given)
+    return start
+
+
+def _parse_datetime(text: str) -> float | None:
+    for m in _WAV_DATETIME_RE.finditer(text):
         date_s, time_s = m.group(1), m.group(2)
         try:
             if len(date_s) == 8:
