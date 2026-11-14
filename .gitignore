@@ -56,3 +56,10 @@ analysis/matrix_profile/replicate_report/cache_193500/run_mfcc_60s.m
 analysis/matrix_profile/replicate_report/cache_193500/run_mfcc_full.m
 analysis/matrix_profile/replicate_report/panmp_193500_length_scan_6_10.pdf
 analysis/matrix_profile/replicate_report/write_experiment_193500_report.py
+
+# Built binaries and build output of the C tools (make rebuilds them)
+analysis/dict_HMM/c/build/
+analysis/dict_HMM/find_songs/c/build/
+analysis/dict_HMM/find_songs/c/song_detector
+analysis/dict_HMM/find_songs/c/song_detector_double
+pre_processing/c/energy_filter
