@@ -1,0 +1,11 @@
+/mnt/sda/SiteH/SOCAL26H/misc/error/SOCAL26H_DL14_080714_040230.df20.x.wav	song_detector: read failed: /mnt/sda/SiteH/SOCAL26H/misc/error/SOCAL26H_DL14_080714_040230.df20.x.wav
+song_detector: read failed: /mnt/sda/SiteH/SOCAL26H/misc/error/SOCAL26H_DL14_080714_040230.df20.x.wav
+
+/mnt/sda/SiteH/SOCAL38H/SOCAL38H_disk01_df20/SOCAL38H_DL17_100416_050615.df20.x.wav	song_detector: read failed: /mnt/sda/SiteH/SOCAL38H/SOCAL38H_disk01_df20/SOCAL38H_DL17_100416_050615.df20.x.wav
+song_detector: read failed: /mnt/sda/SiteH/SOCAL38H/SOCAL38H_disk01_df20/SOCAL38H_DL17_100416_050615.df20.x.wav
+
+/mnt/sda/SiteH/SOCAL26H/misc/error/SOCAL26H_DL14_080714_040230.df20.x.wav	song_detector: upload windows: driver shutting down
+/mnt/sda/SiteH/SOCAL38H/SOCAL38H_disk01_df20/SOCAL38H_DL17_100416_050615.df20.x.wav	song_detector: upload windows: driver shutting down
+/mnt/sda/SiteH/SOCAL38H/SOCAL38H_disk01_df20/SOCAL38H_DL17_100416_050615.df20.x.wav	song_detector: upload windows: driver shutting down
+/mnt/sda/SiteH/SOCAL38H/SOCAL38H_disk01_df20/SOCAL38H_DL17_100416_050615.df20.x.wav	song_detector: read failed: /mnt/sda/SiteH/SOCAL38H/SOCAL38H_disk01_df20/SOCAL38H_DL17_100416_050615.df20.x.wav
+/mnt/sda/SiteH/SOCAL_H_71/SOCAL_H_71_disk01_df20/SOCAL_H_71_210526_213500_df20.x.wav	song_detector: cufft forward plan: status 5

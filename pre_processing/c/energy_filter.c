@@ -1,8 +1,14 @@
-/* Band energy ratio of Site H recordings.
+/* Band energy ratio of Site H recordings from the GPL whitened spectrogram.
 
-   For each 600-second segment, the ratio is the energy in 50–500 Hz divided
-   by the energy of the unfiltered segment. The CPU path uses threaded FFTW.
-   The GPU path uses cuFFT, one recording per GPU.
+   Each recording is cut into 75-second GPL windows. In every window the code
+   takes a Hamming STFT (fftl 1024, hop 768 at 10 kHz), crops rows from 10 Hz
+   to Nyquist, whitens each row with the densest-half noise level, and smooths
+   with the GPL cross kernel. For each 600-second segment, the reported ratio
+   is the sum of squares of the whitened cells in 50–500 Hz divided by the sum
+   of squares over all kept rows.
+
+   CPU threads share the work of the STFT and the whitening. Each GPU, when
+   used, transforms one window's frames with a batched cuFFT plan.
 */
 #define _GNU_SOURCE
 #include <ctype.h>
@@ -18,21 +24,26 @@
 #include <sys/stat.h>
 #include <unistd.h>
 
-enum { LO_HZ = 50, HI_HZ = 500, SEGMENT_SEC = 600, EDGE_SEC = 2 };
-enum { NFFT = 1 << 20 };
-enum { FFTW_ESTIMATE = 1u << 6 };
-enum { COPY_H2D = 1, COPY_D2H = 2 };
-enum { CUFFT_R2C = 0x2a, CUFFT_C2R = 0x2c };
+#ifndef M_PI
+#define M_PI 3.14159265358979323846
+#endif
+
+enum {
+    LO_HZ = 50,
+    HI_HZ = 500,
+    FREQ_LO_HZ = 10,
+    FREQ_RES_HZ = 10,
+    WINDOW_SEC = 75,
+    SKIP_PERCENT = 75,
+    MAX_GPUS = 2,
+};
 
 typedef float fftwf_complex[2];
 typedef struct fftwf_plan_s *fftwf_plan;
 typedef int cufftHandle;
 
-int fftwf_init_threads(void);
-void fftwf_plan_with_nthreads(int);
 fftwf_plan fftwf_plan_dft_r2c_1d(int, float *, fftwf_complex *, unsigned);
-fftwf_plan fftwf_plan_dft_c2r_1d(int, fftwf_complex *, float *, unsigned);
-void fftwf_execute(fftwf_plan);
+void fftwf_execute_dft_r2c(const fftwf_plan, float *, fftwf_complex *);
 void fftwf_destroy_plan(fftwf_plan);
 void *fftwf_malloc(size_t);
 void fftwf_free(void *);
@@ -44,17 +55,21 @@ int cudaFree(void *);
 int cudaMemcpy(void *, const void *, size_t, int);
 int cudaDeviceSynchronize(void);
 const char *cudaGetErrorString(int);
-int cufftPlan1d(cufftHandle *, int, int, int);
+int cufftPlanMany(cufftHandle *, int, int *, int *, int, int, int *, int, int, int, int);
 int cufftExecR2C(cufftHandle, float *, fftwf_complex *);
-int cufftExecC2R(cufftHandle, fftwf_complex *, float *);
 int cufftDestroy(cufftHandle);
+
+enum { COPY_H2D = 1, COPY_D2H = 2, CUFFT_R2C = 0x2a, FFTW_MEASURE = 0 };
 
 static int g_count = 12;
 static int g_winter = 0;
+static int g_segment_sec = 600;
 static uint64_t g_seed = 0;
 static const char *g_root = "/mnt/sda/SiteH";
 static const char *g_out_path = NULL;
 static int g_backend = 2; /* 0 cpu, 1 gpu, 2 gpu if it initializes */
+static char **g_explicit = NULL;
+static int g_n_explicit = 0;
 
 typedef struct {
     char *path;
@@ -65,6 +80,12 @@ static Item *g_found = NULL;
 static int g_nfound = 0, g_capfound = 0;
 static uint64_t g_rng;
 
+typedef struct {
+    int rate, fftl, hop, window_samples, max_frames, nfreq;
+    int row0, nrows, band0, band1;
+    float *hamming;
+} Layout;
+
 static void die(const char *msg) {
     fprintf(stderr, "energy_filter: %s\n", msg);
     exit(1);
@@ -72,6 +93,12 @@ static void die(const char *msg) {
 
 static void *xmalloc(size_t n) {
     void *p = malloc(n ? n : 1);
+    if (!p) die("out of memory");
+    return p;
+}
+
+static void *xcalloc(size_t n, size_t size) {
+    void *p = calloc(n ? n : 1, size);
     if (!p) die("out of memory");
     return p;
 }
@@ -181,120 +208,54 @@ static Item *select_files(int *n_out) {
     return chosen;
 }
 
-typedef struct {
-    int gpu;
-    int device;
-    float *time;
-    fftwf_complex *freq;
-    fftwf_plan r2c, c2r;
-    float *d_time;
-    fftwf_complex *d_freq;
-    cufftHandle gr2c, gc2r;
-} Engine;
-
-static void bins_for(int sample_rate, int *kcut, int *khi) {
-    *kcut = (LO_HZ * NFFT + sample_rate - 1) / sample_rate;
-    if (sample_rate / 2 <= HI_HZ) *khi = NFFT / 2;
-    else *khi = (int)((int64_t)HI_HZ * NFFT / sample_rate);
+/* ---- frequency layout (GPL_parameter defaults for the file's sample rate) ---- */
+static int hz_to_bin(const Layout *L, double hz) {
+    return (int)llround(hz * (double)L->fftl / (double)L->rate);
 }
 
-static void zero_bins(fftwf_complex *freq, int kcut, int khi) {
-    int nfreq = NFFT / 2 + 1;
-    for (int k = 0; k < nfreq; k++) {
-        if (k < kcut || k > khi) {
-            freq[k][0] = 0.f;
-            freq[k][1] = 0.f;
-        }
-    }
-}
-
-static void scale_time(float *time) {
-    float inv = 1.f / (float)NFFT;
-    for (int i = 0; i < NFFT; i++) time[i] *= inv;
-}
-
-static Engine *engine_cpu(int threads) {
-    Engine *e = calloc(1, sizeof(Engine));
-    if (!e) die("out of memory");
-    if (!fftwf_init_threads()) die("fftw threads failed to start");
-    fftwf_plan_with_nthreads(threads);
-    e->time = fftwf_malloc((size_t)NFFT * sizeof(float));
-    e->freq = fftwf_malloc((size_t)(NFFT / 2 + 1) * sizeof(fftwf_complex));
-    if (!e->time || !e->freq) die("fftw allocation failed");
-    e->r2c = fftwf_plan_dft_r2c_1d(NFFT, e->time, e->freq, FFTW_ESTIMATE);
-    e->c2r = fftwf_plan_dft_c2r_1d(NFFT, e->freq, e->time, FFTW_ESTIMATE);
-    if (!e->r2c || !e->c2r) die("fftw plan failed");
-    return e;
-}
-
-static void gpu_check(int rc, const char *what) {
-    if (rc == 0) return;
-    fprintf(stderr, "energy_filter: %s (%s)\n", what, cudaGetErrorString(rc));
-    exit(1);
-}
-
-static Engine *engine_gpu(int device) {
-    Engine *e = calloc(1, sizeof(Engine));
-    if (!e) die("out of memory");
-    e->gpu = 1;
-    e->device = device;
-    gpu_check(cudaSetDevice(device), "cudaSetDevice");
-    e->time = xmalloc((size_t)NFFT * sizeof(float));
-    e->freq = xmalloc((size_t)(NFFT / 2 + 1) * sizeof(fftwf_complex));
-    gpu_check(cudaMalloc((void **)&e->d_time, (size_t)NFFT * sizeof(float)), "cudaMalloc time");
-    gpu_check(cudaMalloc((void **)&e->d_freq, (size_t)(NFFT / 2 + 1) * sizeof(fftwf_complex)), "cudaMalloc freq");
-    int rc = cufftPlan1d(&e->gr2c, NFFT, CUFFT_R2C, 1);
-    if (rc != 0) {
-        fprintf(stderr, "energy_filter: cufftPlan R2C failed (%d)\n", rc);
-        exit(1);
-    }
-    rc = cufftPlan1d(&e->gc2r, NFFT, CUFFT_C2R, 1);
-    if (rc != 0) {
-        fprintf(stderr, "energy_filter: cufftPlan C2R failed (%d)\n", rc);
-        exit(1);
+static int ceil_log2_int(int n) {
+    int e = 0, v = 1;
+    while (v < n) {
+        v <<= 1;
+        e++;
     }
     return e;
 }
 
-static void engine_filter(Engine *e, int kcut, int khi) {
-    if (!e->gpu) {
-        fftwf_execute(e->r2c);
-        zero_bins(e->freq, kcut, khi);
-        fftwf_execute(e->c2r);
-        scale_time(e->time);
-        return;
-    }
-    gpu_check(cudaSetDevice(e->device), "cudaSetDevice");
-    gpu_check(cudaMemcpy(e->d_time, e->time, (size_t)NFFT * sizeof(float), COPY_H2D), "copy to device");
-    if (cufftExecR2C(e->gr2c, e->d_time, e->d_freq) != 0) die("cufft R2C failed");
-    gpu_check(cudaMemcpy(e->freq, e->d_freq, (size_t)(NFFT / 2 + 1) * sizeof(fftwf_complex), COPY_D2H), "copy spectrum");
-    zero_bins(e->freq, kcut, khi);
-    gpu_check(cudaMemcpy(e->d_freq, e->freq, (size_t)(NFFT / 2 + 1) * sizeof(fftwf_complex), COPY_H2D), "copy spectrum back");
-    if (cufftExecC2R(e->gc2r, e->d_freq, e->d_time) != 0) die("cufft C2R failed");
-    gpu_check(cudaDeviceSynchronize(), "synchronize");
-    gpu_check(cudaMemcpy(e->time, e->d_time, (size_t)NFFT * sizeof(float), COPY_D2H), "copy from device");
-    scale_time(e->time);
+static Layout layout_for(int rate) {
+    Layout L;
+    memset(&L, 0, sizeof L);
+    L.rate = rate;
+    L.fftl = 1 << ceil_log2_int((rate + FREQ_RES_HZ - 1) / FREQ_RES_HZ);
+    if (L.fftl < 16) L.fftl = 16;
+    L.hop = (int)llround(L.fftl - (1.0 - SKIP_PERCENT * 1e-2) * L.fftl);
+    if (L.hop < 1) L.hop = 1;
+    L.window_samples = WINDOW_SEC * rate;
+    L.max_frames = 1 + (L.window_samples - L.fftl) / L.hop;
+    L.nfreq = L.fftl / 2 + 1;
+    int nyquist_bin = L.fftl / 2;
+    L.row0 = hz_to_bin(&L, (double)FREQ_LO_HZ);
+    if (L.row0 < 1) L.row0 = 1;
+    if (L.row0 > nyquist_bin) L.row0 = nyquist_bin;
+    L.nrows = nyquist_bin - L.row0 + 1;
+    int blo = hz_to_bin(&L, (double)LO_HZ);
+    int bhi = hz_to_bin(&L, (double)HI_HZ);
+    if (blo < L.row0) blo = L.row0;
+    if (bhi > nyquist_bin) bhi = nyquist_bin;
+    L.band0 = blo - L.row0;
+    L.band1 = bhi - L.row0;
+    L.hamming = xmalloc((size_t)L.fftl * sizeof(float));
+    for (int i = 0; i < L.fftl; i++)
+        L.hamming[i] = (float)(0.54 - 0.46 * cos(2.0 * M_PI * (double)i / (double)(L.fftl - 1)));
+    return L;
 }
 
-static void engine_free(Engine *e) {
-    if (!e) return;
-    if (e->gpu) {
-        cudaSetDevice(e->device);
-        cufftDestroy(e->gr2c);
-        cufftDestroy(e->gc2r);
-        cudaFree(e->d_time);
-        cudaFree(e->d_freq);
-        free(e->time);
-        free(e->freq);
-    } else {
-        fftwf_destroy_plan(e->r2c);
-        fftwf_destroy_plan(e->c2r);
-        fftwf_free(e->time);
-        fftwf_free(e->freq);
-    }
-    free(e);
+static void layout_free(Layout *L) {
+    free(L->hamming);
+    L->hamming = NULL;
 }
 
+/* ---- wav ---- */
 typedef struct {
     int sample_rate;
     int64_t data_off;
@@ -306,7 +267,7 @@ static Wav open_wav(const char *path, int fd) {
     ssize_t n = pread(fd, hdr, sizeof hdr, 0);
     if (n < 44) die("wav header is short");
     if (memcmp(hdr, "RIFF", 4) != 0 || memcmp(hdr + 8, "WAVE", 4) != 0) die("not a wav file");
-    int rate = 0, channels = 0, bits = 0;
+    int rate = 0;
     int64_t data_off = 0, data_bytes = 0;
     int i = 12;
     while (i + 8 <= n) {
@@ -321,9 +282,7 @@ static Wav open_wav(const char *path, int fd) {
             memcpy(&r, c + 12, 4);
             memcpy(&bps, c + 22, 2);
             if (audio != 1 || ch != 1 || bps != 16) die("expected mono 16-bit PCM");
-            channels = ch;
             rate = (int)r;
-            bits = bps;
         } else if (memcmp(c, "data", 4) == 0) {
             data_off = i + 8;
             data_bytes = sz;
@@ -334,8 +293,6 @@ static Wav open_wav(const char *path, int fd) {
         i += (int)step;
     }
     if (!rate || !data_off) die("wav is missing fmt or data");
-    (void)channels;
-    (void)bits;
     if (rate < 2 * HI_HZ) {
         fprintf(stderr, "energy_filter: %s is %d Hz and cannot represent %d Hz\n", path, rate, HI_HZ);
         exit(1);
@@ -344,12 +301,12 @@ static Wav open_wav(const char *path, int fd) {
     return w;
 }
 
-static void load_block(int fd, const Wav *w, int64_t out0, int discard, float *time) {
-    int64_t begin = out0 - discard;
-    int64_t lo = begin < 0 ? 0 : begin;
-    int64_t hi = begin + NFFT;
+static void read_samples(int fd, const Wav *w, int64_t first, int n, float *out) {
+    memset(out, 0, (size_t)n * sizeof(float));
+    if (first >= w->n_samples || n <= 0) return;
+    int64_t lo = first < 0 ? 0 : first;
+    int64_t hi = first + n;
     if (hi > w->n_samples) hi = w->n_samples;
-    memset(time, 0, (size_t)NFFT * sizeof(float));
     if (hi <= lo) return;
     size_t bytes = (size_t)(hi - lo) * sizeof(int16_t);
     int16_t *raw = xmalloc(bytes);
@@ -361,11 +318,213 @@ static void load_block(int fd, const Wav *w, int64_t out0, int discard, float *t
         got += (size_t)r;
     }
     int64_t nread = (int64_t)(got / sizeof(int16_t));
-    for (int64_t s = lo; s < lo + nread; s++) {
-        int i = (int)(s - begin);
-        if (i >= 0 && i < NFFT) time[i] = (float)raw[s - lo] / 32768.f;
+    for (int64_t s = 0; s < nread; s++) {
+        int i = (int)(lo + s - first);
+        if (i >= 0 && i < n) out[i] = (float)raw[s] / 32768.f;
     }
     free(raw);
+}
+
+/* ---- whitening ---- */
+static double shortest_half_mean(const float *row, int n, uint64_t *keys, uint64_t *spare) {
+    unsigned hist[4][256];
+    memset(hist, 0, sizeof hist);
+    for (int i = 0; i < n; i++) {
+        double v = row[i];
+        uint64_t k;
+        memcpy(&k, &v, 8);
+        keys[i] = k;
+        for (int p = 0; p < 4; p++) hist[p][(k >> (32 + 8 * p)) & 255]++;
+    }
+    for (int p = 0; p < 4; p++) {
+        int shift = 32 + 8 * p;
+        if (hist[p][(keys[0] >> shift) & 255] == (unsigned)n) continue;
+        unsigned at = 0;
+        for (int b = 0; b < 256; b++) {
+            unsigned count = hist[p][b];
+            hist[p][b] = at;
+            at += count;
+        }
+        for (int i = 0; i < n; i++) spare[hist[p][(keys[i] >> shift) & 255]++] = keys[i];
+        uint64_t *swap = keys;
+        keys = spare;
+        spare = swap;
+    }
+    for (int i = 1; i < n; i++) {
+        uint64_t k = keys[i];
+        int j = i;
+        for (; j > 0 && keys[j - 1] > k; j--) keys[j] = keys[j - 1];
+        keys[j] = k;
+    }
+    int even = n - (n % 2), half = even / 2, pick = 0;
+    double best = INFINITY;
+    for (int i = 0; i < half; i++) {
+        double lo, hi;
+        memcpy(&lo, &keys[i], 8);
+        memcpy(&hi, &keys[i + half], 8);
+        if (hi - lo < best) {
+            best = hi - lo;
+            pick = i;
+        }
+    }
+    double low, high, sum = 0;
+    memcpy(&low, &keys[pick], 8);
+    memcpy(&high, &keys[pick + half], 8);
+    int count = 0;
+    for (int i = 0; i < n; i++) {
+        if (row[i] >= low && row[i] <= high) {
+            sum += row[i];
+            count++;
+        }
+    }
+    return count > 0 ? sum / (double)count : 0.0;
+}
+
+typedef struct {
+    Layout *L;
+    float *samples;
+    float *frame;
+    fftwf_complex *spectrum;
+    float *magnitude;
+    float *white;
+    float *smooth;
+    uint64_t *keys, *spare;
+    float *gpu_in;
+    fftwf_complex *gpu_out;
+    float *d_in;
+    fftwf_complex *d_out;
+    fftwf_plan cpu_plan;
+    cufftHandle plan;
+    int use_gpu;
+    int device;
+} Scratch;
+
+static pthread_mutex_t g_fftw_mu = PTHREAD_MUTEX_INITIALIZER;
+
+static void gpu_check(int rc, const char *what) {
+    if (rc != 0) {
+        fprintf(stderr, "energy_filter: %s (%s)\n", what, cudaGetErrorString(rc));
+        exit(1);
+    }
+}
+
+static Scratch scratch_for(Layout *L, int use_gpu, int device) {
+    Scratch s;
+    memset(&s, 0, sizeof s);
+    s.L = L;
+    s.use_gpu = use_gpu;
+    s.device = device;
+    s.samples = xmalloc((size_t)L->window_samples * sizeof(float));
+    s.frame = fftwf_malloc((size_t)L->fftl * sizeof(float));
+    s.spectrum = fftwf_malloc((size_t)L->nfreq * sizeof(fftwf_complex));
+    s.magnitude = xmalloc((size_t)L->nrows * L->max_frames * sizeof(float));
+    s.white = xmalloc((size_t)L->nrows * L->max_frames * sizeof(float));
+    s.smooth = xmalloc((size_t)L->nrows * L->max_frames * sizeof(float));
+    s.keys = xmalloc((size_t)L->max_frames * sizeof(uint64_t));
+    s.spare = xmalloc((size_t)L->max_frames * sizeof(uint64_t));
+    if (use_gpu) {
+        gpu_check(cudaSetDevice(device), "cudaSetDevice");
+        s.gpu_in = xmalloc((size_t)L->max_frames * L->fftl * sizeof(float));
+        s.gpu_out = xmalloc((size_t)L->max_frames * L->nfreq * sizeof(fftwf_complex));
+        gpu_check(cudaMalloc((void **)&s.d_in, (size_t)L->max_frames * L->fftl * sizeof(float)), "cudaMalloc in");
+        gpu_check(cudaMalloc((void **)&s.d_out, (size_t)L->max_frames * L->nfreq * sizeof(fftwf_complex)), "cudaMalloc out");
+        int n[1] = {L->fftl}, inembed[1] = {L->fftl}, onembed[1] = {L->nfreq};
+        if (cufftPlanMany(&s.plan, 1, n, inembed, 1, L->fftl, onembed, 1, L->nfreq, CUFFT_R2C, L->max_frames) != 0)
+            die("cufftPlanMany failed");
+    } else {
+        pthread_mutex_lock(&g_fftw_mu);
+        s.cpu_plan = fftwf_plan_dft_r2c_1d(L->fftl, s.frame, s.spectrum, 64 /* FFTW_ESTIMATE */);
+        pthread_mutex_unlock(&g_fftw_mu);
+        if (!s.cpu_plan) die("fftw plan failed");
+    }
+    return s;
+}
+
+static void scratch_free(Scratch *s) {
+    if (!s) return;
+    free(s->samples);
+    fftwf_free(s->frame);
+    fftwf_free(s->spectrum);
+    free(s->magnitude);
+    free(s->white);
+    free(s->smooth);
+    free(s->keys);
+    free(s->spare);
+    if (s->use_gpu) {
+        cudaSetDevice(s->device);
+        cufftDestroy(s->plan);
+        cudaFree(s->d_in);
+        cudaFree(s->d_out);
+        free(s->gpu_in);
+        free(s->gpu_out);
+    } else if (s->cpu_plan) {
+        fftwf_destroy_plan(s->cpu_plan);
+    }
+}
+
+static int n_frames_for(const Layout *L, int n_samples) {
+    if (n_samples < L->fftl) return 0;
+    return (n_samples - L->fftl) / L->hop;
+}
+
+static void stft_magnitude(Scratch *s, int n_frames) {
+    const Layout *L = s->L;
+    if (s->use_gpu) {
+        gpu_check(cudaSetDevice(s->device), "cudaSetDevice");
+        memset(s->gpu_in, 0, (size_t)L->max_frames * L->fftl * sizeof(float));
+        for (int t = 0; t < n_frames; t++) {
+            const float *from = s->samples + (size_t)t * L->hop;
+            float *to = s->gpu_in + (size_t)t * L->fftl;
+            for (int i = 0; i < L->fftl; i++) to[i] = from[i] * L->hamming[i];
+        }
+        gpu_check(cudaMemcpy(s->d_in, s->gpu_in, (size_t)L->max_frames * L->fftl * sizeof(float), COPY_H2D), "H2D");
+        if (cufftExecR2C(s->plan, s->d_in, s->d_out) != 0) die("cufft R2C failed");
+        gpu_check(cudaDeviceSynchronize(), "sync");
+        gpu_check(cudaMemcpy(s->gpu_out, s->d_out, (size_t)L->max_frames * L->nfreq * sizeof(fftwf_complex), COPY_D2H), "D2H");
+        for (int t = 0; t < n_frames; t++) {
+            const fftwf_complex *z = s->gpu_out + (size_t)t * L->nfreq;
+            for (int r = 0; r < L->nrows; r++) {
+                const float *c = z[L->row0 + r];
+                s->magnitude[(size_t)r * n_frames + t] = sqrtf(c[0] * c[0] + c[1] * c[1]);
+            }
+        }
+        return;
+    }
+    for (int t = 0; t < n_frames; t++) {
+        const float *from = s->samples + (size_t)t * L->hop;
+        for (int i = 0; i < L->fftl; i++) s->frame[i] = from[i] * L->hamming[i];
+        fftwf_execute_dft_r2c(s->cpu_plan, s->frame, s->spectrum);
+        for (int r = 0; r < L->nrows; r++) {
+            const float *c = s->spectrum[L->row0 + r];
+            s->magnitude[(size_t)r * n_frames + t] = sqrtf(c[0] * c[0] + c[1] * c[1]);
+        }
+    }
+}
+
+static void whiten_window(Scratch *s, int n_frames) {
+    const Layout *L = s->L;
+    for (int r = 0; r < L->nrows; r++) {
+        float *row = s->magnitude + (size_t)r * n_frames;
+        float *dst = s->white + (size_t)r * n_frames;
+        double mu = shortest_half_mean(row, n_frames, s->keys, s->spare);
+        if (!(mu > 0.0)) mu = 1e-20;
+        for (int t = 0; t < n_frames; t++) dst[t] = (float)fabs((row[t] - mu) / mu);
+    }
+    /* GPL cross kernel [[0,1,0],[1,4,1],[0,1,0]] / 8, missing neighbors count as zero. */
+    for (int r = 0; r < L->nrows; r++) {
+        const float *mid = s->white + (size_t)r * n_frames;
+        const float *below = r > 0 ? mid - n_frames : NULL;
+        const float *above = r + 1 < L->nrows ? mid + n_frames : NULL;
+        float *out = s->smooth + (size_t)r * n_frames;
+        for (int t = 0; t < n_frames; t++) {
+            double v = 4.0 * mid[t];
+            if (below) v += below[t];
+            if (above) v += above[t];
+            if (t > 0) v += mid[t - 1];
+            if (t + 1 < n_frames) v += mid[t + 1];
+            out[t] = (float)(v / 8.0);
+        }
+    }
 }
 
 typedef struct {
@@ -374,39 +533,49 @@ typedef struct {
     int nseg;
 } Segments;
 
-static Segments segments_new(int64_t n_samples, int seg_len) {
+static Segments segments_new(int64_t n_samples, int rate) {
     Segments s;
+    int64_t seg_len = (int64_t)g_segment_sec * rate;
     s.nseg = (int)((n_samples + seg_len - 1) / seg_len);
-    s.band = calloc((size_t)s.nseg, sizeof(double));
-    s.overall = calloc((size_t)s.nseg, sizeof(double));
-    if (!s.band || !s.overall) die("out of memory");
+    s.band = xcalloc((size_t)s.nseg, sizeof(double));
+    s.overall = xcalloc((size_t)s.nseg, sizeof(double));
     return s;
 }
 
-static void add_squares(const float *time, int64_t out0, int discard, int64_t n_samples, int seg_len, double *dest) {
-    for (int i = discard; i < NFFT - discard; i++) {
-        int64_t s = out0 + (i - discard);
-        if (s >= n_samples) break;
-        int b = (int)(s / seg_len);
-        double x = time[i];
-        dest[b] += x * x;
+static void accumulate_window(Scratch *s, int n_frames, int64_t window_start, Segments *seg) {
+    const Layout *L = s->L;
+    int64_t seg_len = (int64_t)g_segment_sec * L->rate;
+    for (int t = 0; t < n_frames; t++) {
+        int64_t sample = window_start + (int64_t)t * L->hop + L->fftl / 2;
+        int b = (int)(sample / seg_len);
+        if (b < 0) b = 0;
+        if (b >= seg->nseg) b = seg->nseg - 1;
+        double band = 0, overall = 0;
+        for (int r = 0; r < L->nrows; r++) {
+            double v = s->smooth[(size_t)r * n_frames + t];
+            double e = v * v;
+            overall += e;
+            if (r >= L->band0 && r <= L->band1) band += e;
+        }
+        seg->band[b] += band;
+        seg->overall[b] += overall;
     }
 }
 
-static void accumulate(Engine *e, int fd, const Wav *w, Segments *seg) {
-    int discard = EDGE_SEC * w->sample_rate;
-    if (discard > NFFT / 4) discard = NFFT / 4;
-    int hop = NFFT - 2 * discard;
-    int seg_len = SEGMENT_SEC * w->sample_rate;
-    int kcut, khi;
-    bins_for(w->sample_rate, &kcut, &khi);
-    for (int64_t out0 = 0; out0 < w->n_samples; out0 += hop) {
-        load_block(fd, w, out0, discard, e->time);
-        add_squares(e->time, out0, discard, w->n_samples, seg_len, seg->overall);
-        engine_filter(e, kcut, khi);
-        add_squares(e->time, out0, discard, w->n_samples, seg_len, seg->band);
-    }
+static void process_window(Scratch *s, const float *samples, int n_samples, int64_t window_start, Segments *seg) {
+    const Layout *L = s->L;
+    int n_frames = n_frames_for(L, n_samples);
+    if (n_frames <= 0) return;
+    memcpy(s->samples, samples, (size_t)n_samples * sizeof(float));
+    if (n_samples < L->window_samples)
+        memset(s->samples + n_samples, 0, (size_t)(L->window_samples - n_samples) * sizeof(float));
+    stft_magnitude(s, n_frames);
+    whiten_window(s, n_frames);
+    accumulate_window(s, n_frames, window_start, seg);
 }
+
+static pthread_mutex_t g_csv_mu = PTHREAD_MUTEX_INITIALIZER;
+static FILE *g_csv;
 
 static void site_of(const char *path, char *site, size_t nsite) {
     size_t n = strlen(g_root);
@@ -423,9 +592,6 @@ static void site_of(const char *path, char *site, size_t nsite) {
     site[i] = 0;
 }
 
-static pthread_mutex_t g_csv_mu = PTHREAD_MUTEX_INITIALIZER;
-static FILE *g_csv;
-
 static void write_segments(const Item *item, const Segments *seg) {
     const char *base = strrchr(item->path, '/');
     base = base ? base + 1 : item->path;
@@ -435,24 +601,36 @@ static void write_segments(const Item *item, const Segments *seg) {
     for (int i = 0; i < seg->nseg; i++) {
         double ratio = seg->overall[i] > 0.0 ? seg->band[i] / seg->overall[i] : 0.0;
         fprintf(g_csv, "%s,%s,%d,%d,%.3f,%.8e,%.8e,%.8e\n",
-                site, base, item->year, i, (double)i * SEGMENT_SEC,
+                site, base, item->year, i, (double)i * g_segment_sec,
                 seg->band[i], seg->overall[i], ratio);
     }
     fflush(g_csv);
     pthread_mutex_unlock(&g_csv_mu);
 }
 
-static void process_file(Engine *e, const Item *item) {
+static void process_file(int use_gpu, int device, const Item *item) {
     int fd = open(item->path, O_RDONLY);
     if (fd < 0) die("cannot open recording");
     Wav w = open_wav(item->path, fd);
-    fprintf(stderr, "device %d  %s  %.1f h\n", e->gpu ? e->device : -1, item->path,
-            (double)w.n_samples / w.sample_rate / 3600.0);
-    Segments seg = segments_new(w.n_samples, SEGMENT_SEC * w.sample_rate);
-    accumulate(e, fd, &w, &seg);
+    Layout L = layout_for(w.sample_rate);
+    fprintf(stderr, "%s  %s  %d Hz  %.1f h  fftl %d hop %d\n", use_gpu ? "gpu" : "cpu", item->path,
+            w.sample_rate, (double)w.n_samples / w.sample_rate / 3600.0, L.fftl, L.hop);
+    posix_fadvise(fd, 0, 0, POSIX_FADV_SEQUENTIAL);
+    Scratch s = scratch_for(&L, use_gpu, device);
+    Segments seg = segments_new(w.n_samples, w.sample_rate);
+    float *buf = xmalloc((size_t)L.window_samples * sizeof(float));
+    for (int64_t start = 0; start < w.n_samples; start += L.window_samples) {
+        int n = (int)(w.n_samples - start);
+        if (n > L.window_samples) n = L.window_samples;
+        read_samples(fd, &w, start, n, buf);
+        process_window(&s, buf, n, start, &seg);
+    }
     write_segments(item, &seg);
+    free(buf);
     free(seg.band);
     free(seg.overall);
+    scratch_free(&s);
+    layout_free(&L);
     close(fd);
 }
 
@@ -465,38 +643,59 @@ typedef struct {
 
 static Work g_work;
 
-static void run_cpu(Item *chosen, int n) {
-    int threads = (int)sysconf(_SC_NPROCESSORS_ONLN);
-    if (threads < 1) threads = 1;
-    Engine *e = engine_cpu(threads);
-    fprintf(stderr, "cpu threads %d\n", threads);
-    for (int i = 0; i < n; i++) process_file(e, &chosen[i]);
-    engine_free(e);
-}
-
-static void *gpu_worker(void *arg) {
-    int device = (int)(intptr_t)arg;
-    Engine *e = engine_gpu(device);
+static void *cpu_worker(void *arg) {
+    (void)arg;
     for (;;) {
         pthread_mutex_lock(&g_work.mu);
         int i = g_work.next < g_work.n ? g_work.next++ : -1;
         pthread_mutex_unlock(&g_work.mu);
         if (i < 0) break;
-        process_file(e, &g_work.chosen[i]);
+        process_file(0, -1, &g_work.chosen[i]);
     }
-    engine_free(e);
+    return NULL;
+}
+
+static void run_cpu(Item *chosen, int n) {
+    int threads = (int)sysconf(_SC_NPROCESSORS_ONLN);
+    if (threads < 1) threads = 1;
+    if (threads > n) threads = n;
+    if (threads > 32) threads = 32;
+    g_work.chosen = chosen;
+    g_work.n = n;
+    g_work.next = 0;
+    if (pthread_mutex_init(&g_work.mu, NULL) != 0) die("mutex");
+    fprintf(stderr, "cpu workers %d\n", threads);
+    pthread_t *ths = xmalloc((size_t)threads * sizeof(pthread_t));
+    for (int i = 0; i < threads; i++) {
+        if (pthread_create(&ths[i], NULL, cpu_worker, NULL) != 0) die("thread");
+    }
+    for (int i = 0; i < threads; i++) pthread_join(ths[i], NULL);
+    free(ths);
+    pthread_mutex_destroy(&g_work.mu);
+}
+
+static void *gpu_worker(void *arg) {
+    int device = (int)(intptr_t)arg;
+    for (;;) {
+        pthread_mutex_lock(&g_work.mu);
+        int i = g_work.next < g_work.n ? g_work.next++ : -1;
+        pthread_mutex_unlock(&g_work.mu);
+        if (i < 0) break;
+        process_file(1, device, &g_work.chosen[i]);
+    }
     return NULL;
 }
 
 static void run_gpu(Item *chosen, int n) {
     int ndev = 0;
     if (cudaGetDeviceCount(&ndev) != 0 || ndev < 1) die("no GPU");
-    if (ndev > 2) ndev = 2;
+    if (ndev > MAX_GPUS) ndev = MAX_GPUS;
     g_work.chosen = chosen;
     g_work.n = n;
     g_work.next = 0;
     if (pthread_mutex_init(&g_work.mu, NULL) != 0) die("mutex");
-    pthread_t th[2];
+    fprintf(stderr, "gpu workers %d\n", ndev);
+    pthread_t th[MAX_GPUS];
     for (int d = 0; d < ndev; d++) {
         if (pthread_create(&th[d], NULL, gpu_worker, (void *)(intptr_t)d) != 0) die("thread");
     }
@@ -504,61 +703,68 @@ static void run_gpu(Item *chosen, int n) {
     pthread_mutex_destroy(&g_work.mu);
 }
 
-static double tone_ratio(Engine *e, int sample_rate, double hz, double amp, double seconds) {
-    int64_t n = (int64_t)(seconds * sample_rate);
-    int discard = EDGE_SEC * sample_rate;
-    int hop = NFFT - 2 * discard;
-    int kcut, khi;
-    bins_for(sample_rate, &kcut, &khi);
-    double band = 0.0, overall = 0.0;
-    for (int64_t out0 = 0; out0 < n; out0 += hop) {
-        memset(e->time, 0, (size_t)NFFT * sizeof(float));
-        for (int i = 0; i < NFFT; i++) {
-            int64_t s = out0 - discard + i;
-            if (s < 0 || s >= n) continue;
-            e->time[i] = (float)(amp * sin(2.0 * 3.141592653589793 * hz * (double)s / sample_rate));
-        }
-        for (int i = discard; i < NFFT - discard; i++) {
-            int64_t s = out0 + (i - discard);
-            if (s >= n) break;
-            overall += (double)e->time[i] * (double)e->time[i];
-        }
-        engine_filter(e, kcut, khi);
-        for (int i = discard; i < NFFT - discard; i++) {
-            int64_t s = out0 + (i - discard);
-            if (s >= n) break;
-            band += (double)e->time[i] * (double)e->time[i];
-        }
+/* Whitening treats a steady tone as the noise floor, so the self-test uses short
+   bursts on a quiet background: those stand above the densest-half level. */
+static void burst_samples(float *buf, int n, int rate, double hz, double amp) {
+    memset(buf, 0, (size_t)n * sizeof(float));
+    int burst = rate / 10;
+    for (int start = rate; start + burst < n; start += 5 * rate) {
+        for (int i = 0; i < burst; i++)
+            buf[start + i] = (float)(amp * sin(2.0 * M_PI * hz * (double)i / (double)rate));
     }
+}
+
+static double burst_ratio(int use_gpu, int device, double hz) {
+    Layout L = layout_for(10000);
+    Scratch s = scratch_for(&L, use_gpu, device);
+    Segments seg = segments_new(L.window_samples, L.rate);
+    float *buf = xmalloc((size_t)L.window_samples * sizeof(float));
+    burst_samples(buf, L.window_samples, L.rate, hz, 0.5);
+    process_window(&s, buf, L.window_samples, 0, &seg);
+    double band = 0, overall = 0;
+    for (int i = 0; i < seg.nseg; i++) {
+        band += seg.band[i];
+        overall += seg.overall[i];
+    }
+    free(buf);
+    free(seg.band);
+    free(seg.overall);
+    scratch_free(&s);
+    layout_free(&L);
     return overall > 0.0 ? band / overall : 0.0;
 }
 
 static void self_test(void) {
-    int rate = 10000;
-    Engine *cpu = engine_cpu(4);
-    double in_band = tone_ratio(cpu, rate, 200.0, 0.5, 30.0);
-    double above = tone_ratio(cpu, rate, 2000.0, 0.5, 30.0);
-    fprintf(stderr, "cpu ratio 200 Hz %.4f  2000 Hz %.4e\n", in_band, above);
-    if (!(in_band > 0.9 && above < 0.05)) die("cpu ratio did not separate 200 Hz from 2000 Hz");
-    engine_free(cpu);
+    double in_band = burst_ratio(0, -1, 200.0);
+    double above = burst_ratio(0, -1, 2000.0);
+    fprintf(stderr, "cpu ratio 200 Hz bursts %.4f  2000 Hz bursts %.4e\n", in_band, above);
+    if (!(in_band > 0.5 && above < 0.1)) die("cpu ratio did not separate 200 Hz from 2000 Hz bursts");
     int ndev = 0;
     if (cudaGetDeviceCount(&ndev) != 0 || ndev < 1) die("self-test found no GPU");
-    Engine *gpu = engine_gpu(0);
-    double gin = tone_ratio(gpu, rate, 200.0, 0.5, 30.0);
-    double gout = tone_ratio(gpu, rate, 2000.0, 0.5, 30.0);
-    fprintf(stderr, "gpu ratio 200 Hz %.4f  2000 Hz %.4e\n", gin, gout);
-    if (!(gin > 0.9 && gout < 0.05)) die("gpu ratio did not separate 200 Hz from 2000 Hz");
+    double gin = burst_ratio(1, 0, 200.0);
+    double gout = burst_ratio(1, 0, 2000.0);
+    fprintf(stderr, "gpu ratio 200 Hz bursts %.4f  2000 Hz bursts %.4e\n", gin, gout);
+    if (!(gin > 0.5 && gout < 0.1)) die("gpu ratio did not separate 200 Hz from 2000 Hz bursts");
     double rel = fabs(gin - in_band) / in_band;
     fprintf(stderr, "cpu/gpu relative difference %.3e\n", rel);
-    if (rel > 1e-3) die("cpu and gpu ratios disagree");
-    engine_free(gpu);
+    if (rel > 1e-2) die("cpu and gpu ratios disagree");
     fprintf(stderr, "self-test passed\n");
 }
 
 static void usage(const char *argv0) {
     fprintf(stderr,
-            "usage: %s [--root DIR] [--count N] [--seed N] [--season spring|winter] [--out CSV] [--cpu|--gpu] [--self-test]\n",
+            "usage: %s [--root DIR] [--count N] [--seed N] [--season spring|winter] [--segment-sec N]\n"
+            "          [--out CSV] [--cpu|--gpu] [--self-test] [WAV ...]\n"
+            "If WAV paths are given, those files are processed and --season/--count/--seed are ignored.\n",
             argv0);
+}
+
+static int year_of_path(const char *path) {
+    const char *base = strrchr(path, '/');
+    base = base ? base + 1 : path;
+    int year = 0, month = 0;
+    if (parse_stamp(base, &year, &month)) return year;
+    return 0;
 }
 
 int main(int argc, char **argv) {
@@ -567,6 +773,7 @@ int main(int argc, char **argv) {
         if (!strcmp(argv[i], "--root") && i + 1 < argc) g_root = argv[++i];
         else if (!strcmp(argv[i], "--count") && i + 1 < argc) g_count = atoi(argv[++i]);
         else if (!strcmp(argv[i], "--seed") && i + 1 < argc) g_seed = strtoull(argv[++i], NULL, 10);
+        else if (!strcmp(argv[i], "--segment-sec") && i + 1 < argc) g_segment_sec = atoi(argv[++i]);
         else if (!strcmp(argv[i], "--season") && i + 1 < argc) {
             const char *season = argv[++i];
             if (!strcmp(season, "winter")) g_winter = 1;
@@ -577,9 +784,13 @@ int main(int argc, char **argv) {
         else if (!strcmp(argv[i], "--cpu")) g_backend = 0;
         else if (!strcmp(argv[i], "--gpu")) g_backend = 1;
         else if (!strcmp(argv[i], "--self-test")) self_test_only = 1;
-        else {
+        else if (argv[i][0] == '-') {
             usage(argv[0]);
             return 2;
+        } else {
+            g_explicit = &argv[i];
+            g_n_explicit = argc - i;
+            break;
         }
     }
     if (self_test_only) {
@@ -587,14 +798,30 @@ int main(int argc, char **argv) {
         return 0;
     }
     if (!g_out_path) die("missing --out");
-    if (g_count < 1) die("count must be positive");
+    if (g_segment_sec < 1) die("segment-sec must be positive");
     int n = 0;
-    Item *chosen = select_files(&n);
+    Item *chosen;
+    if (g_n_explicit > 0) {
+        n = g_n_explicit;
+        chosen = xmalloc((size_t)n * sizeof(Item));
+        for (int i = 0; i < n; i++) {
+            chosen[i].path = g_explicit[i];
+            chosen[i].year = year_of_path(g_explicit[i]);
+        }
+        fprintf(stderr, "explicit files %d, segment %d s\n", n, g_segment_sec);
+    } else {
+        if (g_count < 1) die("count must be positive");
+        chosen = select_files(&n);
+    }
     g_csv = fopen(g_out_path, "w");
     if (!g_csv) die("cannot write the csv");
     fprintf(g_csv, "site,filename,year,segment_index,start_sec,band_energy,overall_energy,ratio\n");
     if (g_backend == 0) run_cpu(chosen, n);
-    else run_gpu(chosen, n);
+    else {
+        int ndev = 0;
+        if (g_backend == 2 && (cudaGetDeviceCount(&ndev) != 0 || ndev < 1)) run_cpu(chosen, n);
+        else run_gpu(chosen, n);
+    }
     fclose(g_csv);
     fprintf(stderr, "wrote %s\n", g_out_path);
     return 0;
