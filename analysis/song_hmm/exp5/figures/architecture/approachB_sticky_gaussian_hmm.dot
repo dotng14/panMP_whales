@@ -1,0 +1,59 @@
+// Experiment 5 — Approach B: sticky Gaussian HMM over spectrogram / Fourier features
+// T theme states chosen on train (example drawn with T=4). No fixed cycle / phrase slots.
+// Render: dot -Tpng approachB_sticky_gaussian_hmm.dot -o approachB_sticky_gaussian_hmm.png
+
+digraph ApproachB_StickyGaussianHMM {
+  rankdir=LR;
+  labelloc="t";
+  label="Approach B: sticky Gaussian HMM\nobservations = frame / window feature vectors (STFT or GPL spectrogram)\nT chosen on train (example T=4); thick edges = sticky self-loops";
+  fontsize=12;
+  fontname="Helvetica";
+  node [shape=circle, style=filled, fontname="Helvetica", fontsize=11];
+  edge [fontname="Helvetica", fontsize=9];
+
+  start [label="start", shape=plaintext, fillcolor=white];
+
+  T1 [label="Theme 1", fillcolor="#a6cee3"];
+  T2 [label="Theme 2", fillcolor="#b2df8a"];
+  T3 [label="Theme 3", fillcolor="#fdbf6f"];
+  T4 [label="Theme 4", fillcolor="#cab2d6"];
+  Sil [label="Silence /\nlow energy", shape=ellipse, fillcolor="#eeeeee"];
+
+  start -> T1 [label="π"];
+  start -> T2;
+  start -> T3;
+  start -> T4;
+  start -> Sil;
+
+  T1 -> T1 [label="≈1-ε", penwidth=3];
+  T2 -> T2 [label="≈1-ε", penwidth=3];
+  T3 -> T3 [label="≈1-ε", penwidth=3];
+  T4 -> T4 [label="≈1-ε", penwidth=3];
+  Sil -> Sil [label="sticky", penwidth=3];
+
+  T1 -> T2 [label="ε/(T-1)", style=dashed];
+  T1 -> T3 [style=dashed];
+  T1 -> T4 [style=dashed];
+  T2 -> T1 [style=dashed];
+  T2 -> T3 [style=dashed];
+  T2 -> T4 [style=dashed];
+  T3 -> T1 [style=dashed];
+  T3 -> T2 [style=dashed];
+  T3 -> T4 [style=dashed];
+  T4 -> T1 [style=dashed];
+  T4 -> T2 [style=dashed];
+  T4 -> T3 [style=dashed];
+
+  T1 -> Sil [style=dotted];
+  T2 -> Sil [style=dotted];
+  T3 -> Sil [style=dotted];
+  T4 -> Sil [style=dotted];
+  Sil -> T1 [style=dotted];
+  Sil -> T2 [style=dotted];
+  Sil -> T3 [style=dotted];
+  Sil -> T4 [style=dotted];
+
+  feat [shape=note, fillcolor="#ccebc5", label="Feature vector x_t:\nlog band energies, centroid, …\n(+ optional PCA; train stats frozen)"];
+  emit [shape=note, fillcolor="#fff7bc", label="Emission per theme state:\ndiagonal Gaussian N(μ_k, Σ_k)\non feature vector x_t\nlearned on train"];
+  boundary [shape=note, fillcolor="#fbb4ae", label="Boundary =\ntime where Viterbi\ntheme state changes\n(optional min duration)"];
+}

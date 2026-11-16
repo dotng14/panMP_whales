@@ -49,16 +49,11 @@ The decoded theme between two consecutive marked changes is compared with the th
 
 ### Consistency (test T3)
 
-For the 27 April file against the matching 6.23–6.85 h stretch of the main recording:
+For the 014845 file against the matching 6.23–6.85 h stretch of the 193500 recording:
 - **Boundary agreement:** the fraction of boundaries in one that have a boundary within ±5 s in the other (computed both ways and averaged);
 - **Motif agreement:** for option 1, which shares the dictionary, the fraction of events with the same motif id within ±0.2 s.
 
 **Target:** ≥ 0.9 on both.
-
-### Out of scope (test T4)
-
-- **Option 1:** is the scope alarm raised (yes / no)? Report the file's coverage next to the training median.
-- **Option 2:** the number of boundaries and their times, shown on the spectrogram for you to judge. There are no marks for this file.
 
 ### How the results are reported
 
@@ -78,4 +73,4 @@ T2 (held-out files) is the result that counts. T1 is shown only to reveal overfi
 | **Build time** | Wall time of `randomized-build` (`--loop-stats`), per window in the build sample | One-time cost of the dictionary |
 | **Placement time** | Wall time of `matching-pursuit`, per hour of audio | Cost of motif detection on every new file |
 | **HMM time** | Training (all restarts) and decoding time | Expected to be seconds |
-| **Sample size vs quality** | Build on 24, 48, 96 and 192 training windows, then repeat the §1 checks and the T2 F1 | How small the build sample can be. For option 2 outside the scope, this is also the cost of a per-file build |
+| **Sample size vs quality** | Build on 24, 48, 96 and 192 training windows, then repeat the §1 checks and the T2 F1 | How small the build sample can be |

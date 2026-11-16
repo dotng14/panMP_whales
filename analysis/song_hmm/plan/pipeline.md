@@ -11,17 +11,18 @@ Steps 1–5 are shared by both options. Steps 6–7 are option 1, steps 8–10 o
   1. Anti-alias low-pass and resample to 2 kHz, so every file keeps only 0–1 kHz, like the main recording (`df100` = decimated by 100 from 200 kHz).
   2. Resample to 10 kHz, the rate GPL was run at.
 
+  Wavs on ensemble: `/home/yfreund/whale_processing/LeiData/`.
+
   | Recording | Source rate | Steps needed |
   |---|---|---|
-  | SOCAL_H_76_230426_193500 | 2 kHz | 10 kHz version exists (`Downloads/..._10kHz.wav`) |
-  | SOCAL_H_76_230427_014845 | 200 kHz | 200 → 2 → 10 kHz |
-  | CHNMS_NO01_231106_050140 | 10 kHz | 10 → 2 → 10 kHz (removes content above 1 kHz) |
+  | SOCAL_H_76_230426_193500 | 2 kHz | Use `SOCAL_H_76_230426_193500_df100.x.x.wav`; GPL already run |
+  | SOCAL_H_76_230427_014845 | 200 kHz | Prefer existing `SOCAL_H_76_230427_014845.x_10kHz.wav`; else 200 → 2 → 10 kHz |
 - **Meaning:** atoms learned on one file can only be placed on another if both look the same to GPL. A different band or rate would change what the spectrogram shows.
 
 ## Step 2: GPL whitened spectrogram
 
 - **What:** whitened spectrogram windows plus GPL call detections.
-- **How:** `analysis/GPL_Python` with the settings of the existing run, `analysis/HMM/work/gpl_193500/`:
+- **How:** `analysis/GPL_Python` with the settings of the existing run on ensemble, `/home/yfreund/whale_processing/result/LeiData/SOCAL_H_76_230426_193500_df100.x.x.gpl/`:
 
   | Setting | Value |
   |---|---|
@@ -32,14 +33,15 @@ Steps 1–5 are shared by both options. Steps 6–7 are option 1, steps 8–10 o
   Each window has a JSON sidecar giving `start_sample` and `end_sample`. `CSV_*.csv` lists the GPL detections (start/end sample).
 - **Meaning:** the spectrogram with steady noise removed per band. This is what dictionary atoms are learned from and matched against.
 
-## Step 3: files
+## Step 3: files (`014845` only for this run)
 
-- **What:** the unit that the trained model is applied to.
+- **What:** train/eval halves of `014845`.
 - **How:**
-  - The main recording's 480 windows are split into ten 1-hour files of 48 windows: hours 1–5 train, hours 6–10 test.
-  - The 27 April and CHNMS recordings are one file each.
-  - From here on, each file is processed **on its own**. Nothing computed from a test file is used for training.
-- **Meaning:** this simulates "many wav files" with the data we have (plan §3).
+  - GPL: 30 windows × 75 s under `exp4/work/gpl_014845_2kHz/`.
+  - **Train half:** windows 0–14. **Eval half:** windows 15–29.
+  - Dictionary: `randomized-build` on the train half. MP on all windows.
+  - Results: `exp4/work/results/014845/`.
+- **Meaning:** one-file half-split experiment; notebooks overlay themes/boundaries on the eval spectrogram.
 
 ## Step 4: motif detection
 
@@ -53,7 +55,7 @@ Steps 1–5 are shared by both options. Steps 6–7 are option 1, steps 8–10 o
   - atoms: `template_NNN.npy`, 102 rows × 10–20 columns, ≈ 0.8–1.5 s;
   - `matchings.json`, one row per placement: `template_id`, `window_id`, `t_start` (column), `amplitude`, `energy`.
 - **Meaning:** each atom is a recurring sound, a candidate motif. Each placement says "this motif occurs here".
-- **Option 2 outside the scope (CHNMS):** step 4.1 is run on that file itself. Its ids are only used within that file.
+- Both wav files (193500 hours and 014845) use the same shared dictionary learned on the training hours.
 
 ## Step 5: motif sequence
 

@@ -11,5 +11,6 @@ Figures and code stay in each experiment's folder next to this one (`exp1_slot_h
 | [exp2_pipeline_check.md](exp2_pipeline_check.md) | Check of Experiment 2's wav → matrix processing: is it correct, and what does it lose | `python -m analysis.song_hmm.exp2_phrase_hmm.pipeline_check.render` (re-render), or `.check` (rerun everything) |
 | [exp3_inputs_and_models.md](exp3_inputs_and_models.md) | **Experiment 3:** 120 input combinations and four models (M1–M4), with Experiment 2 reviewed and compared | `python -m analysis.song_hmm.exp3.evaluate`, then `python -m analysis.song_hmm.exp3.report` |
 | [exp3_best_combination.md](exp3_best_combination.md) | The best setup (`S2_N1_X2_20s` + M1) on its own: how it works, what it does well and not well | Written by hand from `analysis/song_hmm/exp3/work/eval.json` |
+| [exp4_motif_boundary.md](exp4_motif_boundary.md) | **Experiment 4 (`014845` only):** motif → HMM theme boundaries; where models do well / badly | `python -m analysis.song_hmm.exp4.run_014845`, then edit/refresh this report |
 
-The notebook that runs the best model on the wav and shows each detected song's spectrogram is [exp3/notebooks/detect_songs_best_model.ipynb](../exp3/notebooks/detect_songs_best_model.ipynb).
+Notebooks with eval spectrograms + themes + boundaries: [option1](../exp4/notebooks/option1_themes.ipynb), [option2](../exp4/notebooks/option2_themes.ipynb). Gallery: [spectrogram_gallery.html](../exp4/notebooks/spectrogram_gallery.html).

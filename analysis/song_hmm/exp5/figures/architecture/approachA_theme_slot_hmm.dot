@@ -1,0 +1,129 @@
+// Exp5 Approach A — theme–slot categorical HMM (schematic).
+//
+// Visual family matches the fixed soft-HMM (song_soft_hmm_t6):
+//   - a node is a phrase slot; advance when the slot ends
+//   - dashed = repeat (last slot → first of same theme)
+//   - solid "next" = leave this theme for the next theme
+//
+// Unlike the fixed soft-HMM on 193500, Exp5 does NOT know a priori:
+//   - how many themes T
+//   - how many slots (motifs) per theme
+//   - which motif each slot emits
+// Those are chosen / learned on the train split.
+//
+// Within a theme there are NO skip edges. Advancing always goes slot j → j+1.
+// If the song needs a different motif order / length, that is a different theme
+// (another row in this graph), not a skip inside this row.
+//
+// Drawn with example T=6 and soft-HMM-like unequal slot lengths (3,3,6,3,5,8)
+// only to show the shape. Actual T / lengths are chosen on train.
+// Render: dot -Tpng approachA_theme_slot_hmm.dot -o approachA_theme_slot_hmm.png
+
+digraph hmm {
+  rankdir=TB;
+  splines=true;
+  nodesep=0.32;
+  ranksep=0.85;
+  fontname="Helvetica";
+  labelloc="t";
+  label="Approach A (Exp5): flexible theme–slot HMM — dictionary motif emissions\nSchematic T=6 (same layout family as soft-HMM t6); actual T / #slots / motif ids learned on train\nNo skip inside a theme; a different sequence = a different theme";
+  fontsize=11;
+
+  node [shape=box, style="rounded,filled", fillcolor="#f6f6f6",
+        fontname="Helvetica", fontsize=11, margin="0.08,0.06"];
+  edge [fontname="Helvetica", fontsize=10, color="#444444"];
+
+  start [shape=circle, label="", width=0.22, height=0.22,
+         style=filled, fillcolor="#222222"];
+
+  subgraph cluster_t1 {
+    label="Theme 1    repeat p₁ (learned)";
+    fontsize=13;
+    fontname="Helvetica";
+    color="#bbbbbb";
+    { rank=same; T1_1 -> T1_2 -> T1_3 [color="#444444"]; }
+  }
+  subgraph cluster_t2 {
+    label="Theme 2    repeat p₂ (learned)";
+    fontsize=13;
+    fontname="Helvetica";
+    color="#bbbbbb";
+    { rank=same; T2_1 -> T2_2 -> T2_3 [color="#444444"]; }
+  }
+  subgraph cluster_t3 {
+    label="Theme 3    repeat p₃ (learned)";
+    fontsize=13;
+    fontname="Helvetica";
+    color="#bbbbbb";
+    { rank=same; T3_1 -> T3_2 -> T3_3 -> T3_4 -> T3_5 -> T3_6 [color="#444444"]; }
+  }
+  subgraph cluster_t4 {
+    label="Theme 4    repeat p₄ (learned)";
+    fontsize=13;
+    fontname="Helvetica";
+    color="#bbbbbb";
+    { rank=same; T4_1 -> T4_2 -> T4_3 [color="#444444"]; }
+  }
+  subgraph cluster_t5 {
+    label="Theme 5    repeat p₅ (learned)";
+    fontsize=13;
+    fontname="Helvetica";
+    color="#bbbbbb";
+    { rank=same; T5_1 -> T5_2 -> T5_3 -> T5_4 -> T5_5 [color="#444444"]; }
+  }
+  subgraph cluster_t6 {
+    label="Theme 6    repeat p₆ (learned) until song ends";
+    fontsize=13;
+    fontname="Helvetica";
+    color="#bbbbbb";
+    { rank=same; T6_1 -> T6_2 -> T6_3 -> T6_4 -> T6_5 -> T6_6 -> T6_7 -> T6_8 [color="#444444"]; }
+  }
+
+  T1_1 [label="T1.1\nmotif (learned)"];
+  T1_2 [label="T1.2\nmotif (learned)"];
+  T1_3 [label="T1.3\nmotif (learned)"];
+  T2_1 [label="T2.1\nmotif (learned)"];
+  T2_2 [label="T2.2\nmotif (learned)"];
+  T2_3 [label="T2.3\nmotif (learned)"];
+  T3_1 [label="T3.1\nmotif (learned)"];
+  T3_2 [label="T3.2\nmotif (learned)"];
+  T3_3 [label="T3.3\nmotif (learned)"];
+  T3_4 [label="T3.4\nmotif (learned)"];
+  T3_5 [label="T3.5\nmotif (learned)"];
+  T3_6 [label="T3.6\nmotif (learned)"];
+  T4_1 [label="T4.1\nmotif (learned)"];
+  T4_2 [label="T4.2\nmotif (learned)"];
+  T4_3 [label="T4.3\nmotif (learned)"];
+  T5_1 [label="T5.1\nmotif (learned)"];
+  T5_2 [label="T5.2\nmotif (learned)"];
+  T5_3 [label="T5.3\nmotif (learned)"];
+  T5_4 [label="T5.4\nmotif (learned)"];
+  T5_5 [label="T5.5\nmotif (learned)"];
+  T6_1 [label="T6.1\nmotif (learned)"];
+  T6_2 [label="T6.2\nmotif (learned)"];
+  T6_3 [label="T6.3\nmotif (learned)"];
+  T6_4 [label="T6.4\nmotif (learned)"];
+  T6_5 [label="T6.5\nmotif (learned)"];
+  T6_6 [label="T6.6\nmotif (learned)"];
+  T6_7 [label="T6.7\nmotif (learned)"];
+  T6_8 [label="T6.8\nmotif (learned)"];
+
+  start -> T1_1;
+  T1_1 -> T2_1 [style=invis, weight=10];
+  T2_1 -> T3_1 [style=invis, weight=10];
+  T3_1 -> T4_1 [style=invis, weight=10];
+  T4_1 -> T5_1 [style=invis, weight=10];
+  T5_1 -> T6_1 [style=invis, weight=10];
+
+  T1_3 -> T1_1 [style=dashed, constraint=false, color="#666666"];
+  T1_3 -> T2_1 [label="next 1−p₁", constraint=false];
+  T2_3 -> T2_1 [style=dashed, constraint=false, color="#666666"];
+  T2_3 -> T3_1 [label="next 1−p₂", constraint=false];
+  T3_6 -> T3_1 [style=dashed, constraint=false, color="#666666"];
+  T3_6 -> T4_1 [label="next 1−p₃", constraint=false];
+  T4_3 -> T4_1 [style=dashed, constraint=false, color="#666666"];
+  T4_3 -> T5_1 [label="next 1−p₄", constraint=false];
+  T5_5 -> T5_1 [style=dashed, constraint=false, color="#666666"];
+  T5_5 -> T6_1 [label="next 1−p₅", constraint=false];
+  T6_8 -> T6_1 [style=dashed, constraint=false, color="#666666"];
+}

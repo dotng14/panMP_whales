@@ -1,0 +1,115 @@
+// Exp5 Approach B — theme–slot Gaussian HMM (schematic).
+// Same topology as Approach A; each slot emits N(μ, Σ) on feature vector x_t.
+// Schematic T=6 with soft-HMM-like slot lengths; actual T / lengths learned on train.
+// No skip inside a theme; a different sequence = a different theme.
+//
+// Render: dot -Tpng approachB_theme_slot_hmm.dot -o approachB_theme_slot_hmm.png
+
+digraph hmm {
+  rankdir=TB;
+  splines=true;
+  nodesep=0.32;
+  ranksep=0.85;
+  fontname="Helvetica";
+  labelloc="t";
+  label="Approach B (Exp5): flexible theme–slot HMM — Gaussian emissions on x_t\nSchematic T=6 (same layout family as soft-HMM t6); actual T / #slots / N(μ,Σ) learned on train\nNo skip inside a theme; a different sequence = a different theme";
+  fontsize=11;
+
+  node [shape=box, style="rounded,filled", fillcolor="#eef6fb",
+        fontname="Helvetica", fontsize=11, margin="0.08,0.06"];
+  edge [fontname="Helvetica", fontsize=10, color="#444444"];
+
+  start [shape=circle, label="", width=0.22, height=0.22,
+         style=filled, fillcolor="#222222"];
+
+  subgraph cluster_t1 {
+    label="Theme 1    repeat p₁ (learned)";
+    fontsize=13;
+    fontname="Helvetica";
+    color="#bbbbbb";
+    { rank=same; T1_1 -> T1_2 -> T1_3 [color="#444444"]; }
+  }
+  subgraph cluster_t2 {
+    label="Theme 2    repeat p₂ (learned)";
+    fontsize=13;
+    fontname="Helvetica";
+    color="#bbbbbb";
+    { rank=same; T2_1 -> T2_2 -> T2_3 [color="#444444"]; }
+  }
+  subgraph cluster_t3 {
+    label="Theme 3    repeat p₃ (learned)";
+    fontsize=13;
+    fontname="Helvetica";
+    color="#bbbbbb";
+    { rank=same; T3_1 -> T3_2 -> T3_3 -> T3_4 -> T3_5 -> T3_6 [color="#444444"]; }
+  }
+  subgraph cluster_t4 {
+    label="Theme 4    repeat p₄ (learned)";
+    fontsize=13;
+    fontname="Helvetica";
+    color="#bbbbbb";
+    { rank=same; T4_1 -> T4_2 -> T4_3 [color="#444444"]; }
+  }
+  subgraph cluster_t5 {
+    label="Theme 5    repeat p₅ (learned)";
+    fontsize=13;
+    fontname="Helvetica";
+    color="#bbbbbb";
+    { rank=same; T5_1 -> T5_2 -> T5_3 -> T5_4 -> T5_5 [color="#444444"]; }
+  }
+  subgraph cluster_t6 {
+    label="Theme 6    repeat p₆ (learned) until song ends";
+    fontsize=13;
+    fontname="Helvetica";
+    color="#bbbbbb";
+    { rank=same; T6_1 -> T6_2 -> T6_3 -> T6_4 -> T6_5 -> T6_6 -> T6_7 -> T6_8 [color="#444444"]; }
+  }
+
+  T1_1 [label="T1.1\nN(μ,Σ)"];
+  T1_2 [label="T1.2\nN(μ,Σ)"];
+  T1_3 [label="T1.3\nN(μ,Σ)"];
+  T2_1 [label="T2.1\nN(μ,Σ)"];
+  T2_2 [label="T2.2\nN(μ,Σ)"];
+  T2_3 [label="T2.3\nN(μ,Σ)"];
+  T3_1 [label="T3.1\nN(μ,Σ)"];
+  T3_2 [label="T3.2\nN(μ,Σ)"];
+  T3_3 [label="T3.3\nN(μ,Σ)"];
+  T3_4 [label="T3.4\nN(μ,Σ)"];
+  T3_5 [label="T3.5\nN(μ,Σ)"];
+  T3_6 [label="T3.6\nN(μ,Σ)"];
+  T4_1 [label="T4.1\nN(μ,Σ)"];
+  T4_2 [label="T4.2\nN(μ,Σ)"];
+  T4_3 [label="T4.3\nN(μ,Σ)"];
+  T5_1 [label="T5.1\nN(μ,Σ)"];
+  T5_2 [label="T5.2\nN(μ,Σ)"];
+  T5_3 [label="T5.3\nN(μ,Σ)"];
+  T5_4 [label="T5.4\nN(μ,Σ)"];
+  T5_5 [label="T5.5\nN(μ,Σ)"];
+  T6_1 [label="T6.1\nN(μ,Σ)"];
+  T6_2 [label="T6.2\nN(μ,Σ)"];
+  T6_3 [label="T6.3\nN(μ,Σ)"];
+  T6_4 [label="T6.4\nN(μ,Σ)"];
+  T6_5 [label="T6.5\nN(μ,Σ)"];
+  T6_6 [label="T6.6\nN(μ,Σ)"];
+  T6_7 [label="T6.7\nN(μ,Σ)"];
+  T6_8 [label="T6.8\nN(μ,Σ)"];
+
+  start -> T1_1;
+  T1_1 -> T2_1 [style=invis, weight=10];
+  T2_1 -> T3_1 [style=invis, weight=10];
+  T3_1 -> T4_1 [style=invis, weight=10];
+  T4_1 -> T5_1 [style=invis, weight=10];
+  T5_1 -> T6_1 [style=invis, weight=10];
+
+  T1_3 -> T1_1 [style=dashed, constraint=false, color="#666666"];
+  T1_3 -> T2_1 [label="next 1−p₁", constraint=false];
+  T2_3 -> T2_1 [style=dashed, constraint=false, color="#666666"];
+  T2_3 -> T3_1 [label="next 1−p₂", constraint=false];
+  T3_6 -> T3_1 [style=dashed, constraint=false, color="#666666"];
+  T3_6 -> T4_1 [label="next 1−p₃", constraint=false];
+  T4_3 -> T4_1 [style=dashed, constraint=false, color="#666666"];
+  T4_3 -> T5_1 [label="next 1−p₄", constraint=false];
+  T5_5 -> T5_1 [style=dashed, constraint=false, color="#666666"];
+  T5_5 -> T6_1 [label="next 1−p₅", constraint=false];
+  T6_8 -> T6_1 [style=dashed, constraint=false, color="#666666"];
+}
