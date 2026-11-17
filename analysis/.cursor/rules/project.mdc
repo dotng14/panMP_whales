@@ -1,0 +1,12 @@
+---
+description: Rules applied to every prompt in this project
+alwaysApply: true
+---
+
+# Project rules
+
+* when plotting a spectrogram, use the jet color map and scale the values so that they occupy the whole range.
+
+* When commiting to git, make sure that no file is larger than 10MB, such files should be ignored using .gitignore
+
+
