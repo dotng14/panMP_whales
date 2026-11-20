@@ -106,7 +106,7 @@ python -m analysis.matrix_profile pan --gpl-dir GPL_OUT --rate 10 --signal full 
 
 - `--series`: a `.npy` array, 1-D or `(rows, time)`.
 - `--wav`: a WAV. `--rate` is required and must divide the file's sample rate. `--signal rms` (default) is one RMS row. `--signal bands` is `analysis.bands` (five 100 Hz bands, 0–500 Hz).
-- `--gpl-dir`: whitened windows. `--signal energy` (default) sums frequency. `bands` sums within Hz edges, default every 100 Hz from the spectrogram's start to its end; `--band-edges 10,100,200` overrides that. `full` keeps every frequency row. With `--rate`, columns are averaged into bins of `1/rate` seconds by STFT-frame centre time. Without it, the native STFT hop is kept.
+- `--gpl-dir`: whitened windows. `--signal bands` (default) sums within Hz edges; the default edges are one band, 50–500 Hz (`--band-edges` overrides). `energy` sums all frequency. `pca` projects onto top frequency patterns. `full` keeps every frequency row. With `--rate`, columns are averaged into bins of `1/rate` seconds by STFT-frame centre time. Without it, the native STFT hop is kept.
 
 Lengths `--min-len`, `--max-len`, `--step` are in samples of that signal. The series must be at least `max-len + max(max-len − 2, 4)` samples long. `--min-len` is at least 4.
 

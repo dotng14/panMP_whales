@@ -2,12 +2,12 @@
 
 - A saved ``.npy`` series, 1-D or ``(rows, T)``.
 - A WAV: its RMS envelope (one row) or band energy (``analysis.bands``).
-- A GPL output folder, from the whitened spectrogram: summed over frequency
-  (one row), summed within frequency bands, projected onto the recording's
-  top frequency patterns (``pca``), or every frequency row. With a
-  ``rate`` the columns are averaged into bins of ``1 / rate`` seconds by the
-  centre time of each STFT frame, as the song HMM does; without one the
-  native STFT columns are kept.
+- A GPL output folder, from the whitened spectrogram: summed within frequency
+  bands (default: one band, 50–500 Hz), summed over all frequency (``energy``),
+  projected onto the recording's top frequency patterns (``pca``), or every
+  frequency row. With a ``rate`` the columns are averaged into bins of
+  ``1 / rate`` seconds by the centre time of each STFT frame, as the song HMM
+  does; without one the native STFT columns are kept.
 """
 
 from __future__ import annotations
@@ -24,6 +24,8 @@ from . import rms_envelope
 
 WAV_KINDS = ("rms", "bands")
 GPL_KINDS = ("energy", "bands", "pca", "full")
+DEFAULT_GPL_SIGNAL = "bands"
+DEFAULT_GPL_BAND_EDGES = (50.0, 500.0)
 DEFAULT_PCA_ROWS = 8
 
 
@@ -73,7 +75,12 @@ def _gpl_windows(gpl_dir: Path) -> list[tuple[np.ndarray, dict]]:
 
 
 def default_band_edges(start_freq: float, end_freq: float, width: float = 100.0) -> list[float]:
-    """Edges every ``width`` Hz from ``start_freq``; the last band ends at ``end_freq``."""
+    """Edges every ``width`` Hz from ``start_freq``; the last band ends at ``end_freq``.
+
+    The GPL ``bands`` default is :data:`DEFAULT_GPL_BAND_EDGES` (50–500 Hz), not
+    this 100 Hz tiling. Call this when an equal-width sweep over the spectrogram
+    range is wanted.
+    """
     edges = list(np.arange(float(start_freq), float(end_freq), float(width)))
     return edges + [float(end_freq)]
 
@@ -139,7 +146,7 @@ def gpl_rows(
         basis, mean = frequency_pca(blocks, int(pca_rows))
         info["pca_rows"] = int(pca_rows)
         return [basis @ (block - mean[:, None]) for block in blocks], info
-    edges = list(band_edges) if band_edges else default_band_edges(start_freq, end_freq)
+    edges = list(band_edges) if band_edges else list(DEFAULT_GPL_BAND_EDGES)
     if len(edges) < 2 or any(b <= a for a, b in zip(edges[:-1], edges[1:])):
         raise ValueError(f"band edges must increase, got {edges}")
     freqs = np.linspace(float(start_freq), float(end_freq), n_freq)

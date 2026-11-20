@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Step 4 — pan matrix profile of the GPL band energy at 10 Hz, motifs of 1–5 s.
+# Step 4 — pan matrix profile of the GPL 50–500 Hz band at 10 Hz, motifs of 1–5 s.
 # Independent of steps 2 and 3.
 #   in : $GPL_DIR (step 1)
 #   out: $PAN_DIR/{pan.npy, pan.json, pairs.json, pan.png}
@@ -12,6 +12,7 @@ run_logged 04_pan_matrix_profile -m analysis.matrix_profile pan \
   --gpl-dir "$GPL_DIR" \
   --rate 10 \
   --signal bands \
+  --band-edges 50,500 \
   --min-len 10 \
   --max-len 50 \
   --step 10 \

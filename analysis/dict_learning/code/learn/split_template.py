@@ -1,13 +1,11 @@
 """Bipartition a template's patches into two rank-1 subclusters.
 
-Randomized 1→2 split: perturb the current dictionary word by ±ε, assign and
-refine within the patch group, score residual SSE, and keep the best of
-``n_trials`` (K) draws with up to ``max_refine`` (S) iterations each. Returned
-atoms are unit-L2.
+Randomized 1→2 split: perturb the current dictionary word by ±ε in the
+subspace of PCA components 2–5 of the patches, assign and refine within the
+patch group, score residual SSE, and keep the best of ``n_trials`` (K) draws
+with up to ``max_refine`` (S) iterations each. Returned atoms are unit-L2.
 
-Ported from gplrev3 (``analysis/dict_learning/code/learn/split_template.py``,
-the viewer's ``split`` command); the algorithm is unchanged. Used by
-``python -m analysis.dict_learning split``.
+Used by ``python -m analysis.dict_learning split``.
 """
 
 from __future__ import annotations
@@ -199,22 +197,67 @@ def _resolve_base(
     return np.mean(data, axis=0)  # no-pipeline-cover: the CLI always passes the atom as the base
 
 
+def _pca_components(
+    data: np.ndarray,
+    *,
+    first: int = 2,
+    last: int = 5,
+) -> np.ndarray:
+    """Orthonormal columns for PCA components ``first``…``last`` (1-based).
+
+    ``data`` is ``(n, D)`` patches. Component 1 is the leading PC of the
+    centered patches; components 2–5 are the next four. Returns shape
+    ``(D, k)`` with ``k`` the number of those components that have positive
+    singular value (possibly 0 when the patch cloud is too low-rank).
+    """
+    n, d = data.shape
+    if n < 2 or first < 1 or last < first:
+        return np.zeros((d, 0), dtype=np.float64)
+    centered = data - np.mean(data, axis=0)
+    singular, vh = np.linalg.svd(centered, full_matrices=False)[1:]
+    if singular.size == 0 or float(singular[0]) <= 0.0:
+        return np.zeros((d, 0), dtype=np.float64)  # no-pipeline-cover: whitened patches always have energy
+    floor = 1e-12 * float(singular[0])
+    i0 = first - 1
+    i1 = min(last, singular.size)
+    if i0 >= i1:
+        return np.zeros((d, 0), dtype=np.float64)
+    keep = singular[i0:i1] > floor
+    if not np.any(keep):
+        return np.zeros((d, 0), dtype=np.float64)
+    return np.asarray(vh[i0:i1][keep].T, dtype=np.float64)
+
+
 def _sample_pm_epsilon(
     base: np.ndarray,
     *,
     epsilon: float,
     rng: np.random.Generator,
+    directions: np.ndarray | None = None,
 ) -> tuple[np.ndarray, np.ndarray]:
-    """Return ``(base+ε, base-ε)`` with ``||ε|| = epsilon * ||base||``."""
+    """Return ``(base+ε, base-ε)`` with ``||ε|| = epsilon * ||base||``.
+
+    When ``directions`` is a ``(D, k)`` orthonormal basis (PCA components
+    2–5), ``ε`` is uniform on the unit sphere in that subspace. With no
+    usable directions, a tiny isotropic jitter keeps ± numerically distinct.
+    """
     d = base.size
-    g = rng.standard_normal(d)
-    g_norm = float(np.linalg.norm(g))
     base_norm = float(np.linalg.norm(base))
-    if g_norm <= 0.0 or base_norm <= 0.0:
-        # Degenerate: tiny isotropic jitter so ± still differ numerically.
-        eps_vec = rng.standard_normal(d) * (abs(float(epsilon)) * 1e-6 + 1e-12)  # no-pipeline-cover: needs an all-zero base atom
-    else:
-        eps_vec = g * ((float(epsilon) * base_norm) / g_norm)
+    scale = abs(float(epsilon)) * base_norm
+    if (
+        directions is not None
+        and directions.ndim == 2
+        and directions.shape[0] == d
+        and directions.shape[1] > 0
+        and scale > 0.0
+    ):
+        g = rng.standard_normal(directions.shape[1])
+        g_norm = float(np.linalg.norm(g))
+        if g_norm > 0.0:
+            eps_vec = directions @ (g * (scale / g_norm))
+            return base + eps_vec, base - eps_vec
+    # Degenerate: tiny isotropic jitter so ± still differ numerically.
+    eps_vec = rng.standard_normal(d) * (abs(float(epsilon)) * 1e-6 + 1e-12)  # no-pipeline-cover: needs an all-zero base or rank-1 patch cloud
     return base + eps_vec, base - eps_vec
 
 
@@ -270,7 +313,8 @@ def split_patches_rank1(
 
     For each of ``n_trials``:
 
-    1. Draw a random direction and set ``ε`` with
+    1. Draw a direction uniform on the unit sphere in the subspace of PCA
+       components 2–5 of the patches, and set ``ε`` with
        ``||ε|| = epsilon * ||base||`` (``base`` is ``base_template`` or the
        mean patch).
     2. Form candidate words ``base+ε`` and ``base-ε``.
@@ -304,6 +348,7 @@ def split_patches_rank1(
         return _empty_split(data, h, w, sse_one=sse_one, n_trials=int(n_trials))
 
     base = _resolve_base(data, h, w, base_template)
+    directions = _pca_components(data, first=2, last=5)
     gen = _rng(rng)
 
     best_sse = sse_one
@@ -314,7 +359,9 @@ def split_patches_rank1(
     best_rel = 0.0
 
     for trial in range(int(n_trials)):
-        cand_a, cand_b = _sample_pm_epsilon(base, epsilon=float(epsilon), rng=gen)
+        cand_a, cand_b = _sample_pm_epsilon(
+            base, epsilon=float(epsilon), rng=gen, directions=directions
+        )
         refined = _refine_from_units(
             data,
             cand_a,

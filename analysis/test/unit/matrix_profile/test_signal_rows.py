@@ -5,7 +5,12 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from analysis.matrix_profile.signals import decimate_columns, frequency_pca, gpl_rows
+from analysis.matrix_profile.signals import (
+    DEFAULT_GPL_BAND_EDGES,
+    decimate_columns,
+    frequency_pca,
+    gpl_rows,
+)
 
 
 def _blocks(seed: int = 0) -> list[np.ndarray]:
@@ -43,6 +48,9 @@ def test_gpl_rows_kinds():
     bands, info = gpl_rows(blocks, "bands", band_edges=[10, 30, 60], **kw)
     np.testing.assert_allclose(bands[0][0], blocks[0][:2].sum(axis=0))  # rows at 10 and 20 Hz
     assert info["band_edges"] == [10, 30, 60]
+    default_bands, info = gpl_rows(blocks, "bands", **kw)
+    assert info["band_edges"] == list(DEFAULT_GPL_BAND_EDGES)
+    assert default_bands[0].shape[0] == 1
     with pytest.raises(ValueError, match="GPL signal must be one of"):
         gpl_rows(blocks, "rms", **kw)
     with pytest.raises(ValueError, match="different frequency rows"):

@@ -40,6 +40,7 @@ from .core import Dictionary, Matching, Template, Window, as_stack, coverage_fro
 from .io import Detection, discover_windows, find_detection_csvs, load_detections_from_paths
 from .learn import randomized_dictionary as rd
 from .learn.pan_seeds import (
+    DEFAULT_BAND_EDGES,
     DEFAULT_COPY_THRESHOLD,
     DEFAULT_DEDUPE_CORR,
     DEFAULT_MIN_COPIES,
@@ -750,8 +751,8 @@ def build_parser() -> argparse.ArgumentParser:
         "--pca-rows", type=int, default=DEFAULT_PCA_ROWS, help="--signal pca: frequency patterns kept"
     )
     pan.add_argument(
-        "--band-edges", type=_lengths_s, default=None,
-        help="--signal bands: edges in Hz, e.g. 10,100,200 (default: 100 Hz bands)",
+        "--band-edges", type=_lengths_s, default=list(DEFAULT_BAND_EDGES),
+        help="--signal bands: edges in Hz (default: one band, 50–500 Hz)",
     )
     pan.add_argument(
         "--lengths-s", type=_lengths_s, default=[1.0, 2.0, 3.0, 4.0],

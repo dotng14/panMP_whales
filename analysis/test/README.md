@@ -253,7 +253,7 @@ fixture's 12 frequency rows.
 | `--lengths-s` | 0.12 | 1,2,3,4 | The planted motifs are 12 columns of 10 ms. The defaults are 100–400 columns; a 400-column pair needs about 800 joined columns, and the fixture has 720 |
 | `--m-per-outer` | 3 | 5 | The 3 planted motifs |
 | `--n-min` / `--refine-iters` | 2 / 1 | 10 / 1 | As in the randomized-build `FAST`: each motif has 4 copies, so 10 would prune every atom |
-| `--max-outer` / `--min-coverage` | 2 / 1.0 | 10 / 0.2 | Exactly 2 passes, so `pan_seeds.jsonl` and the second pass's duplicate check against accumulated atoms are exercised; in the second pass two atoms refine to a third's shape and are folded (`n_merged` 0, 2) |
+| `--max-outer` / `--min-coverage` | 2 / 1.0 | 10 / 0.2 | Exactly 2 passes, so `pan_seeds.jsonl` and the second pass's duplicate check against accumulated atoms are exercised; with the default 50–500 Hz band, the first pass folds one duplicate (`n_merged` 1, 0) |
 | `--workers` | 1 | all CPUs | Fast and deterministic |
 
 Values that make one path run:
@@ -415,7 +415,7 @@ Point them at a GPL output folder, for example one written by
 python -m analysis.dict_learning randomized-build --gpl-dir GPL_OUT --out DICT \
   --n-windows 10 --m-per-outer 5 --n-min 10 --min-coverage 0.5 --seed 0 --verbose
 python -m analysis.dict_learning matching-pursuit --gpl-dir GPL_OUT --dictionary DICT --out MP
-python -m analysis.matrix_profile pan --gpl-dir GPL_OUT --rate 10 --signal bands \
+python -m analysis.matrix_profile pan --gpl-dir GPL_OUT --rate 10 \
   --min-len 10 --max-len 50 --step 10 --threads 8 --out PAN --plot
 ```
 

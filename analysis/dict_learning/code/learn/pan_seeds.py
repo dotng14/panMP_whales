@@ -58,7 +58,8 @@ from ..io import ColumnMap
 from .randomized_dictionary import RandomizedCreateResult
 from .shape_match import shape_similarity
 
-DEFAULT_SIGNAL = "pca"
+DEFAULT_SIGNAL = "bands"
+DEFAULT_BAND_EDGES = (50.0, 500.0)
 DEFAULT_COPY_THRESHOLD = 0.5
 DEFAULT_MIN_COPIES = 3
 DEFAULT_DEDUPE_CORR = 0.9
@@ -80,7 +81,7 @@ class PanSeedConfig:
     end_freq: float
     signal: str = DEFAULT_SIGNAL
     pca_rows: int = DEFAULT_PCA_ROWS
-    band_edges: tuple[float, ...] | None = None
+    band_edges: tuple[float, ...] | None = DEFAULT_BAND_EDGES
     decimate: int = 1
     copy_threshold: float = DEFAULT_COPY_THRESHOLD
     min_copies: int = DEFAULT_MIN_COPIES

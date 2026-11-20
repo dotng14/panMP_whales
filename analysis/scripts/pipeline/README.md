@@ -7,9 +7,9 @@ from anywhere; they `cd` to the repository root.
 |---|---|---|---|
 | `01_gpl.sh` | `process_v4 $WAV --freq-lo 10 --freq-hi 10000` | `$WAV` | `gpl/` |
 | `02_randomized_build.sh` | `randomized-build --m-per-outer 5 --n-min 10 --max-outer 10 --min-coverage 0.2 --refine-iters 1 --seed 0` | `gpl/` (with detections) | `randomized_build/` |
-| `02_pan_build.sh` | `pan-build --signal pca --pca-rows 8 --lengths-s 1,2,3,4`, plus the same outer-loop options | `gpl/` | `pan_build/` |
+| `02_pan_build.sh` | `pan-build --signal bands --band-edges 50,500 --lengths-s 1,2,3,4`, plus the same outer-loop options | `gpl/` | `pan_build/` |
 | `03_matching_pursuit.sh` | `matching-pursuit` with the `SOURCE` dictionary | `gpl/`, `pan_build/` or `randomized_build/` | `matching_pursuit_<source>/` |
-| `04_pan_matrix_profile.sh` | `pan --rate 10 --signal bands --min-len 10 --max-len 50 --step 10 --top-k 10 --plot` | `gpl/` | `pan_mp/` |
+| `04_pan_matrix_profile.sh` | `pan --rate 10 --signal bands --band-edges 50,500 --min-len 10 --max-len 50 --step 10 --top-k 10 --plot` | `gpl/` | `pan_mp/` |
 | `05_split.sh TEMPLATE_ID` | `split --epsilon 0.1 --n-trials 10 --max-refine 10 --min-relative-reduction 0.1 --seed 0` | `gpl/`, the `SOURCE` dictionary, and `matching_pursuit_<source>/` if it exists | `split_<source>_t<id>/` |
 | `06_register_catalog.sh` | `python -m database register` on every output folder | the folders above | `$CATALOG` |
 | `run_randomized_pipeline.sh` | 01 → 02 randomized → 03 → 04 | `$WAV` | as above |
@@ -28,10 +28,9 @@ build means no atom survived, and from a split that the split was rejected
 - **Builds:** 5 seeds a pass, an atom needs 10 placements, at most 10 passes,
   stop at 20% of the time bins covered. These are the command defaults; the
   only addition is `--seed 0` for randomized-build, so reruns match.
-- **pan-build:** 1–4 s motifs on 8 PCA rows of the spectrogram, the defaults.
+- **pan-build:** 1–4 s motifs on the whitened 50–500 Hz band, the defaults.
   It needs no detections, so it also works where GPL detects poorly.
-- **Pan matrix profile:** 1–5 s motifs on 100 Hz band energy at 10 Hz, as the
-  HMM uses.
+- **Pan matrix profile:** 1–5 s motifs on the same 50–500 Hz band at 10 Hz.
 - **Split:** gplrev3's defaults, plus `--seed 0`.
 - **CPU:** `WORKERS=4` and `PAN_THREADS=4`. The server is shared, and the
   commands otherwise default to every CPU.

@@ -85,19 +85,19 @@ default.
 
 ```bash
 python -m analysis.dict_learning pan-build --gpl-dir GPL_OUT --out DICT_DIR \
-  --signal pca --lengths-s 1,2,3,4 --m-per-outer 5 --n-min 10 --verbose
+  --lengths-s 1,2,3,4 --m-per-outer 5 --n-min 10 --verbose
 ```
 
 The randomized build's outer loop with a different seeder
 (`learn/pan_seeds.py`). Each pass:
 
-1. **Search signal.** The residual windows, joined in time order, as `pca`
-   (projected onto the residual's top `--pca-rows` frequency patterns),
-   `full`, `bands` or `energy` (`analysis.matrix_profile.signals.gpl_rows`),
-   with every `--decimate` columns averaged. Positions map back to
-   `(window_id, t_start)` through the windows' column counts
-   (`io.ColumnMap`), not a time grid: a GPL window is not a whole number of
-   hops, so joined columns drift off any grid at every boundary.
+1. **Search signal.** The residual windows, joined in time order, as `bands`
+   (default: whitened energy in 50–500 Hz), `pca`, `full` or `energy`
+   (`analysis.matrix_profile.signals.gpl_rows`), with every `--decimate`
+   columns averaged. Positions map back to `(window_id, t_start)` through
+   the windows' column counts (`io.ColumnMap`), not a time grid: a GPL
+   window is not a whole number of hops, so joined columns drift off any
+   grid at every boundary.
 2. **One pan matrix profile** at the `--lengths-s` lengths.
 3. **Pairs, best first,** by the z-score of their distance within their
    length, the lengths taking turns, longest first. Z-scores of different
@@ -224,10 +224,12 @@ gplrev3):
 1. Cut the atom's patches: from its placements in the dictionary's
    `matchings.json`, or with `--matchings` from a `matching-pursuit` run of
    that dictionary.
-2. For each of `--n-trials` starts, perturb the atom by a random ±ε (norm
-   `--epsilon` × the atom's). Assign each patch to the candidate that explains
-   more of its energy, then alternate refitting each side's first principal
-   component and reassigning, up to `--max-refine` rounds.
+2. For each of `--n-trials` starts, perturb the atom by ±ε (norm
+   `--epsilon` × the atom's) in a direction drawn uniformly on the unit
+   sphere of PCA components 2–5 of the patches. Assign each patch to the
+   candidate that explains more of its energy, then alternate refitting
+   each side's first principal component and reassigning, up to
+   `--max-refine` rounds.
 3. Keep the start with the smallest residual error. Accept it when it cuts
    the error of the single atom by at least `--min-relative-reduction` and
    each side has at least `--min-size` patches.

@@ -99,9 +99,9 @@ the [shared MP options](#shared-mp-options) and:
 
 | Option | Default | Meaning |
 |---|---|---|
-| `--signal` | `pca` | What the matrix profile searches: `pca` (the recording's top frequency patterns), `full` (every frequency row: cleaner seeds, about rows/8 times slower), `bands`, `energy` |
+| `--signal` | `bands` | What the matrix profile searches: `bands` (default one band, 50–500 Hz), `pca` (top frequency patterns), `full` (every frequency row), `energy` (sum over frequency) |
 | `--pca-rows` | 8 | Frequency patterns kept with `--signal pca` |
-| `--band-edges` | 100 Hz bands | Band edges in Hz with `--signal bands` |
+| `--band-edges` | `50,500` | Band edges in Hz with `--signal bands` |
 | `--lengths-s` | 1,2,3,4 | Motif lengths in seconds; each becomes a whole number of STFT columns, and the atom width |
 | `--decimate` | 1 | Average every N columns for the search (faster on long recordings); copies are re-aligned to the column afterwards |
 | `--copy-threshold` | 0.5 | A copy is closer to the pair's first copy than this fraction of the way from the pair's own distance to the median distance |
@@ -142,13 +142,13 @@ python -m analysis.dict_learning split --gpl-dir GPL_OUT --dictionary DICT --tem
 ```
 
 Splits the patches of one atom into two rank-1 clusters: it perturbs the atom
-by ±ε, assigns each patch to the closer of the two, refits each by its first
+by ±ε in a direction uniform on the unit sphere of PCA components 2–5 of the
+patches, assigns each patch to the closer of the two, refits each by its first
 principal component, and keeps the best of `--n-trials` starts. When two
 atoms cut the residual error by at least `--min-relative-reduction`, it writes
 a new dictionary folder. The split atom becomes half `a` (same id), half `b`
 gets a new id, and the other atoms and placements carry over. Otherwise it
-exits 1 and writes only `summary.json`. Ported from gplrev3's viewer `split`
-command.
+exits 1 and writes only `summary.json`.
 
 | Option | Default | Meaning |
 |---|---|---|
@@ -186,16 +186,16 @@ command.
 ### `pan` (pan matrix profile)
 
 ```bash
-python -m analysis.matrix_profile pan --gpl-dir GPL_OUT --rate 10 --signal bands \
+python -m analysis.matrix_profile pan --gpl-dir GPL_OUT --rate 10 \
   --min-len 10 --max-len 50 --step 10 --out PAN --plot
 ```
 
 | Option | Default | Meaning |
 |---|---|---|
 | `--series FILE.npy` / `--wav FILE` / `--gpl-dir DIR` | one required | Input: a 1-D or `(rows, T)` array, a mono WAV, or a GPL folder |
-| `--signal` | WAV: `rms`; GPL: `energy` | WAV: `rms` or `bands`. GPL: `energy`, `bands`, `pca` (top frequency patterns) or `full` (every frequency row) |
+| `--signal` | WAV: `rms`; GPL: `bands` | WAV: `rms` or `bands`. GPL: `bands` (default one band, 50–500 Hz), `energy`, `pca`, or `full` |
 | `--rate` | GPL: native columns | Samples per second of the signal; required with `--wav` |
-| `--band-edges` | 100 Hz bands | Band edges in Hz for `--signal bands`, e.g. `10,100,200` |
+| `--band-edges` | `50,500` | Band edges in Hz for `--signal bands` |
 | `--pca-rows` | 8 | Frequency patterns kept for `--signal pca` |
 | `--min-len` / `--max-len` / `--step` | 32 / 128 / 32 | Motif lengths to scan, in samples of the signal |
 | `--top-k` | 10 | Motif pairs to report |

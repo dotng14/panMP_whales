@@ -2,7 +2,7 @@
 
     python -m analysis.matrix_profile pan --series x.npy --out OUT
     python -m analysis.matrix_profile pan --wav clip.wav --rate 100 --signal bands --out OUT
-    python -m analysis.matrix_profile pan --gpl-dir GPL_OUT --rate 10 --signal full --out OUT
+    python -m analysis.matrix_profile pan --gpl-dir GPL_OUT --rate 10 --out OUT
     python -m analysis.matrix_profile pan --gpl-dir GPL_OUT --signal pca --pca-rows 8 --out OUT
 
 Motif lengths (``--min-len``, ``--max-len``, ``--step``) are in samples of the
@@ -21,7 +21,16 @@ from pathlib import Path
 import numpy as np
 
 from . import ENGINES, pan_lengths, pan_profile, pan_top_pairs
-from .signals import DEFAULT_PCA_ROWS, GPL_KINDS, WAV_KINDS, load_gpl, load_series, load_wav
+from .signals import (
+    DEFAULT_GPL_BAND_EDGES,
+    DEFAULT_GPL_SIGNAL,
+    DEFAULT_PCA_ROWS,
+    GPL_KINDS,
+    WAV_KINDS,
+    load_gpl,
+    load_series,
+    load_wav,
+)
 
 
 def _band_edges(text: str) -> list[float]:
@@ -46,7 +55,10 @@ def build_parser() -> argparse.ArgumentParser:
     pan.add_argument(
         "--signal",
         default=None,
-        help=f"WAV: {'|'.join(WAV_KINDS)} (default rms); GPL: {'|'.join(GPL_KINDS)} (default energy)",
+        help=(
+            f"WAV: {'|'.join(WAV_KINDS)} (default rms); "
+            f"GPL: {'|'.join(GPL_KINDS)} (default {DEFAULT_GPL_SIGNAL})"
+        ),
     )
     pan.add_argument(
         "--rate",
@@ -54,7 +66,15 @@ def build_parser() -> argparse.ArgumentParser:
         default=None,
         help="Signal samples per second (required for --wav; GPL default: native STFT columns)",
     )
-    pan.add_argument("--band-edges", type=_band_edges, default=None, help="GPL bands, Hz: 10,100,200")
+    pan.add_argument(
+        "--band-edges",
+        type=_band_edges,
+        default=None,
+        help=(
+            "GPL --signal bands edges in Hz "
+            f"(default: {','.join(str(int(x)) for x in DEFAULT_GPL_BAND_EDGES)})"
+        ),
+    )
     pan.add_argument(
         "--pca-rows", type=int, default=DEFAULT_PCA_ROWS, help="GPL --signal pca: frequency patterns kept"
     )
@@ -91,7 +111,7 @@ def _load_signal(args: argparse.Namespace):
         raise ValueError(f"GPL directory not found: {args.gpl_dir}")
     return load_gpl(
         args.gpl_dir,
-        args.signal or "energy",
+        args.signal or DEFAULT_GPL_SIGNAL,
         rate=args.rate,
         band_edges=args.band_edges,
         pca_rows=args.pca_rows,

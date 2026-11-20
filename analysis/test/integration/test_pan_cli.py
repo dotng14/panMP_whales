@@ -82,7 +82,8 @@ def test_wav_default_signal_is_rms(wav_file, tmp_path):
     [
         ([], 1),
         (["--signal", "energy", "--rate", "10"], 1),
-        (["--signal", "bands", "--rate", "10"], 2),
+        (["--signal", "bands", "--rate", "10"], 1),
+        (["--signal", "bands", "--band-edges", "10,100,130", "--rate", "10"], 2),
         (["--signal", "bands", "--band-edges", "10,40,80,130"], 3),
         (["--signal", "pca"], 8),
         (["--signal", "pca", "--pca-rows", "3", "--rate", "10"], 3),
@@ -96,6 +97,9 @@ def test_gpl_signals(gpl_dir, tmp_path, extra, rows):
     meta = read_json(out / "pan.json")
     assert meta["rows"] == rows
     assert meta["n_samples"] == (72 if "--rate" in extra else 720)
+    if not extra or extra[:2] == ["--signal", "bands"] and "--band-edges" not in extra:
+        assert meta["signal"]["kind"] == "bands"
+        assert meta["signal"]["band_edges"] == [50.0, 500.0]
 
 
 def test_gpl_rate_fills_bins_without_frames(gpl_dir, tmp_path):

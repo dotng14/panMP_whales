@@ -29,7 +29,7 @@ def test_writes_a_build_folder_with_its_seeds(gpl_dir, tmp_path, capsys):
     summary = read_json(out / "summary.json")
     assert summary["command"] == "pan-build"
     assert summary["seeder"] == {
-        "signal": "pca", "pca_rows": 8, "band_edges": None, "lengths_s": [0.12],
+        "signal": "bands", "pca_rows": None, "band_edges": [50.0, 500.0], "lengths_s": [0.12],
         "lengths_columns": [12], "decimate": 1, "copy_threshold": 0.5, "min_copies": 3,
         "dedupe_corr": 0.9,
     }
@@ -41,10 +41,10 @@ def test_writes_a_build_folder_with_its_seeds(gpl_dir, tmp_path, capsys):
     passes = [json.loads(line) for line in (out / "pan_seeds.jsonl").read_text().splitlines()]
     logs = (out / "outer_logs.jsonl").read_text().splitlines()
     assert len(passes) == len(logs) == summary["n_outer_completed"] == 2
-    # Two seeds of the second pass refine to the shape of a third and are folded into it.
-    assert [json.loads(line)["n_merged"] for line in logs] == [0, 2]
+    # Folded duplicates are recorded per pass; counts depend on the search signal.
+    assert [json.loads(line)["n_merged"] for line in logs] == [1, 0]
     first = passes[0]
-    assert first["signal_rows"] == 8 and first["signal_columns"] == 720
+    assert first["signal_rows"] == 1 and first["signal_columns"] == 720
     assert len(first["picks"]) == 3
     assert all(len(pick["copies"]) >= 3 for pick in first["picks"])
     assert "outer 1:" in capsys.readouterr().err
@@ -145,7 +145,7 @@ def test_no_pair_with_enough_copies_exits_1(gpl_dir, tmp_path, capsys):
         (["--copy-threshold", "1"], "copy threshold"),
         (["--min-copies", "1"], "min copies"),
         (["--dedupe-corr", "0"], "dedupe correlation"),
-        (["--pca-rows", "13"], "PCA rows must be between 1 and 12"),
+        (["--signal", "pca", "--pca-rows", "13"], "PCA rows must be between 1 and 12"),
         (["--post-refine-max-relative-distance", "2"], "must be in [0, 1]"),
     ],
 )

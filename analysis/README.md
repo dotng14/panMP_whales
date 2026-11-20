@@ -137,13 +137,13 @@ exceeds `--min-coverage`. Details: [`dict_learning/README.md`](dict_learning/REA
 
 ```bash
 python -m analysis.dict_learning pan-build --gpl-dir GPL_OUT --out DICT \
-  --signal pca --lengths-s 1,2,3,4 --m-per-outer 5 --n-min 10
+  --lengths-s 1,2,3,4 --m-per-outer 5 --n-min 10
 ```
 
 The same outer loop, refinement and stopping rules as the randomized build;
 only the seeds differ. Each pass runs the pan matrix profile once on a search
-signal built from the residual (`--signal pca`: its top 8 frequency
-patterns), takes the most unusual pairs, finds each pair's other copies with
+signal built from the residual (default `--signal bands`: whitened energy in
+50–500 Hz), takes the most unusual pairs, finds each pair's other copies with
 one distance profile, shifts the copies together onto the call, averages them
 into a seed, and masks them so the same call is not seeded again. The
 lengths take turns, longest first. A seed too similar to one already taken is
@@ -162,7 +162,7 @@ energy left.
 ### Pan matrix profile
 
 ```bash
-python -m analysis.matrix_profile pan --gpl-dir GPL_OUT --rate 10 --signal bands \
+python -m analysis.matrix_profile pan --gpl-dir GPL_OUT --rate 10 \
   --min-len 10 --max-len 50 --step 10 --out PAN --plot
 ```
 
@@ -171,8 +171,9 @@ python -m analysis.matrix_profile pan --gpl-dir GPL_OUT --rate 10 --signal bands
 | `--series FILE.npy` | — | 1-D → 1 row; `(rows, T)` as is |
 | `--wav FILE --rate HZ` | `--signal rms` (default): RMS per frame | 1 |
 | | `--signal bands`: energy in 5 × 100 Hz bands, 0–500 Hz | 5 |
-| `--gpl-dir DIR [--rate HZ]` | `--signal energy` (default): whitened spectrogram summed over frequency (the HMM's signal) | 1 |
-| | `--signal bands [--band-edges 10,100,…]`: summed within bands (default 100 Hz bands over GPL's range) | bands |
+| `--gpl-dir DIR [--rate HZ]` | `--signal bands` (default): whitened energy in one band, 50–500 Hz | 1 |
+| | `--signal bands --band-edges …`: summed within those bands | bands |
+| | `--signal energy`: whitened spectrogram summed over frequency (the HMM's signal) | 1 |
 | | `--signal pca [--pca-rows 8]`: projected onto the recording's top frequency patterns (eigenvectors of the frequency covariance, strongest first) | `--pca-rows` |
 | | `--signal full`: every frequency row | ~100 |
 

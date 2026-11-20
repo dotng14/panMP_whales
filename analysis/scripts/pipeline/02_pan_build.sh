@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# Step 2b — pan-build: seeds from the pan matrix profile of the residual (8 PCA
-# rows, 1–4 s motifs), MP + PCA refine, same passes and stop as step 2a.
+# Step 2b — pan-build: seeds from the pan matrix profile of the residual
+# (50–500 Hz band, 1–4 s motifs), MP + PCA refine, same passes and stop as step 2a.
 # Needs no detections, so it also works where GPL detects poorly.
 #   in : $GPL_DIR (step 1)
 #   out: $PAN_BUILD_DIR/{atoms/, summary.json, matchings.json, outer_logs.jsonl, pan_seeds.jsonl, loop_stats.json}
@@ -13,8 +13,8 @@ run_logged 02_pan_build -m analysis.dict_learning pan-build \
   --gpl-dir "$GPL_DIR" \
   --out "$PAN_BUILD_DIR" \
   "${WINDOW_ARGS[@]}" \
-  --signal pca \
-  --pca-rows 8 \
+  --signal bands \
+  --band-edges 50,500 \
   --lengths-s 1,2,3,4 \
   --m-per-outer 5 \
   --n-min 10 \

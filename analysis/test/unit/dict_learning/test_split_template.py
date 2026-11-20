@@ -8,6 +8,8 @@ import pytest
 from analysis.dict_learning.code.core import Matching, Template, Window
 from analysis.dict_learning.code.learn.split_template import (
     SplitResult,
+    _pca_components,
+    _sample_pm_epsilon,
     split_patches_rank1,
     split_template_matchings,
 )
@@ -66,6 +68,27 @@ def test_split_recovers_two_planted_modes():
             / (np.linalg.norm(got) * np.linalg.norm(ref))
         )
         assert abs(corr) > 0.95
+
+
+def test_perturbation_lies_in_pca_components_2_to_5():
+    a = _pattern_a()
+    b = _pattern_b()
+    rng = np.random.default_rng(0)
+    patches = [a + 0.05 * rng.standard_normal(a.shape) for _ in range(6)]
+    patches += [b + 0.05 * rng.standard_normal(b.shape) for _ in range(5)]
+    data = np.stack([p.ravel() for p in patches], axis=0)
+    base = np.mean(data, axis=0)
+    directions = _pca_components(data, first=2, last=5)
+    assert directions.shape[1] >= 1
+    plus, minus = _sample_pm_epsilon(
+        base, epsilon=0.2, rng=np.random.default_rng(1), directions=directions
+    )
+    eps = plus - base
+    # ε is in the column span of directions (projection recovers it).
+    recon = directions @ (directions.T @ eps)
+    np.testing.assert_allclose(eps, recon, atol=1e-10)
+    np.testing.assert_allclose(minus, base - eps, atol=1e-12)
+    np.testing.assert_allclose(np.linalg.norm(eps), 0.2 * np.linalg.norm(base), rtol=1e-12)
 
 
 def test_unimodal_patches_reject_split():

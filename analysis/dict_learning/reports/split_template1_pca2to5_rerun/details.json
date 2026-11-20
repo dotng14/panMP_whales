@@ -1,0 +1,51 @@
+{
+  "dictionary": "analysis/dict_learning/reports/randomized_m10_r3_nmin5_eps001",
+  "gpl_dir": "/Users/yoavfreund/projects/whale_processing/LeiData/GPL_Python_outputs",
+  "parent_atom": {
+    "template_id": 1,
+    "width": 14,
+    "n_components": 1,
+    "n_patches": 100,
+    "source_segment_id": "spwhiten_SOCAL_H_76_230427_003345.x_w000009_s120000001_e135000000::det871::548",
+    "path": "atoms/template_001.npy"
+  },
+  "n_matchings": 100,
+  "n_windows_touched": 9,
+  "windows": {
+    "spwhiten_SOCAL_H_76_230427_003345.x_w000001_s000000001_e015000000": 2,
+    "spwhiten_SOCAL_H_76_230427_003345.x_w000002_s015000001_e030000000": 5,
+    "spwhiten_SOCAL_H_76_230427_003345.x_w000003_s030000001_e045000000": 2,
+    "spwhiten_SOCAL_H_76_230427_003345.x_w000005_s060000001_e075000000": 12,
+    "spwhiten_SOCAL_H_76_230427_003345.x_w000006_s075000001_e090000000": 36,
+    "spwhiten_SOCAL_H_76_230427_003345.x_w000007_s090000001_e105000000": 20,
+    "spwhiten_SOCAL_H_76_230427_003345.x_w000008_s105000001_e120000000": 16,
+    "spwhiten_SOCAL_H_76_230427_003345.x_w000009_s120000001_e135000000": 4,
+    "spwhiten_SOCAL_H_76_230427_003345.x_w000010_s135000001_e150000000": 3
+  },
+  "amplitude_min": -0.43792227940769535,
+  "amplitude_max": 4.016942639570417,
+  "amplitude_median": 0.28016545455055414,
+  "settings": {
+    "epsilon": 0.1,
+    "n_trials": 20,
+    "max_refine": 3,
+    "min_size": 2,
+    "min_relative_reduction": 0.1,
+    "seed": 0,
+    "perturbation": "uniform on unit sphere of PCA components 2-5"
+  },
+  "pca_components_2_to_5": 4,
+  "result": {
+    "accepted": true,
+    "best_trial": 16,
+    "n_a": 68,
+    "n_b": 32,
+    "relative_reduction": 0.18566193539092823,
+    "sse_one": 24347141.49981217,
+    "sse_two": 19826804.087720256,
+    "rms_one": 3.259384773264515,
+    "rms_two": 2.9412910408610693,
+    "n_placements_a": 68,
+    "n_placements_b": 32
+  }
+}

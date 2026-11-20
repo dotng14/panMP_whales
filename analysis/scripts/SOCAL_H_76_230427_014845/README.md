@@ -23,7 +23,7 @@ analysis/scripts/SOCAL_H_76_230427_014845/
 | `01_gpl.sh` | `python -m analysis.GPL_Python.process_v4 $WAV --output-dir $GPL_DIR` | WAV | `gpl/` |
 | `02_randomized_build.sh` | `python -m analysis.dict_learning randomized-build --gpl-dir $GPL_DIR --out $DICT_DIR --m-per-outer 5 --n-min 10 --min-coverage 0.5 --seed 0 --verbose` | `gpl/` | `dictionary/` |
 | `03_matching_pursuit.sh` | `python -m analysis.dict_learning matching-pursuit --gpl-dir $GPL_DIR --dictionary $DICT_DIR --out $MP_DIR` | `gpl/`, `dictionary/` | `matching_pursuit/` |
-| `04_pan_matrix_profile.sh` | `python -m analysis.matrix_profile pan --gpl-dir $GPL_DIR --rate 10 --signal bands --min-len 10 --max-len 50 --step 10 --out $PAN_DIR --plot` | `gpl/` | `pan_mp/` |
+| `04_pan_matrix_profile.sh` | `python -m analysis.matrix_profile pan --gpl-dir $GPL_DIR --rate 10 --signal bands --band-edges 50,500 --min-len 10 --max-len 50 --step 10 --out $PAN_DIR --plot` | `gpl/` | `pan_mp/` |
 
 Dependencies: 1 → 2 → 3, and 1 → 4. Step 4 does not need steps 2 or 3, so it
 can run in parallel with them once step 1 has finished. Each script checks
