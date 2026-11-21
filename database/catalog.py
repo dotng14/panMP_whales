@@ -172,6 +172,9 @@ def connect(db_path: Path | str, *, read_only: bool = False) -> sqlite3.Connecti
     conn.execute("PRAGMA foreign_keys = ON")
     schema = SCHEMA_PATH.read_text()
     _widen_tool_check(conn, schema)
+    # Migrate component columns before schema indexes that reference them.
+    # CREATE TABLE IF NOT EXISTS leaves pre-component wav_files untouched.
+    _ensure_wav_component_columns(conn)
     conn.executescript(schema)
     _ensure_wav_component_columns(conn)
     return conn

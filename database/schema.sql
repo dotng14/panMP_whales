@@ -35,8 +35,8 @@ CREATE TABLE IF NOT EXISTS wav_files (
     resample     TEXT,
     UNIQUE (library_root, rel_path)
 );
-CREATE INDEX IF NOT EXISTS idx_wav_files_components
-    ON wav_files(family, site, deployment, date, time, df);
+-- Component index is created in catalog._ensure_wav_component_columns so older
+-- catalogs (table without these columns) can ALTER first, then get the index.
 
 -- 2. GPL segmentation --------------------------------------------------------
 -- The on-disk output of GPL_Python for one WAV: a set of windows. `csv_path`
