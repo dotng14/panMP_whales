@@ -8,9 +8,11 @@ dict_learning CLIs, not from the web app.
 
 ## Flow
 
-1. **Pick a file** — `GET /api/library/roots` + `GET /api/library/browse`
-   list WAVs under `WAV_LIBRARY_ROOTS` (configured in `.env`), or the
-   frontend can upload one directly.
+1. **Pick a file** — library mode uses the component recording picker
+   (`GET /api/library/facets` + `GET /api/library/match` over WAVs under
+   `WAV_LIBRARY_ROOTS`). See [`frontend/recording-picker.md`](../frontend/recording-picker.md).
+   Upload mode still posts a WAV directly. `GET /api/library/browse` remains
+   for legacy directory listing.
 2. **Pick an overlay** — `GET /api/library/analyses?fileId=` lists the
    catalog's dictionaries and song-structure CSVs for that WAV's stem. The
    picker sorts them (A–Z, index, time), renames them in place

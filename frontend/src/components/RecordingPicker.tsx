@@ -8,8 +8,11 @@ import {
   type RecordingFilters,
 } from '../api/library';
 import {
+  SOCAL_CHIP_HELP,
   SOCAL_CHIP_KEYS,
   SOCAL_CHIP_LABELS,
+  SOCAL_NAME_EXAMPLE,
+  SOCAL_NAME_EXAMPLE_PARTS,
   filledComponents,
   parseWavName,
   type ComponentKey,
@@ -56,6 +59,7 @@ export function RecordingPicker({ onSelectFile, selectedFileId, disabled, librar
   const [offset, setOffset] = useState(0);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [helpOpen, setHelpOpen] = useState(false);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const lastCacheRefreshNonceRef = useRef<number | null>(null);
   const listScrollRef = useRef<HTMLDivElement>(null);
@@ -172,15 +176,40 @@ export function RecordingPicker({ onSelectFile, selectedFileId, disabled, librar
       }}
     >
       <div style={{ padding: '10px 12px', background: '#f9fafb', borderBottom: '1px solid #d1d5db' }}>
-        <label style={{ display: 'block', fontSize: 12, color: '#6b7280', marginBottom: 4 }}>
-          Paste recording name
-        </label>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
+          <label htmlFor="recording-paste" style={{ flex: 1, fontSize: 12, color: '#6b7280' }}>
+            Paste recording name
+          </label>
+          <button
+            type="button"
+            aria-label="How to read recording names"
+            aria-expanded={helpOpen}
+            title="How to read recording names"
+            onClick={() => setHelpOpen(v => !v)}
+            style={{
+              width: 22,
+              height: 22,
+              borderRadius: '50%',
+              border: helpOpen ? '1px solid #2563eb' : '1px solid #9ca3af',
+              background: helpOpen ? '#dbeafe' : '#fff',
+              color: helpOpen ? '#1d4ed8' : '#4b5563',
+              fontSize: 13,
+              fontWeight: 600,
+              lineHeight: '20px',
+              padding: 0,
+              cursor: 'pointer',
+            }}
+          >
+            ?
+          </button>
+        </div>
         <div style={{ display: 'flex', gap: 8 }}>
           <input
+            id="recording-paste"
             type="text"
             value={paste}
             disabled={disabled}
-            placeholder="SOCAL_H_76_230426_193500_df100.x.x.wav"
+            placeholder={SOCAL_NAME_EXAMPLE}
             onChange={e => applyPaste(e.target.value)}
             style={{
               flex: 1,
@@ -212,6 +241,68 @@ export function RecordingPicker({ onSelectFile, selectedFileId, disabled, librar
         <div style={{ marginTop: 6, fontSize: 12, color: '#6b7280' }}>
           Parsed fields fill the chips below; open empty chips to narrow the list.
         </div>
+        {helpOpen && (
+          <div
+            role="region"
+            aria-label="Recording name help"
+            style={{
+              marginTop: 10,
+              padding: 12,
+              borderRadius: 8,
+              border: '1px solid #dbeafe',
+              background: '#eff6ff',
+              color: '#1e3a5f',
+              fontSize: 12,
+              lineHeight: 1.45,
+            }}
+          >
+            <div style={{ fontWeight: 600, marginBottom: 6 }}>How to write a name</div>
+            <div style={{ marginBottom: 8 }}>
+              Paste a full filename, a stem, or a partial prefix. Underscores separate fields;
+              older files may use dots before <code>df</code> (e.g. <code>.df20.x.wav</code>).
+            </div>
+            <div
+              style={{
+                fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace',
+                fontSize: 12,
+                wordBreak: 'break-all',
+                marginBottom: 8,
+              }}
+            >
+              {SOCAL_NAME_EXAMPLE}
+            </div>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 12 }}>
+              {SOCAL_NAME_EXAMPLE_PARTS.map(part => (
+                <span
+                  key={part.label}
+                  style={{
+                    display: 'inline-flex',
+                    flexDirection: 'column',
+                    padding: '4px 8px',
+                    borderRadius: 6,
+                    background: '#fff',
+                    border: '1px solid #bfdbfe',
+                    minWidth: 52,
+                  }}
+                >
+                  <span style={{ fontSize: 10, color: '#64748b' }}>{part.label}</span>
+                  <span style={{ fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace' }}>
+                    {part.value}
+                  </span>
+                </span>
+              ))}
+            </div>
+            <div style={{ fontWeight: 600, marginBottom: 6 }}>What each component means</div>
+            <dl style={{ margin: 0, display: 'grid', gap: 6 }}>
+              {SOCAL_CHIP_KEYS.map(key => (
+                <div key={key} style={{ display: 'grid', gridTemplateColumns: '88px 1fr', gap: 8 }}>
+                  <dt style={{ fontWeight: 600, color: '#1e40af' }}>{SOCAL_CHIP_LABELS[key]}</dt>
+                  <dd style={{ margin: 0, color: '#334155' }}>{SOCAL_CHIP_HELP[key]}</dd>
+                </div>
+              ))}
+            </dl>
+          </div>
+        )}
       </div>
 
       <div style={{ padding: '10px 12px', borderBottom: '1px solid #e5e7eb' }}>

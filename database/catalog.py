@@ -231,13 +231,33 @@ def _all(conn: sqlite3.Connection, sql: str, args: Sequence[Any] = ()) -> list[d
 
 
 def upsert_wav_file(
-    conn: sqlite3.Connection, *, library_root: Path | str, abs_path: Path | str
+    conn: sqlite3.Connection,
+    *,
+    library_root: Path | str,
+    abs_path: Path | str,
+    skip_stat: bool = False,
 ) -> int:
-    """Insert or update a WAV row; returns its ``wav_id``."""
-    root = Path(library_root).resolve()
-    wav = Path(abs_path).resolve()
-    rel_path = str(wav.relative_to(root)) if wav.is_relative_to(root) else wav.name
-    stat = wav.stat() if wav.exists() else None
+    """Insert or update a WAV row; returns its ``wav_id``.
+
+    ``skip_stat=True`` avoids ``exists``/``stat``/``resolve`` (needed when the
+    volume hangs on metadata I/O but paths are already known from a manifest).
+    """
+    root = Path(library_root)
+    wav = Path(abs_path)
+    if not skip_stat:
+        root = root.resolve()
+        wav = wav.resolve()
+    else:
+        root = root if root.is_absolute() else root.resolve()
+        wav = wav if wav.is_absolute() else wav.resolve()
+    try:
+        rel_path = str(wav.relative_to(root))
+    except ValueError:
+        rel_path = wav.name
+    if skip_stat:
+        stat = None
+    else:
+        stat = wav.stat() if wav.exists() else None
     parsed = parse_wav_name(wav.name)
     if parsed is not None:
         comps = parsed.to_dict()

@@ -52,6 +52,32 @@ export const SOCAL_CHIP_LABELS: Record<string, string> = {
   resample: 'Resample',
 };
 
+/** Short help text for the picker “?” panel (SOCAL v1). */
+export const SOCAL_CHIP_HELP: Record<string, string> = {
+  site: 'Hydrophone site letter. Site H recordings use H.',
+  deployment: 'Deployment number on that site (e.g. 76).',
+  disk: 'Instrument disk / logger id when present (DL37, disk01, d03). Leave Any if unused.',
+  date: 'Recording start date as YYMMDD (UTC), e.g. 230426 = 2023-04-26.',
+  time: 'Recording start time as HHMMSS (UTC), e.g. 193500 = 19:35:00.',
+  df: 'Decimation: keep 1 of every N native samples. 20 ≈ 10 kHz, 100 ≈ 2 kHz, native = full rate (~200 kHz).',
+  channel: 'Channel id from the HARP/Triton name: x or x.x (mono).',
+  resample: 'Optional later resample suffix after the channel, e.g. 10kHz or 2kHz.',
+};
+
+export const SOCAL_NAME_EXAMPLE =
+  'SOCAL_H_76_230426_193500_df100.x.x.wav';
+
+export const SOCAL_NAME_EXAMPLE_PARTS: { label: string; value: string }[] = [
+  { label: 'project', value: 'SOCAL' },
+  { label: 'site', value: 'H' },
+  { label: 'deployment', value: '76' },
+  { label: 'date', value: '230426' },
+  { label: 'time', value: '193500' },
+  { label: 'df', value: 'df100' },
+  { label: 'channel', value: 'x.x' },
+  { label: 'ext', value: '.wav' },
+];
+
 export function normalizeWavBasename(name: string): string {
   const base = name.trim().split(/[/\\]/).pop() ?? name.trim();
   return base.toLowerCase().endsWith('.wav') ? base.slice(0, -4) : base;

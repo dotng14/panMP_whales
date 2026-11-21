@@ -237,13 +237,21 @@ def match_recordings(
         if root_idx is None:
             continue
         abs_path = Path(row["abs_path"])
+        # Avoid exists()/stat on /mnt/sda — metadata I/O there can hang.
+        if str(abs_path).startswith("/mnt/sda"):
+            cached = False
+        else:
+            try:
+                cached = is_gpl_cached(abs_path) if abs_path.is_file() else False
+            except OSError:
+                cached = False
         entries.append({
             "type": "file",
             "name": abs_path.name,
             "fileId": encode_file_id(root_idx, row["rel_path"]),
             "sizeBytes": row.get("size_bytes"),
             "mtime": row.get("mtime"),
-            "cached": is_gpl_cached(abs_path) if abs_path.is_file() else False,
+            "cached": cached,
             "stem": row.get("stem"),
             "components": {k: row.get(k) for k in COMPONENT_KEYS},
         })

@@ -1,5 +1,9 @@
 # React + TypeScript + Vite
 
+Spectrogram viewer UI. Library mode picks a recording with the **component
+recording picker** (paste a SOCAL name → chips → matching list); see
+[recording-picker.md](recording-picker.md).
+
 This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
 
 Currently, two official plugins are available:

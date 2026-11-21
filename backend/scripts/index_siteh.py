@@ -1,12 +1,14 @@
 #!/usr/bin/env python3
-"""Index /mnt/sda/SiteH one deployment folder at a time into the catalog.
+"""Index Site H WAVs into the catalog from a known path manifest.
 
-Avoids ``SiteH.iterdir()`` (can hang on this exFAT volume); uses the known
-deployment folder names from siteH_deployments.md instead.
+Does **not** ``rglob`` ``/mnt/sda/SiteH`` (exFAT listing there can hang for
+minutes and return zero files). Uses the hybrid-run manifest that already
+lists ~6800 absolute paths under SiteH.
 """
 
 from __future__ import annotations
 
+import csv
 import sys
 import time
 from contextlib import closing
@@ -16,59 +18,57 @@ REPO = Path(__file__).resolve().parents[2]
 sys.path[:0] = [str(REPO), str(REPO / "backend")]
 
 from database import catalog  # noqa: E402
-from database.index_existing import index_wav_root  # noqa: E402
 
 SITEH = Path("/mnt/sda/SiteH")
 DB = REPO / "backend" / "data" / "catalog.sqlite"
-
-# Prefer recent deployments first so the picker fills with useful files sooner.
-DEPLOYMENTS = [
-    "SOCAL_H_81", "SOCAL_H_80", "SOCAL_H_79", "SOCAL_H_78", "SOCAL_H_77", "SOCAL_H_76",
-    "SOCAL_H_75_HE", "SOCAL_H_74_HE", "SOCAL_H_73_HE", "SOCAL_H_72_HE", "SOCAL_H_71",
-    "SOCAL_H_70", "SOCAL_H_69", "SOCAL_H_68", "SOCAL_H_67_HE", "SOCAL_H_66", "SOCAL_H_65",
-    "SOCAL_H_64", "SOCAL_H_63", "SOCAL_H_62", "SOCAL_H_61", "SOCAL_H_59", "SOCAL_H_58",
-    "SOCAL57H", "SOCAL56H", "SOCAL55H", "SOCAL54H", "SOCAL53H", "SOCAL52H", "SOCAL51H",
-    "SOCAL50H", "SOCAL49H", "SOCAL48H", "SOCAL47H", "SOCAL46H", "SOCAL45H", "SOCAL44H",
-    "SOCAL41H", "SOCAL40H", "SOCAL38H", "SOCAL37H", "SOCAL36H", "SOCAL35H", "SOCAL34H",
-    "SOCAL32H", "SOCAL31H", "SOCAL30H", "SOCAL29H", "SOCAL27H", "SOCAL26H", "SOCAL18H",
-]
+DEFAULT_MANIFEST = Path(
+    "/home/yfreund/projects/panMP_whales/analysis/dict_HMM/find_songs/"
+    "siteH_all_songs/manifest.csv"
+)
 
 
 def main() -> int:
-    siteh = str(SITEH.resolve())
-    subs = [SITEH / name for name in DEPLOYMENTS if (SITEH / name).is_dir()]
-    print(f"indexing {len(subs)} reachable deployments under {SITEH}", flush=True)
+    manifest = Path(sys.argv[1]) if len(sys.argv) > 1 else DEFAULT_MANIFEST
+    if not manifest.is_file():
+        print(f"manifest not found: {manifest}", flush=True)
+        return 2
 
-    for i, sub in enumerate(subs, 1):
-        t1 = time.time()
-        print(f"[{i}/{len(subs)}] indexing {sub.name} …", flush=True)
-        try:
-            with closing(catalog.connect(DB)) as conn:
-                counts = index_wav_root(conn, sub, result_dirname="result")
-                sub_s = str(sub.resolve())
-                rows = conn.execute(
-                    "SELECT wav_id, abs_path FROM wav_files WHERE library_root = ?",
-                    (sub_s,),
-                ).fetchall()
-                for row in rows:
-                    abs_path = Path(row["abs_path"])
-                    rel = str(abs_path.relative_to(SITEH.resolve()))
-                    conn.execute(
-                        "UPDATE wav_files SET library_root = ?, rel_path = ? WHERE wav_id = ?",
-                        (siteh, rel, row["wav_id"]),
-                    )
-                conn.commit()
-                n = conn.execute(
-                    "SELECT COUNT(*) FROM wav_files WHERE library_root = ?", (siteh,)
-                ).fetchone()[0]
-            print(
-                f"[{i}/{len(subs)}] {sub.name} ok in {time.time() - t1:.1f}s "
-                f"counts={counts} SiteH_total={n}",
-                flush=True,
+    siteh = str(SITEH)
+    rows = list(csv.DictReader(manifest.open()))
+    paths = []
+    for row in rows:
+        raw = (row.get("wav_path") or "").strip()
+        if raw.endswith(".wav"):
+            paths.append(Path(raw))
+    # unique, stable order
+    paths = sorted(set(paths), key=lambda p: str(p))
+    print(f"manifest {manifest}: {len(paths)} unique wav paths", flush=True)
+
+    t0 = time.time()
+    n_ok = 0
+    with closing(catalog.connect(DB)) as conn:
+        for i, wav in enumerate(paths, 1):
+            catalog.upsert_wav_file(
+                conn, library_root=siteh, abs_path=wav, skip_stat=True
             )
-        except Exception as exc:
-            print(f"[{i}/{len(subs)}] FAILED {sub.name}: {exc}", flush=True)
-    print("done", flush=True)
+            n_ok += 1
+            if i % 500 == 0 or i == len(paths):
+                conn.commit()
+                print(f"  {i}/{len(paths)} upserted ({time.time() - t0:.1f}s)", flush=True)
+        conn.commit()
+        total = conn.execute(
+            "SELECT COUNT(*) FROM wav_files WHERE library_root = ?", (siteh,)
+        ).fetchone()[0]
+        socal = conn.execute(
+            "SELECT COUNT(*) FROM wav_files WHERE library_root = ? AND family = 'SOCAL'",
+            (siteh,),
+        ).fetchone()[0]
+
+    print(
+        f"done in {time.time() - t0:.1f}s: upserted={n_ok} "
+        f"SiteH_rows={total} SOCAL={socal}",
+        flush=True,
+    )
     return 0
 
 
