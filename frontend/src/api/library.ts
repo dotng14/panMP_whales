@@ -124,10 +124,22 @@ function filtersToParams(filters: RecordingFilters): URLSearchParams {
   return q;
 }
 
+async function raiseIfBad(res: Response, label: string): Promise<void> {
+  if (res.ok) return;
+  let detail = '';
+  try {
+    const body = await res.json();
+    detail = typeof body?.detail === 'string' ? body.detail : JSON.stringify(body?.detail ?? body);
+  } catch {
+    try { detail = await res.text(); } catch { /* ignore */ }
+  }
+  throw new Error(detail ? `${label} failed: ${res.status} ${detail}` : `${label} failed: ${res.status}`);
+}
+
 export async function getFacets(filters: RecordingFilters = {}): Promise<FacetsResponse> {
   const q = filtersToParams(filters);
   const res = await fetch(`${API_BASE}/api/library/facets?${q}`);
-  if (!res.ok) throw new Error(`Facets fetch failed: ${res.status}`);
+  await raiseIfBad(res, 'Facets fetch');
   return res.json() as Promise<FacetsResponse>;
 }
 
@@ -139,6 +151,6 @@ export async function matchRecordings(
   if (offset !== undefined) q.set('offset', String(offset));
   if (limit !== undefined) q.set('limit', String(limit));
   const res = await fetch(`${API_BASE}/api/library/match?${q}`);
-  if (!res.ok) throw new Error(`Match fetch failed: ${res.status}`);
+  await raiseIfBad(res, 'Match fetch');
   return res.json() as Promise<MatchResponse>;
 }

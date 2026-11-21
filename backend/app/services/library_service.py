@@ -5,6 +5,7 @@ import json
 import logging
 import os
 import threading
+from contextlib import closing
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -19,7 +20,7 @@ from database.index_existing import index_wav_root
 
 logger = logging.getLogger(__name__)
 _index_lock = threading.Lock()
-_indexing_roots: set[str] = set()
+_catalog_ready = False
 
 
 # ── fileId codec ──────────────────────────────────────────────────────────────
@@ -167,25 +168,11 @@ def _resolved_root_strings() -> list[str]:
     return [str(r.resolve()) for r in WAV_LIBRARY_ROOTS]
 
 
-def _index_root_background(root: Path) -> None:
-    root_s = str(root.resolve())
-    try:
-        with catalog.connect(CATALOG_DB) as conn:
-            index_wav_root(conn, root, result_dirname=GPL_RESULT_DIRNAME)
-            conn.commit()
-        logger.info("Finished indexing WAV root %s", root_s)
-    except Exception:
-        logger.exception("Background index failed for %s", root_s)
-    finally:
-        with _index_lock:
-            _indexing_roots.discard(root_s)
-
-
 def ensure_wav_component_index(conn: Any) -> None:
     """Index library roots when empty or missing parsed components.
 
-    Small / already-started roots index in-process. Large empty roots (e.g. SiteH
-    on ``/mnt/sda``) are indexed in a background thread so match/facets stay responsive.
+    Small roots index in-process. ``/mnt/sda`` Site H is not auto-scanned
+    (use ``backend/scripts/index_siteh.py``).
     """
     for root in WAV_LIBRARY_ROOTS:
         if not root.is_dir():
@@ -204,12 +191,30 @@ def ensure_wav_component_index(conn: Any) -> None:
         )
         if total > 0 and unparsed == 0:
             continue
-        # /mnt/sda SiteH: do not auto rglob (exFAT listing can hang). Use
-        # ``python backend/scripts/index_siteh.py`` instead.
         if root_s.startswith("/mnt/sda"):
             logger.info("Skipping auto-index for %s (run backend/scripts/index_siteh.py)", root_s)
             continue
         index_wav_root(conn, root, result_dirname=GPL_RESULT_DIRNAME)
+
+
+def ensure_catalog_ready() -> None:
+    """One-time write-side ensure so parallel facets/match can stay read-only."""
+    global _catalog_ready
+    if _catalog_ready:
+        return
+    with _index_lock:
+        if _catalog_ready:
+            return
+        with closing(catalog.connect(CATALOG_DB)) as conn:
+            ensure_wav_component_index(conn)
+            conn.commit()
+        _catalog_ready = True
+
+
+def open_catalog_read():
+    """Read-only catalog connection after a one-time ensure (safe for parallel GETs)."""
+    ensure_catalog_ready()
+    return closing(catalog.connect(CATALOG_DB, read_only=True))
 
 
 def match_recordings(
@@ -221,7 +226,6 @@ def match_recordings(
     limit: int = 50,
 ) -> dict:
     """Paginated WAV matches with ``fileId`` + GPL cache flag."""
-    ensure_wav_component_index(conn)
     roots = _resolved_root_strings()
     rows, total = catalog.match_wav_files(
         conn,
@@ -269,7 +273,6 @@ def recording_facets(
     filters: dict[str, str | None],
     q: str = "",
 ) -> dict:
-    ensure_wav_component_index(conn)
     facets = catalog.wav_facets(
         conn,
         filters=filters,
@@ -277,4 +280,7 @@ def recording_facets(
         library_roots=_resolved_root_strings(),
         keys=COMPONENT_KEYS,
     )
+    # Drop empty-string family sentinel used for non-SOCAL examined rows.
+    if "family" in facets:
+        facets["family"] = [v for v in facets["family"] if v.get("value") not in ("", None)]
     return {"facets": facets}

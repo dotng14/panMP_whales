@@ -1,18 +1,15 @@
-from contextlib import closing
-
 from fastapi import APIRouter, Query
 
-from app import config
 from app.config import WAV_LIBRARY_ROOTS
 from app.services import catalog_service
 from app.services.gpl_cache import is_gpl_cached
 from app.services.library_service import (
     list_entries,
     match_recordings,
+    open_catalog_read,
     recording_facets,
     resolve_file_id,
 )
-from database import catalog
 
 router = APIRouter()
 
@@ -102,10 +99,8 @@ def facets(
     filters = _component_filters(
         family, site, deployment, disk, date, time, df, channel, resample
     )
-    with closing(catalog.connect(config.CATALOG_DB)) as conn:
-        result = recording_facets(conn, filters=filters, q=q)
-        conn.commit()
-        return result
+    with open_catalog_read() as conn:
+        return recording_facets(conn, filters=filters, q=q)
 
 
 @router.get("/api/library/match")
@@ -127,7 +122,5 @@ def match(
     filters = _component_filters(
         family, site, deployment, disk, date, time, df, channel, resample
     )
-    with closing(catalog.connect(config.CATALOG_DB)) as conn:
-        result = match_recordings(conn, filters=filters, q=q, offset=offset, limit=limit)
-        conn.commit()
-        return result
+    with open_catalog_read() as conn:
+        return match_recordings(conn, filters=filters, q=q, offset=offset, limit=limit)
