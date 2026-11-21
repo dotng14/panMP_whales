@@ -1,22 +1,27 @@
 import { useCallback, useEffect, useRef, useState, type CSSProperties } from 'react';
 import {
-  getFacets,
   matchRecordings,
-  type FacetValue,
   type MatchEntry,
   type MatchResponse,
   type RecordingFilters,
 } from '../api/library';
 import {
-  SOCAL_CHIP_HELP,
-  SOCAL_CHIP_KEYS,
-  SOCAL_CHIP_LABELS,
-  SOCAL_NAME_EXAMPLE,
-  SOCAL_NAME_EXAMPLE_PARTS,
-  filledComponents,
-  parseWavName,
-  type ComponentKey,
-} from '../lib/socalWavName';
+  DEFAULT_SITE,
+  WHEN_EXAMPLE,
+  WHEN_HELP,
+  WALL_CLOCK_FIELDS,
+  WALL_CLOCK_LABELS,
+  WALL_CLOCK_MAX_LEN,
+  WALL_CLOCK_PLACEHOLDERS,
+  parseRecordingWhen,
+  partsAreEmpty,
+  partsFromStemDateTime,
+  partsToStartPrefix,
+  startToParts,
+  type WallClockField,
+  type WallClockParts,
+} from '../lib/recordingWhen';
+import { parseWavName } from '../lib/socalWavName';
 
 const PAGE_SIZE = 50;
 
@@ -26,12 +31,6 @@ function fmtSize(bytes: number): string {
   return `${(bytes / 1e3).toFixed(0)} KB`;
 }
 
-function fmtDate(iso: string): string {
-  return new Date(iso).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
-}
-
-type ChipState = Partial<Record<ComponentKey, string>>;
-
 interface Props {
   onSelectFile: (file: { fileId: string; name: string } | null) => void;
   selectedFileId: string | null;
@@ -39,22 +38,29 @@ interface Props {
   libraryCacheRefresh?: { fileId: string; nonce: number } | null;
 }
 
-function chipsToFilters(chips: ChipState, pasteFallback: string): RecordingFilters {
-  const filters: RecordingFilters = { ...chips };
-  if (chips.family) filters.family = chips.family;
-  else if (Object.keys(chips).length > 0) filters.family = 'SOCAL';
-  // When nothing parsed, use the paste box as substring search.
-  if (Object.keys(chips).length === 0 && pasteFallback.trim()) {
-    filters.q = pasteFallback.trim();
+function toFilters(whenText: string, parts: WallClockParts): RecordingFilters {
+  const filters: RecordingFilters = { site: DEFAULT_SITE, family: 'SOCAL' };
+  const fromParts = partsToStartPrefix(parts);
+  const fromWhen = parseRecordingWhen(whenText, DEFAULT_SITE).start;
+
+  // Prefer typed boxes when any are filled; otherwise When paste.
+  if (fromParts) {
+    filters.start = fromParts;
+  } else if (fromWhen) {
+    filters.start = fromWhen;
+  } else if (whenText.trim() && partsAreEmpty(parts)) {
+    filters.q = whenText.trim();
   }
   return filters;
 }
 
+function digitsOnly(raw: string, maxLen: number): string {
+  return raw.replace(/\D/g, '').slice(0, maxLen);
+}
+
 export function RecordingPicker({ onSelectFile, selectedFileId, disabled, libraryCacheRefresh }: Props) {
-  const [paste, setPaste] = useState('');
-  const [chips, setChips] = useState<ChipState>({});
-  const [openKey, setOpenKey] = useState<ComponentKey | null>(null);
-  const [facets, setFacets] = useState<Record<string, FacetValue[]>>({});
+  const [when, setWhen] = useState('');
+  const [parts, setParts] = useState<WallClockParts>({});
   const [match, setMatch] = useState<MatchResponse | null>(null);
   const [offset, setOffset] = useState(0);
   const [loading, setLoading] = useState(false);
@@ -64,12 +70,14 @@ export function RecordingPicker({ onSelectFile, selectedFileId, disabled, librar
   const lastCacheRefreshNonceRef = useRef<number | null>(null);
   const listScrollRef = useRef<HTMLDivElement>(null);
   const onSelectFileRef = useRef(onSelectFile);
-  useEffect(() => { onSelectFileRef.current = onSelectFile; });
+  useEffect(() => {
+    onSelectFileRef.current = onSelectFile;
+  });
 
   const load = useCallback(
     async (
-      nextChips: ChipState,
-      pasteText: string,
+      whenText: string,
+      nextParts: WallClockParts,
       off: number,
       opts?: { preserveSelection?: boolean; silent?: boolean },
     ) => {
@@ -77,13 +85,9 @@ export function RecordingPicker({ onSelectFile, selectedFileId, disabled, librar
         opts?.silent && listScrollRef.current ? listScrollRef.current.scrollTop : null;
       if (!opts?.silent) setLoading(true);
       setError(null);
-      const filters = chipsToFilters(nextChips, pasteText);
+      const filters = toFilters(whenText, nextParts);
       try {
-        const [facetRes, matchRes] = await Promise.all([
-          getFacets(filters),
-          matchRecordings({ ...filters, offset: off, limit: PAGE_SIZE }),
-        ]);
-        setFacets(facetRes.facets);
+        const matchRes = await matchRecordings({ ...filters, offset: off, limit: PAGE_SIZE });
         setMatch(matchRes);
         if (!opts?.preserveSelection) {
           onSelectFileRef.current(null);
@@ -102,9 +106,8 @@ export function RecordingPicker({ onSelectFile, selectedFileId, disabled, librar
     [],
   );
 
-  // Initial load (all recordings under library roots).
   useEffect(() => {
-    load({}, '', 0);
+    load('', {}, 0);
   }, [load]);
 
   useEffect(() => {
@@ -121,48 +124,67 @@ export function RecordingPicker({ onSelectFile, selectedFileId, disabled, librar
           }
         : prev,
     );
-    load(chips, paste, offset, { preserveSelection: true, silent: true });
+    load(when, parts, offset, { preserveSelection: true, silent: true });
   }, [libraryCacheRefresh]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  function applyPaste(raw: string) {
-    setPaste(raw);
-    setOffset(0);
-    setOpenKey(null);
-    const parsed = parseWavName(raw);
-    const next = parsed ? (filledComponents(parsed) as ChipState) : {};
-    // Keep family for SOCAL when parsed.
-    if (parsed?.family) next.family = parsed.family;
-    setChips(next);
+  function scheduleLoad(whenText: string, nextParts: WallClockParts) {
     if (debounceRef.current) clearTimeout(debounceRef.current);
-    debounceRef.current = setTimeout(() => load(next, raw, 0), 250);
+    debounceRef.current = setTimeout(() => load(whenText, nextParts, 0), 250);
   }
 
-  function setChip(key: ComponentKey, value: string | null) {
-    setOpenKey(null);
+  function applyWhen(raw: string) {
+    setWhen(raw);
     setOffset(0);
-    const next: ChipState = { ...chips };
-    if (value == null || value === '') delete next[key];
-    else next[key] = value;
-    if (Object.keys(next).some(k => k !== 'family') && !next.family) {
-      next.family = 'SOCAL';
+
+    const whenParsed = parseRecordingWhen(raw, DEFAULT_SITE);
+    const stemParsed = parseWavName(raw);
+    let next: WallClockParts = {};
+    if (stemParsed?.date) {
+      next = partsFromStemDateTime(stemParsed.date, stemParsed.time);
+    } else if (whenParsed.start) {
+      next = startToParts(whenParsed.start);
     }
-    if (Object.keys(next).every(k => k === 'family')) {
-      delete next.family;
-    }
-    setChips(next);
-    load(next, paste, 0);
+
+    setParts(next);
+    scheduleLoad(raw, next);
+  }
+
+  function setPart(field: WallClockField, raw: string) {
+    setOffset(0);
+    const cleaned = digitsOnly(raw, WALL_CLOCK_MAX_LEN[field]);
+    const next: WallClockParts = { ...parts };
+    if (!cleaned) delete next[field];
+    else next[field] = cleaned;
+
+    const prefix = partsToStartPrefix(next);
+    const nextWhen = prefix ?? '';
+    setParts(next);
+    setWhen(nextWhen);
+    scheduleLoad(nextWhen, next);
   }
 
   function clearAll() {
-    setPaste('');
-    setChips({});
+    setWhen('');
+    setParts({});
     setOffset(0);
-    setOpenKey(null);
-    load({}, '', 0);
+    load('', {}, 0);
   }
 
   const totalPages = match ? Math.ceil(match.total / PAGE_SIZE) : 0;
   const currentPage = Math.floor(offset / PAGE_SIZE) + 1;
+  const hasFilters = Boolean(when.trim()) || !partsAreEmpty(parts);
+
+  const boxStyle: CSSProperties = {
+    width: '100%',
+    boxSizing: 'border-box',
+    padding: '6px 8px',
+    borderRadius: 6,
+    border: '1px solid #d1d5db',
+    fontSize: 13,
+    fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace',
+    fontVariantNumeric: 'tabular-nums',
+    textAlign: 'center',
+  };
 
   return (
     <div
@@ -177,14 +199,14 @@ export function RecordingPicker({ onSelectFile, selectedFileId, disabled, librar
     >
       <div style={{ padding: '10px 12px', background: '#f9fafb', borderBottom: '1px solid #d1d5db' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
-          <label htmlFor="recording-paste" style={{ flex: 1, fontSize: 12, color: '#6b7280' }}>
-            Paste recording name
+          <label htmlFor="recording-when" style={{ flex: 1, fontSize: 12, color: '#6b7280' }}>
+            When / paste name
           </label>
           <button
             type="button"
-            aria-label="How to read recording names"
+            aria-label="How to find recordings"
             aria-expanded={helpOpen}
-            title="How to read recording names"
+            title="How to find recordings"
             onClick={() => setHelpOpen(v => !v)}
             style={{
               width: 22,
@@ -203,14 +225,33 @@ export function RecordingPicker({ onSelectFile, selectedFileId, disabled, librar
             ?
           </button>
         </div>
-        <div style={{ display: 'flex', gap: 8 }}>
+        <div style={{ display: 'flex', gap: 8, marginBottom: 8 }}>
+          <div
+            aria-label="Site"
+            title="Site (fixed)"
+            style={{
+              minWidth: 48,
+              padding: '6px 10px',
+              borderRadius: 6,
+              border: '1px solid #d1d5db',
+              background: '#fff',
+              fontWeight: 600,
+              textAlign: 'center',
+              alignSelf: 'stretch',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+            }}
+          >
+            {DEFAULT_SITE}
+          </div>
           <input
-            id="recording-paste"
+            id="recording-when"
             type="text"
-            value={paste}
+            value={when}
             disabled={disabled}
-            placeholder={SOCAL_NAME_EXAMPLE}
-            onChange={e => applyPaste(e.target.value)}
+            placeholder={WHEN_EXAMPLE}
+            onChange={e => applyWhen(e.target.value)}
             style={{
               flex: 1,
               padding: '6px 10px',
@@ -220,7 +261,7 @@ export function RecordingPicker({ onSelectFile, selectedFileId, disabled, librar
               fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace',
             }}
           />
-          {(paste || Object.keys(chips).length > 0) && (
+          {hasFilters && (
             <button
               type="button"
               onClick={clearAll}
@@ -238,13 +279,13 @@ export function RecordingPicker({ onSelectFile, selectedFileId, disabled, librar
             </button>
           )}
         </div>
-        <div style={{ marginTop: 6, fontSize: 12, color: '#6b7280' }}>
-          Parsed fields fill the chips below; open empty chips to narrow the list.
+        <div style={{ fontSize: 12, color: '#6b7280' }}>
+          Type <code>date &apos;+%Y-%m-%d %H:%M:%S&apos;</code> parts below, or paste into When.
         </div>
         {helpOpen && (
           <div
             role="region"
-            aria-label="Recording name help"
+            aria-label="Recording picker help"
             style={{
               marginTop: 10,
               padding: 12,
@@ -256,154 +297,53 @@ export function RecordingPicker({ onSelectFile, selectedFileId, disabled, librar
               lineHeight: 1.45,
             }}
           >
-            <div style={{ fontWeight: 600, marginBottom: 6 }}>How to write a name</div>
-            <div style={{ marginBottom: 8 }}>
-              Paste a full filename, a stem, or a partial prefix. Underscores separate fields;
-              older files may use dots before <code>df</code> (e.g. <code>.df20.x.wav</code>).
-            </div>
-            <div
-              style={{
-                fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace',
-                fontSize: 12,
-                wordBreak: 'break-all',
-                marginBottom: 8,
-              }}
-            >
-              {SOCAL_NAME_EXAMPLE}
-            </div>
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 12 }}>
-              {SOCAL_NAME_EXAMPLE_PARTS.map(part => (
-                <span
-                  key={part.label}
-                  style={{
-                    display: 'inline-flex',
-                    flexDirection: 'column',
-                    padding: '4px 8px',
-                    borderRadius: 6,
-                    background: '#fff',
-                    border: '1px solid #bfdbfe',
-                    minWidth: 52,
-                  }}
-                >
-                  <span style={{ fontSize: 10, color: '#64748b' }}>{part.label}</span>
-                  <span style={{ fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace' }}>
-                    {part.value}
-                  </span>
-                </span>
+            <div style={{ fontWeight: 600, marginBottom: 6 }}>Site + wall-clock boxes</div>
+            <ul style={{ margin: 0, paddingLeft: 18 }}>
+              {WHEN_HELP.map(line => (
+                <li key={line} style={{ marginBottom: 4 }}>
+                  {line}
+                </li>
               ))}
-            </div>
-            <div style={{ fontWeight: 600, marginBottom: 6 }}>What each component means</div>
-            <dl style={{ margin: 0, display: 'grid', gap: 6 }}>
-              {SOCAL_CHIP_KEYS.map(key => (
-                <div key={key} style={{ display: 'grid', gridTemplateColumns: '88px 1fr', gap: 8 }}>
-                  <dt style={{ fontWeight: 600, color: '#1e40af' }}>{SOCAL_CHIP_LABELS[key]}</dt>
-                  <dd style={{ margin: 0, color: '#334155' }}>{SOCAL_CHIP_HELP[key]}</dd>
-                </div>
-              ))}
-            </dl>
+              <li>Year alone lists that year; Year+Month+Day lists that day; fill time to narrow further.</li>
+            </ul>
           </div>
         )}
       </div>
 
       <div style={{ padding: '10px 12px', borderBottom: '1px solid #e5e7eb' }}>
-        <div style={{ fontSize: 12, color: '#6b7280', marginBottom: 8 }}>Components</div>
-        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
-          {SOCAL_CHIP_KEYS.map(key => {
-            const value = chips[key];
-            const empty = value == null || value === '';
-            const options = facets[key] ?? [];
-            const open = openKey === key;
-            return (
-              <div key={key} style={{ position: 'relative' }}>
-                <button
-                  type="button"
-                  disabled={disabled}
-                  aria-expanded={open}
-                  onClick={() => setOpenKey(open ? null : key)}
-                  style={{
-                    minWidth: 72,
-                    minHeight: 44,
-                    textAlign: 'left',
-                    padding: '6px 10px',
-                    borderRadius: 8,
-                    border: open ? '1px solid #2563eb' : '1px solid #d1d5db',
-                    borderStyle: empty ? 'dashed' : 'solid',
-                    background: empty ? '#f3f4f6' : '#fff',
-                    cursor: 'pointer',
-                    color: 'inherit',
-                    font: 'inherit',
-                  }}
-                >
-                  <span style={{ display: 'block', fontSize: 11, color: '#6b7280' }}>
-                    {SOCAL_CHIP_LABELS[key]}
-                  </span>
-                  <span
-                    style={{
-                      display: 'block',
-                      marginTop: 2,
-                      fontWeight: empty ? 400 : 500,
-                      color: empty ? '#9ca3af' : '#111827',
-                      fontVariantNumeric: 'tabular-nums',
-                    }}
-                  >
-                    {empty ? 'Any' : value}
-                  </span>
-                </button>
-                {open && (
-                  <div
-                    role="listbox"
-                    aria-label={`${SOCAL_CHIP_LABELS[key]} options`}
-                    style={{
-                      position: 'absolute',
-                      left: 0,
-                      top: 'calc(100% + 4px)',
-                      zIndex: 20,
-                      minWidth: 140,
-                      maxHeight: 200,
-                      overflowY: 'auto',
-                      background: '#fff',
-                      border: '1px solid #d1d5db',
-                      borderRadius: 8,
-                      padding: 4,
-                      boxShadow: '0 8px 24px rgba(0,0,0,0.12)',
-                    }}
-                  >
-                    {!empty && (
-                      <button
-                        type="button"
-                        role="option"
-                        onClick={() => setChip(key, null)}
-                        style={optStyle}
-                      >
-                        Clear
-                      </button>
-                    )}
-                    {options.length === 0 && (
-                      <div style={{ padding: '8px 10px', color: '#9ca3af', fontSize: 12 }}>
-                        No options
-                      </div>
-                    )}
-                    {options.map(opt => (
-                      <button
-                        key={opt.value}
-                        type="button"
-                        role="option"
-                        aria-selected={opt.value === value}
-                        onClick={() => setChip(key, opt.value)}
-                        style={{
-                          ...optStyle,
-                          background: opt.value === value ? '#dbeafe' : 'transparent',
-                        }}
-                      >
-                        <span>{opt.value}</span>
-                        <span style={{ color: '#9ca3af' }}>{opt.count}</span>
-                      </button>
-                    ))}
-                  </div>
-                )}
-              </div>
-            );
-          })}
+        <div style={{ fontSize: 12, color: '#6b7280', marginBottom: 8 }}>
+          Components <span style={{ color: '#9ca3af' }}>(%Y-%m-%d %H:%M:%S)</span>
+        </div>
+        <div
+          style={{
+            display: 'grid',
+            gridTemplateColumns: 'repeat(6, minmax(0, 1fr))',
+            gap: 8,
+            alignItems: 'end',
+          }}
+        >
+          {WALL_CLOCK_FIELDS.map(field => (
+            <div key={field}>
+              <label
+                htmlFor={`recording-${field}`}
+                style={{ display: 'block', fontSize: 11, color: '#6b7280', marginBottom: 4 }}
+              >
+                {WALL_CLOCK_LABELS[field]}
+              </label>
+              <input
+                id={`recording-${field}`}
+                type="text"
+                inputMode="numeric"
+                pattern="[0-9]*"
+                maxLength={WALL_CLOCK_MAX_LEN[field]}
+                placeholder={WALL_CLOCK_PLACEHOLDERS[field]}
+                value={parts[field] ?? ''}
+                disabled={disabled}
+                onChange={e => setPart(field, e.target.value)}
+                style={boxStyle}
+              />
+            </div>
+          ))}
         </div>
       </div>
 
@@ -418,7 +358,7 @@ export function RecordingPicker({ onSelectFile, selectedFileId, disabled, librar
         {error && <div style={{ padding: 12, color: '#dc2626' }}>{error}</div>}
         {!loading && match && match.entries.length === 0 && (
           <div style={{ padding: '20px 12px', color: '#9ca3af', textAlign: 'center' }}>
-            No recordings match these components.
+            No recordings match these filters.
           </div>
         )}
         {!loading &&
@@ -430,13 +370,12 @@ export function RecordingPicker({ onSelectFile, selectedFileId, disabled, librar
                 onClick={() => {
                   if (disabled) return;
                   onSelectFile({ fileId: entry.fileId, name: entry.name });
-                  setOpenKey(null);
                 }}
                 style={{
                   display: 'flex',
-                  alignItems: 'center',
-                  padding: '6px 12px',
-                  gap: 8,
+                  flexDirection: 'column',
+                  padding: '8px 12px',
+                  gap: 2,
                   cursor: 'pointer',
                   background: isSelected ? '#dbeafe' : 'transparent',
                   borderBottom: '1px solid #f3f4f6',
@@ -448,44 +387,51 @@ export function RecordingPicker({ onSelectFile, selectedFileId, disabled, librar
                   if (!isSelected) (e.currentTarget as HTMLDivElement).style.background = 'transparent';
                 }}
               >
-                <span
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <span
+                    style={{
+                      flex: 1,
+                      fontVariantNumeric: 'tabular-nums',
+                      fontWeight: 500,
+                      color: '#111827',
+                    }}
+                  >
+                    {entry.startTime || '—'}
+                  </span>
+                  {entry.cached && (
+                    <span
+                      title="Pre-processed — loads instantly"
+                      style={{
+                        fontSize: 11,
+                        fontWeight: 600,
+                        color: '#15803d',
+                        background: '#dcfce7',
+                        border: '1px solid #86efac',
+                        borderRadius: 4,
+                        padding: '1px 6px',
+                      }}
+                    >
+                      ready
+                    </span>
+                  )}
+                  {entry.sizeBytes != null && (
+                    <span style={{ color: '#9ca3af', minWidth: 60, textAlign: 'right' }}>
+                      {fmtSize(entry.sizeBytes)}
+                    </span>
+                  )}
+                </div>
+                <div
                   style={{
-                    flex: 1,
                     overflow: 'hidden',
                     textOverflow: 'ellipsis',
                     whiteSpace: 'nowrap',
                     fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace',
-                    fontSize: 12,
+                    fontSize: 11,
+                    color: '#6b7280',
                   }}
                 >
                   {entry.name}
-                </span>
-                {entry.cached && (
-                  <span
-                    title="Pre-processed — loads instantly"
-                    style={{
-                      fontSize: 11,
-                      fontWeight: 600,
-                      color: '#15803d',
-                      background: '#dcfce7',
-                      border: '1px solid #86efac',
-                      borderRadius: 4,
-                      padding: '1px 6px',
-                    }}
-                  >
-                    ready
-                  </span>
-                )}
-                {entry.sizeBytes != null && (
-                  <span style={{ color: '#9ca3af', minWidth: 60, textAlign: 'right' }}>
-                    {fmtSize(entry.sizeBytes)}
-                  </span>
-                )}
-                {entry.mtime && (
-                  <span style={{ color: '#9ca3af', minWidth: 70, textAlign: 'right' }}>
-                    {fmtDate(entry.mtime)}
-                  </span>
-                )}
+                </div>
               </div>
             );
           })}
@@ -506,7 +452,7 @@ export function RecordingPicker({ onSelectFile, selectedFileId, disabled, librar
           onClick={() => {
             const next = Math.max(0, offset - PAGE_SIZE);
             setOffset(next);
-            load(chips, paste, next, { preserveSelection: true });
+            load(when, parts, next, { preserveSelection: true });
           }}
           disabled={offset === 0 || loading}
           style={{
@@ -530,7 +476,7 @@ export function RecordingPicker({ onSelectFile, selectedFileId, disabled, librar
           onClick={() => {
             const next = offset + PAGE_SIZE;
             setOffset(next);
-            load(chips, paste, next, { preserveSelection: true });
+            load(when, parts, next, { preserveSelection: true });
           }}
           disabled={!match || offset + PAGE_SIZE >= match.total || loading}
           style={{
@@ -548,19 +494,3 @@ export function RecordingPicker({ onSelectFile, selectedFileId, disabled, librar
     </div>
   );
 }
-
-const optStyle: CSSProperties = {
-  display: 'flex',
-  justifyContent: 'space-between',
-  gap: 12,
-  width: '100%',
-  border: 0,
-  background: 'transparent',
-  color: 'inherit',
-  font: 'inherit',
-  fontSize: 13,
-  padding: '8px 10px',
-  borderRadius: 6,
-  cursor: 'pointer',
-  textAlign: 'left',
-};

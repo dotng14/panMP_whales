@@ -1,9 +1,15 @@
 #!/usr/bin/env python3
-"""Index Site H WAVs into the catalog from a known path manifest.
+"""Hang-safe Site H catalog ingest (manifest + ``skip_stat``).
 
-Does **not** ``rglob`` ``/mnt/sda/SiteH`` (exFAT listing there can hang for
-minutes and return zero files). Uses the hybrid-run manifest that already
-lists ~6800 absolute paths under SiteH.
+Does **not** ``rglob`` / ``stat`` ``/mnt/sda/SiteH`` (exFAT metadata I/O can
+hang or raise I/O errors). Prefer this over ``python -m database index`` for
+Site H. Paths come from a CSV on a local filesystem; upserts use
+``skip_stat=True`` so the volume need not be readable at index time.
+
+When ``/mnt/sda`` is down, skip this script and ship the picker from whatever
+rows are already in the catalog (``start_time`` backfills from stem date/time).
+
+Default manifest: hybrid-run CSV with ~6800 absolute ``wav_path`` values.
 """
 
 from __future__ import annotations
@@ -20,7 +26,7 @@ sys.path[:0] = [str(REPO), str(REPO / "backend")]
 from database import catalog  # noqa: E402
 
 SITEH = Path("/mnt/sda/SiteH")
-DB = REPO / "backend" / "data" / "catalog.sqlite"
+DEFAULT_DB = REPO / "backend" / "data" / "catalog.sqlite"
 DEFAULT_MANIFEST = Path(
     "/home/yfreund/projects/panMP_whales/analysis/dict_HMM/find_songs/"
     "siteH_all_songs/manifest.csv"
@@ -28,7 +34,9 @@ DEFAULT_MANIFEST = Path(
 
 
 def main() -> int:
+    # Usage: index_siteh.py [manifest.csv] [catalog.sqlite]
     manifest = Path(sys.argv[1]) if len(sys.argv) > 1 else DEFAULT_MANIFEST
+    db = Path(sys.argv[2]) if len(sys.argv) > 2 else DEFAULT_DB
     if not manifest.is_file():
         print(f"manifest not found: {manifest}", flush=True)
         return 2
@@ -43,10 +51,11 @@ def main() -> int:
     # unique, stable order
     paths = sorted(set(paths), key=lambda p: str(p))
     print(f"manifest {manifest}: {len(paths)} unique wav paths", flush=True)
+    print(f"catalog {db}", flush=True)
 
     t0 = time.time()
     n_ok = 0
-    with closing(catalog.connect(DB)) as conn:
+    with closing(catalog.connect(db)) as conn:
         for i, wav in enumerate(paths, 1):
             catalog.upsert_wav_file(
                 conn, library_root=siteh, abs_path=wav, skip_stat=True

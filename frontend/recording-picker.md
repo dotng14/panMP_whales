@@ -1,66 +1,69 @@
-# Component recording picker
+# Universal site + datetime recording picker
 
-The spectrogram viewer’s library mode no longer browses folders. Users **paste a
-recording name** (or a partial prefix), the UI **parses it into component chips**,
-and empty chips open **cascading dropdowns** of values that still match. A
-**matching-results list** shows every WAV that fits; clicking a row selects it
-and continues to the existing analysis overlay picker.
+Library mode finds recordings by a **universal key**: **site letter + wall-clock
+start time** (`YYYY-MM-DD HH:MM:SS`), not by SOCAL filename chips or folder
+trees. A **matching-results list** shows every catalogued WAV that fits
+(including df / channel variants that share the same start); clicking a row
+selects `{ fileId, name }` and continues to [`AnalysisPicker`](src/components/AnalysisPicker.tsx).
 
-SOCAL Site H naming is supported in v1. The parser registry leaves room for
-other families (e.g. CHNMS) later.
+Site is fixed as **`H`** for now. Filename layout (deployment, disk, `df`, …)
+stays an implementation detail used only to resolve and disambiguate files.
 
 ## UI
 
 | Piece | Role |
 |-------|------|
-| Paste field | Full name, stem, path basename, or partial (e.g. `SOCAL_H_76_230426`) |
-| **?** help | How to write a name, worked example, meaning of each component |
-| Component chips | Site, deployment, disk, date, time, df, channel, resample — **Any** until set |
-| Chip dropdown | Distinct values (+ counts) still available given the other chips |
-| Matching list | Paginated WAVs; size / date / ready badge; click → `{ fileId, name }` |
+| **Site** | Fixed `H` |
+| **When / paste** | Wall-clock start (`2023-04-26` …) or legacy SOCAL stem |
+| **Component boxes** | Typeable **Year / Month / Day / Hour / Minute / Second** (same order as `date '+%Y-%m-%d %H:%M:%S'`) |
+| **?** help | Site+time model + chip meanings |
+| Matching list | Paginated; **startTime** primary, filename secondary; ready badge |
 
-After selection, [`AnalysisPicker`](src/components/AnalysisPicker.tsx) is unchanged.
+Chips stay so users can browse without typing (e.g. open **Date** → choose `230426` → see every recording that day). When and chips stay in sync when possible.
 
 ### Example
 
 ```text
-SOCAL_H_76_230426_193500_df100.x.x.wav
-└SOCAL┘ └H┘ └76┘ └date─┘ └time─┘ └df─┘ └ch┘
+When: 2023-04-26 19:35:00
+→ same cluster as SOCAL_H_76_230426_193500_df100.x.x.wav / df20 / native
 ```
 
-| Component | Meaning |
-|-----------|---------|
-| Site | Hydrophone site letter (`H` for Site H) |
-| Deployment | Deployment number (e.g. `76`) |
-| Disk | Instrument disk / logger when present (`DL37`, `disk01`, `d03`) |
-| Date | Start date `YYMMDD` (UTC) |
-| Time | Start time `HHMMSS` (UTC) |
-| df | Decimation: `20` ≈ 10 kHz, `100` ≈ 2 kHz, `native` = full rate |
-| Channel | `x` or `x.x` (HARP / Triton channel id) |
-| Resample | Optional later suffix such as `10kHz` |
+## Catalog vs disk (hang-safe)
 
-Older stems such as `SOCAL45H_DL37_120131_042345.df20.x.wav` parse to the same
-fields (deployment glued to the site letter; `df` after a dot).
+Picker match/facets read **only SQLite**. They never `rglob` / `stat` /
+`listdir` `/mnt/sda`.
 
-Some SOCAL30H files on disk have **corrupted basenames** (e.g. `$0H_Q2 $_disk01_…`
-instead of `SOCAL30H_Q2_…`). They are listed for substring search but do not
-fill the SOCAL chips.
+| Situation | What to do |
+|-----------|------------|
+| Disk down / flaky | Ship from existing `catalog.sqlite`; `start_time` backfills from stem `date`/`time` |
+| (Re)populate Site H names | [`../backend/scripts/index_siteh.py`](../backend/scripts/index_siteh.py) — **manifest + `skip_stat=True`** |
+| Forbidden for Site H | `python -m database index --wav-root /mnt/sda/SiteH` (in-process `rglob`+`stat` can hang) |
+
+```bash
+# When /mnt/sda is available again — paths from CSV, no metadata I/O on the volume:
+python backend/scripts/index_siteh.py
+python backend/scripts/index_siteh.py /path/to/manifest.csv
+```
+
+Default manifest:
+`/home/yfreund/projects/panMP_whales/analysis/dict_HMM/find_songs/siteH_all_songs/manifest.csv`.
+
+Opening a wav for analysis is a separate step; a missing file fails that job,
+not the picker list.
 
 ## Code map
 
 | Path | Role |
 |------|------|
-| [`src/components/RecordingPicker.tsx`](src/components/RecordingPicker.tsx) | Paste, chips, help, matching list |
-| [`src/lib/socalWavName.ts`](src/lib/socalWavName.ts) | Client-side SOCAL parse + help copy |
-| [`src/api/library.ts`](src/api/library.ts) | `getFacets` / `matchRecordings` |
-| [`../database/wav_name.py`](../database/wav_name.py) | Canonical parser (`PARSERS` registry) |
-| [`../backend/app/services/wav_name.py`](../backend/app/services/wav_name.py) | Re-export for the API |
-| [`../backend/app/services/library_service.py`](../backend/app/services/library_service.py) | Facets / match + fileId encoding |
-| [`../backend/app/routes/library.py`](../backend/app/routes/library.py) | HTTP routes |
-| [`../backend/scripts/index_siteh.py`](../backend/scripts/index_siteh.py) | Site H catalog fill from a path manifest |
-
-`App.tsx` still expects `onSelectFile({ fileId, name })` as with the old folder
-browser.
+| [`src/components/RecordingPicker.tsx`](src/components/RecordingPicker.tsx) | Site + When + matching list |
+| [`src/lib/recordingWhen.ts`](src/lib/recordingWhen.ts) | Client parse of ISO / SOCAL → site+start |
+| [`src/lib/socalWavName.ts`](src/lib/socalWavName.ts) | Legacy stem parse (still used by When paste) |
+| [`src/api/library.ts`](src/api/library.ts) | `matchRecordings` (+ optional facets) |
+| [`../database/recording_when.py`](../database/recording_when.py) | Canonical site+start helpers |
+| [`../database/wav_name.py`](../database/wav_name.py) | SOCAL stem parser |
+| [`../database/catalog.py`](../database/catalog.py) | `start_time` column, match filter, SQL backfill |
+| [`../backend/app/services/library_service.py`](../backend/app/services/library_service.py) | Match entries include `startTime`; no Site H stat |
+| [`../backend/scripts/index_siteh.py`](../backend/scripts/index_siteh.py) | Hang-safe Site H ingest |
 
 ## API
 
@@ -69,38 +72,20 @@ Configure roots with `WAV_LIBRARY_ROOTS` in `backend/.env`.
 | Endpoint | Purpose |
 |----------|---------|
 | `GET /api/library/roots` | Root labels |
-| `GET /api/library/facets?…` | Distinct component values (+ counts) given the other filters |
-| `GET /api/library/match?…` | Paginated matching files (`fileId`, name, size, mtime, cached) |
+| `GET /api/library/match?site=H&start=2023-04-26…` | Paginated matches (`fileId`, `name`, `startTime`, …) |
+| `GET /api/library/facets?…` | Legacy component facets (still available) |
 | `GET /api/library/browse` | Legacy directory browse (unused by this UI) |
 
-Filter query params (all optional, AND’d): `family`, `site`, `deployment`,
-`disk`, `date`, `time`, `df`, `channel`, `resample`, plus substring `q`.
-Pagination: `offset`, `limit`.
+Primary filter params: `site`, `start` (full second → equality; shorter →
+`LIKE prefix%`). Legacy SOCAL component params still work. Substring `q` for
+unparsed paste. Pagination: `offset`, `limit`.
 
-Component fields live on `wav_files` in the SQLite catalog (see
-[`../database/schema.sql`](../database/schema.sql)). Small library roots are
-indexed on demand; **Site H on `/mnt/sda`** should be indexed from the known
-path manifest (recursive listing on that volume can hang and return nothing):
-
-```bash
-python backend/scripts/index_siteh.py
-# optional: path to another CSV with a wav_path column
-python backend/scripts/index_siteh.py /path/to/manifest.csv
-```
-
-Default manifest:
-`/home/yfreund/projects/panMP_whales/analysis/dict_HMM/find_songs/siteH_all_songs/manifest.csv`.
+`wav_files.start_time` is `YYYY-MM-DD HH:MM:SS` derived from stem date/time.
 
 ## Tests
 
 ```bash
-python -m pytest analysis/test/unit/database/test_wav_name.py \
+python -m pytest analysis/test/unit/database/test_recording_when.py \
+  analysis/test/unit/database/test_wav_name.py \
   analysis/test/integration/test_library_match_api.py
 ```
-
-## Extending to another naming family
-
-1. Add a parser to `database.wav_name.PARSERS` (same `RecordingComponents` fields
-   or a documented mapping).
-2. Mirror parse + chip labels in `src/lib/` (or choose chips from `family`).
-3. Reindex so `wav_files` component columns update.

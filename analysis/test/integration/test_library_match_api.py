@@ -19,6 +19,8 @@ from database import catalog
 
 @pytest.fixture
 def client(tmp_path, monkeypatch):
+    from app.services import library_service
+
     library = tmp_path / "library"
     library.mkdir()
     write_wav(library / "SOCAL_H_76_230426_054845_df20.x.wav")
@@ -27,15 +29,21 @@ def client(tmp_path, monkeypatch):
     write_wav(library / "SOCAL_H_81_260203_170123_df20.x.wav")
     write_wav(library / "wav23.wav")
 
-    monkeypatch.setattr(config, "CATALOG_DB", tmp_path / "catalog.sqlite")
+    db = tmp_path / "catalog.sqlite"
+    monkeypatch.setattr(config, "CATALOG_DB", db)
+    monkeypatch.setattr(library_service, "CATALOG_DB", db)
     monkeypatch.setattr(config, "CATALOG_RUNS_ROOTS", [])
     monkeypatch.setattr(config, "CATALOG_CSV_ROOTS", [])
     monkeypatch.setattr(config, "GPL_RESULT_DIRNAME", "result")
+    monkeypatch.setattr(library_service, "GPL_RESULT_DIRNAME", "result")
+    # Fresh catalog per test — clear the one-shot ready flag.
+    library_service._catalog_ready = False
     roots = config.WAV_LIBRARY_ROOTS
     saved = list(roots)
     roots[:] = [library]
     yield TestClient(app)
     roots[:] = saved
+    library_service._catalog_ready = False
 
 
 def test_match_all_and_socal_filter(client):
@@ -90,7 +98,7 @@ def test_components_persisted_on_index(client, tmp_path):
     client.get("/api/library/match")  # triggers ensure index + commit
     with closing(catalog.connect(config.CATALOG_DB, read_only=True)) as conn:
         row = conn.execute(
-            "SELECT family, site, deployment, df, channel FROM wav_files WHERE stem LIKE ?",
+            "SELECT family, site, deployment, df, channel, start_time FROM wav_files WHERE stem LIKE ?",
             ("%193500_df100%",),
         ).fetchone()
         assert dict(row) == {
@@ -99,8 +107,69 @@ def test_components_persisted_on_index(client, tmp_path):
             "deployment": "76",
             "df": "100",
             "channel": "x.x",
+            "start_time": "2023-04-26 19:35:00",
         }
         blank = conn.execute(
             "SELECT family FROM wav_files WHERE stem = ?", ("wav23",)
         ).fetchone()
         assert blank["family"] == ""
+
+
+def test_match_by_site_and_start_prefix(client):
+    day = client.get(
+        "/api/library/match",
+        params={"site": "H", "start": "2023-04-26"},
+    ).json()
+    assert day["total"] == 2
+    assert {e["startTime"] for e in day["entries"]} == {
+        "2023-04-26 05:48:45",
+        "2023-04-26 19:35:00",
+    }
+
+    exact = client.get(
+        "/api/library/match",
+        params={"site": "H", "start": "2023-04-26 19:35:00"},
+    ).json()
+    assert exact["total"] == 1
+    assert exact["entries"][0]["name"] == "SOCAL_H_76_230426_193500_df100.x.x.wav"
+    assert exact["entries"][0]["startTime"] == "2023-04-26 19:35:00"
+
+
+def test_match_start_with_t_separator(client):
+    body = client.get(
+        "/api/library/match",
+        params={"site": "H", "start": "2023-04-26T19:35:00"},
+    ).json()
+    assert body["total"] == 1
+    assert body["entries"][0]["startTime"] == "2023-04-26 19:35:00"
+
+
+def test_siteh_auto_index_skipped(tmp_path, monkeypatch):
+    """Site H under /mnt/sda must not be rglob'd by ensure_wav_component_index."""
+    from pathlib import Path
+    from unittest.mock import MagicMock
+
+    from app.services import library_service
+
+    fake_root = MagicMock()
+    fake_root.is_dir.return_value = True
+    fake_root.resolve.return_value = Path("/mnt/sda/SiteH")
+
+    monkeypatch.setattr(config, "CATALOG_DB", tmp_path / "catalog.sqlite")
+    roots = config.WAV_LIBRARY_ROOTS
+    saved = list(roots)
+    roots[:] = [fake_root]
+    calls: list = []
+
+    def boom(conn, root, *, result_dirname):
+        calls.append(root)
+        raise AssertionError("must not rglob Site H")
+
+    monkeypatch.setattr(library_service, "index_wav_root", boom)
+
+    with closing(catalog.connect(config.CATALOG_DB)) as conn:
+        library_service.ensure_wav_component_index(conn)
+        conn.commit()
+
+    assert calls == []
+    roots[:] = saved

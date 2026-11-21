@@ -31,6 +31,7 @@ from typing import Any
 
 import numpy as np
 
+from .recording_when import start_filter_sql, yymmdd_hhmmss_to_start
 from .wav_name import COMPONENT_KEYS, parse_wav_name
 
 SCHEMA_PATH = Path(__file__).with_name("schema.sql")
@@ -172,11 +173,13 @@ def connect(db_path: Path | str, *, read_only: bool = False) -> sqlite3.Connecti
     conn.execute("PRAGMA foreign_keys = ON")
     schema = SCHEMA_PATH.read_text()
     _widen_tool_check(conn, schema)
-    # Migrate component columns before schema indexes that reference them.
-    # CREATE TABLE IF NOT EXISTS leaves pre-component wav_files untouched.
+    # Migrate columns before schema indexes that reference them.
+    # CREATE TABLE IF NOT EXISTS leaves older wav_files shapes untouched.
     _ensure_wav_component_columns(conn)
+    _ensure_wav_start_time_column(conn)
     conn.executescript(schema)
     _ensure_wav_component_columns(conn)
+    _ensure_wav_start_time_column(conn)
     return conn
 
 
@@ -212,6 +215,8 @@ def _widen_tool_check(conn: sqlite3.Connection, schema: str) -> None:
 def _ensure_wav_component_columns(conn: sqlite3.Connection) -> None:
     """Add component columns to older ``wav_files`` tables created before this schema."""
     existing = {row[1] for row in conn.execute("PRAGMA table_info(wav_files)")}
+    if not existing:
+        return
     for col in _WAV_COMPONENT_COLUMNS:
         if col not in existing:
             conn.execute(f"ALTER TABLE wav_files ADD COLUMN {col} TEXT")
@@ -219,6 +224,30 @@ def _ensure_wav_component_columns(conn: sqlite3.Connection) -> None:
         "CREATE INDEX IF NOT EXISTS idx_wav_files_components "
         "ON wav_files(family, site, deployment, date, time, df)"
     )
+
+
+def _ensure_wav_start_time_column(conn: sqlite3.Connection) -> None:
+    """Add ``start_time`` and backfill from stem ``date``/``time`` (no disk I/O)."""
+    existing = {row[1] for row in conn.execute("PRAGMA table_info(wav_files)")}
+    if not existing:
+        return
+    if "start_time" not in existing:
+        conn.execute("ALTER TABLE wav_files ADD COLUMN start_time TEXT")
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_wav_files_site_start "
+        "ON wav_files(site, start_time)"
+    )
+    rows = conn.execute(
+        "SELECT wav_id, date, time FROM wav_files "
+        "WHERE start_time IS NULL AND date IS NOT NULL"
+    ).fetchall()
+    for row in rows:
+        start = yymmdd_hhmmss_to_start(row["date"], row["time"])
+        if start:
+            conn.execute(
+                "UPDATE wav_files SET start_time = ? WHERE wav_id = ?",
+                (start, row["wav_id"]),
+            )
 
 
 def _one(conn: sqlite3.Connection, sql: str, args: Sequence[Any] = ()) -> dict[str, Any] | None:
@@ -268,13 +297,14 @@ def upsert_wav_file(
         # Empty family = examined, not a registered naming family (avoids re-index loops).
         comps = {k: None for k in _WAV_COMPONENT_COLUMNS}
         comps["family"] = ""
+    start_time = yymmdd_hhmmss_to_start(comps.get("date"), comps.get("time"))
     conn.execute(
         f"""
         INSERT INTO wav_files (
             library_root, rel_path, abs_path, stem, size_bytes, mtime, indexed_at,
-            {", ".join(_WAV_COMPONENT_COLUMNS)}
+            {", ".join(_WAV_COMPONENT_COLUMNS)}, start_time
         )
-        VALUES (?, ?, ?, ?, ?, ?, ?, {", ".join("?" for _ in _WAV_COMPONENT_COLUMNS)})
+        VALUES (?, ?, ?, ?, ?, ?, ?, {", ".join("?" for _ in _WAV_COMPONENT_COLUMNS)}, ?)
         ON CONFLICT(abs_path) DO UPDATE SET
             library_root = excluded.library_root,
             rel_path     = excluded.rel_path,
@@ -282,7 +312,8 @@ def upsert_wav_file(
             size_bytes   = excluded.size_bytes,
             mtime        = excluded.mtime,
             indexed_at   = excluded.indexed_at,
-            {", ".join(f"{c} = excluded.{c}" for c in _WAV_COMPONENT_COLUMNS)}
+            {", ".join(f"{c} = excluded.{c}" for c in _WAV_COMPONENT_COLUMNS)},
+            start_time   = excluded.start_time
         """,
         (
             str(root),
@@ -293,6 +324,7 @@ def upsert_wav_file(
             _mtime_iso(wav) if stat else None,
             _now(),
             *[comps[k] for k in _WAV_COMPONENT_COLUMNS],
+            start_time,
         ),
     )
     return int(_one(conn, "SELECT wav_id FROM wav_files WHERE abs_path = ?", (str(wav),))["wav_id"])
@@ -308,7 +340,11 @@ def _wav_filter_clause(
     q: str = "",
     library_roots: Sequence[str] | None = None,
 ) -> tuple[str, list[Any]]:
-    """AND of component equality filters, optional substring ``q``, optional roots."""
+    """AND of component equality filters, optional ``start`` prefix, ``q``, roots.
+
+    ``filters['start']`` matches ``start_time`` with equality when a full
+    ``YYYY-MM-DD HH:MM:SS`` is given, otherwise ``LIKE prefix%``.
+    """
     clauses: list[str] = []
     args: list[Any] = []
     for key in _WAV_COMPONENT_COLUMNS:
@@ -317,6 +353,11 @@ def _wav_filter_clause(
             continue
         clauses.append(f"{key} = ?")
         args.append(value)
+    start = filters.get("start")
+    if start:
+        frag, arg = start_filter_sql(start)
+        clauses.append(frag)
+        args.append(arg)
     if q:
         clauses.append("stem LIKE ? COLLATE NOCASE")
         args.append(f"%{q}%")

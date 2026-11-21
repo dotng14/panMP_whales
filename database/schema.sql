@@ -33,9 +33,11 @@ CREATE TABLE IF NOT EXISTS wav_files (
     df           TEXT,
     channel      TEXT,
     resample     TEXT,
+    -- Wall-clock recording start ``YYYY-MM-DD HH:MM:SS`` (from stem date+time).
+    start_time   TEXT,
     UNIQUE (library_root, rel_path)
 );
--- Component index is created in catalog._ensure_wav_component_columns so older
+-- Component / start_time indexes are created in catalog ensure helpers so older
 -- catalogs (table without these columns) can ALTER first, then get the index.
 
 -- 2. GPL segmentation --------------------------------------------------------

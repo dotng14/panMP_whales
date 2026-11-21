@@ -29,13 +29,17 @@ export interface RecordingComponents {
   resample?: string | null;
 }
 
-/** Chip fields shown in the SOCAL picker (family is implicit). */
+/**
+ * Chip fields for the picker (family is implicit).
+ * Order matches wall-clock identity: date ``+%Y-%m-%d`` then time ``+%H:%M:%S``,
+ * then secondary SOCAL layout fields.
+ */
 export const SOCAL_CHIP_KEYS: ComponentKey[] = [
   'site',
-  'deployment',
-  'disk',
   'date',
   'time',
+  'deployment',
+  'disk',
   'df',
   'channel',
   'resample',
@@ -43,10 +47,10 @@ export const SOCAL_CHIP_KEYS: ComponentKey[] = [
 
 export const SOCAL_CHIP_LABELS: Record<string, string> = {
   site: 'Site',
-  deployment: 'Deployment',
-  disk: 'Disk',
   date: 'Date',
   time: 'Time',
+  deployment: 'Deployment',
+  disk: 'Disk',
   df: 'df',
   channel: 'Channel',
   resample: 'Resample',
@@ -55,10 +59,10 @@ export const SOCAL_CHIP_LABELS: Record<string, string> = {
 /** Short help text for the picker “?” panel (SOCAL v1). */
 export const SOCAL_CHIP_HELP: Record<string, string> = {
   site: 'Hydrophone site letter. Site H recordings use H.',
+  date: 'Recording start date as YYYY-MM-DD (UTC), same as date \'+%Y-%m-%d\' (e.g. 2023-04-26).',
+  time: 'Recording start time as HH:MM:SS (UTC), same as date \'+%H:%M:%S\' (e.g. 19:35:00).',
   deployment: 'Deployment number on that site (e.g. 76).',
   disk: 'Instrument disk / logger id when present (DL37, disk01, d03). Leave Any if unused.',
-  date: 'Recording start date as YYMMDD (UTC), e.g. 230426 = 2023-04-26.',
-  time: 'Recording start time as HHMMSS (UTC), e.g. 193500 = 19:35:00.',
   df: 'Decimation: keep 1 of every N native samples. 20 ≈ 10 kHz, 100 ≈ 2 kHz, native = full rate (~200 kHz).',
   channel: 'Channel id from the HARP/Triton name: x or x.x (mono).',
   resample: 'Optional later resample suffix after the channel, e.g. 10kHz or 2kHz.',

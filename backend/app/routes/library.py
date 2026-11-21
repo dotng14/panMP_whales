@@ -24,6 +24,7 @@ def _component_filters(
     df: str | None,
     channel: str | None,
     resample: str | None,
+    start: str | None = None,
 ) -> dict[str, str | None]:
     raw = {
         "family": family,
@@ -35,6 +36,7 @@ def _component_filters(
         "df": df,
         "channel": channel,
         "resample": resample,
+        "start": start,
     }
     return {k: v for k, v in raw.items() if v}
 
@@ -94,10 +96,11 @@ def facets(
     df: str | None = Query(None),
     channel: str | None = Query(None),
     resample: str | None = Query(None),
+    start: str | None = Query(None, description="Wall-clock start YYYY-MM-DD[ HH:MM:SS] (prefix OK)"),
 ) -> dict:
     """Distinct component values (+ counts) given the other filled filters."""
     filters = _component_filters(
-        family, site, deployment, disk, date, time, df, channel, resample
+        family, site, deployment, disk, date, time, df, channel, resample, start
     )
     with open_catalog_read() as conn:
         return recording_facets(conn, filters=filters, q=q)
@@ -117,10 +120,11 @@ def match(
     df: str | None = Query(None),
     channel: str | None = Query(None),
     resample: str | None = Query(None),
+    start: str | None = Query(None, description="Wall-clock start YYYY-MM-DD[ HH:MM:SS] (prefix OK)"),
 ) -> dict:
-    """WAV files matching component filters (and optional substring ``q``)."""
+    """WAV files matching site/start or component filters (catalog only; no disk I/O)."""
     filters = _component_filters(
-        family, site, deployment, disk, date, time, df, channel, resample
+        family, site, deployment, disk, date, time, df, channel, resample, start
     )
     with open_catalog_read() as conn:
         return match_recordings(conn, filters=filters, q=q, offset=offset, limit=limit)

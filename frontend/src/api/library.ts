@@ -75,7 +75,7 @@ export async function createJobFromLibrary(fileId: string): Promise<JobCreated> 
   return res.json() as Promise<JobCreated>;
 }
 
-/** Component filters for facets / match (SOCAL fields; omit empty). */
+/** Filters for facets / match (site+start preferred; legacy SOCAL fields ok). */
 export type RecordingFilters = Partial<{
   family: string;
   site: string;
@@ -86,6 +86,8 @@ export type RecordingFilters = Partial<{
   df: string;
   channel: string;
   resample: string;
+  /** Wall-clock start ``YYYY-MM-DD[ HH:MM:SS]`` (prefix match when partial). */
+  start: string;
   q: string;
 }>;
 
@@ -106,6 +108,8 @@ export interface MatchEntry {
   mtime?: string;
   cached?: boolean;
   stem?: string;
+  /** Wall-clock recording start ``YYYY-MM-DD HH:MM:SS`` when known. */
+  startTime?: string | null;
   components?: Record<string, string | null>;
 }
 

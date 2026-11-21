@@ -175,9 +175,22 @@ def ensure_wav_component_index(conn: Any) -> None:
     (use ``backend/scripts/index_siteh.py``).
     """
     for root in WAV_LIBRARY_ROOTS:
-        if not root.is_dir():
+        # Resolve / skip Site H before any exists/is_dir — those can hang on /mnt/sda.
+        try:
+            root_s = str(root if root.is_absolute() else root.resolve())
+        except OSError:
+            logger.warning("Skipping library root (resolve failed): %s", root)
             continue
-        root_s = str(root.resolve())
+        if root_s.startswith("/mnt/sda"):
+            logger.info("Skipping auto-index for %s (run backend/scripts/index_siteh.py)", root_s)
+            continue
+        try:
+            if not root.is_dir():
+                continue
+            root_s = str(root.resolve())
+        except OSError:
+            logger.warning("Skipping library root (stat failed): %s", root)
+            continue
         total = int(
             conn.execute(
                 "SELECT COUNT(*) FROM wav_files WHERE library_root = ?", (root_s,)
@@ -190,9 +203,6 @@ def ensure_wav_component_index(conn: Any) -> None:
             ).fetchone()[0]
         )
         if total > 0 and unparsed == 0:
-            continue
-        if root_s.startswith("/mnt/sda"):
-            logger.info("Skipping auto-index for %s (run backend/scripts/index_siteh.py)", root_s)
             continue
         index_wav_root(conn, root, result_dirname=GPL_RESULT_DIRNAME)
 
@@ -257,6 +267,7 @@ def match_recordings(
             "mtime": row.get("mtime"),
             "cached": cached,
             "stem": row.get("stem"),
+            "startTime": row.get("start_time"),
             "components": {k: row.get(k) for k in COMPONENT_KEYS},
         })
     return {
