@@ -31,7 +31,10 @@ from typing import Any
 
 import numpy as np
 
+from .wav_name import COMPONENT_KEYS, parse_wav_name
+
 SCHEMA_PATH = Path(__file__).with_name("schema.sql")
+_WAV_COMPONENT_COLUMNS = tuple(COMPONENT_KEYS)
 
 DICT_SOURCES = ("seed", "refinement", "matching", "edit")
 TOOL_NAMES = ("randomized_build", "pan_build", "matching_pursuit", "split")
@@ -170,6 +173,7 @@ def connect(db_path: Path | str, *, read_only: bool = False) -> sqlite3.Connecti
     schema = SCHEMA_PATH.read_text()
     _widen_tool_check(conn, schema)
     conn.executescript(schema)
+    _ensure_wav_component_columns(conn)
     return conn
 
 
@@ -202,6 +206,18 @@ def _widen_tool_check(conn: sqlite3.Connection, schema: str) -> None:
         conn.execute("PRAGMA foreign_keys = ON")
 
 
+def _ensure_wav_component_columns(conn: sqlite3.Connection) -> None:
+    """Add component columns to older ``wav_files`` tables created before this schema."""
+    existing = {row[1] for row in conn.execute("PRAGMA table_info(wav_files)")}
+    for col in _WAV_COMPONENT_COLUMNS:
+        if col not in existing:
+            conn.execute(f"ALTER TABLE wav_files ADD COLUMN {col} TEXT")
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_wav_files_components "
+        "ON wav_files(family, site, deployment, date, time, df)"
+    )
+
+
 def _one(conn: sqlite3.Connection, sql: str, args: Sequence[Any] = ()) -> dict[str, Any] | None:
     row = conn.execute(sql, args).fetchone()
     return dict(row) if row else None
@@ -222,17 +238,28 @@ def upsert_wav_file(
     wav = Path(abs_path).resolve()
     rel_path = str(wav.relative_to(root)) if wav.is_relative_to(root) else wav.name
     stat = wav.stat() if wav.exists() else None
+    parsed = parse_wav_name(wav.name)
+    if parsed is not None:
+        comps = parsed.to_dict()
+    else:
+        # Empty family = examined, not a registered naming family (avoids re-index loops).
+        comps = {k: None for k in _WAV_COMPONENT_COLUMNS}
+        comps["family"] = ""
     conn.execute(
-        """
-        INSERT INTO wav_files (library_root, rel_path, abs_path, stem, size_bytes, mtime, indexed_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?)
+        f"""
+        INSERT INTO wav_files (
+            library_root, rel_path, abs_path, stem, size_bytes, mtime, indexed_at,
+            {", ".join(_WAV_COMPONENT_COLUMNS)}
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?, {", ".join("?" for _ in _WAV_COMPONENT_COLUMNS)})
         ON CONFLICT(abs_path) DO UPDATE SET
             library_root = excluded.library_root,
             rel_path     = excluded.rel_path,
             stem         = excluded.stem,
             size_bytes   = excluded.size_bytes,
             mtime        = excluded.mtime,
-            indexed_at   = excluded.indexed_at
+            indexed_at   = excluded.indexed_at,
+            {", ".join(f"{c} = excluded.{c}" for c in _WAV_COMPONENT_COLUMNS)}
         """,
         (
             str(root),
@@ -242,6 +269,7 @@ def upsert_wav_file(
             stat.st_size if stat else None,
             _mtime_iso(wav) if stat else None,
             _now(),
+            *[comps[k] for k in _WAV_COMPONENT_COLUMNS],
         ),
     )
     return int(_one(conn, "SELECT wav_id FROM wav_files WHERE abs_path = ?", (str(wav),))["wav_id"])
@@ -249,6 +277,88 @@ def upsert_wav_file(
 
 def list_wav_files(conn: sqlite3.Connection) -> list[dict[str, Any]]:
     return _all(conn, "SELECT * FROM wav_files ORDER BY stem ASC, wav_id ASC")
+
+
+def _wav_filter_clause(
+    filters: dict[str, str | None],
+    *,
+    q: str = "",
+    library_roots: Sequence[str] | None = None,
+) -> tuple[str, list[Any]]:
+    """AND of component equality filters, optional substring ``q``, optional roots."""
+    clauses: list[str] = []
+    args: list[Any] = []
+    for key in _WAV_COMPONENT_COLUMNS:
+        value = filters.get(key)
+        if value is None or value == "":
+            continue
+        clauses.append(f"{key} = ?")
+        args.append(value)
+    if q:
+        clauses.append("stem LIKE ? COLLATE NOCASE")
+        args.append(f"%{q}%")
+    if library_roots is not None:
+        if not library_roots:
+            clauses.append("0")
+        else:
+            placeholders = ", ".join("?" for _ in library_roots)
+            clauses.append(f"library_root IN ({placeholders})")
+            args.extend(library_roots)
+    where = (" WHERE " + " AND ".join(clauses)) if clauses else ""
+    return where, args
+
+
+def match_wav_files(
+    conn: sqlite3.Connection,
+    *,
+    filters: dict[str, str | None] | None = None,
+    q: str = "",
+    library_roots: Sequence[str] | None = None,
+    offset: int = 0,
+    limit: int = 50,
+) -> tuple[list[dict[str, Any]], int]:
+    """WAV rows matching component filters; returns ``(rows, total)``."""
+    where, args = _wav_filter_clause(filters or {}, q=q, library_roots=library_roots)
+    total = int(conn.execute(f"SELECT COUNT(*) FROM wav_files{where}", args).fetchone()[0])
+    rows = _all(
+        conn,
+        f"SELECT * FROM wav_files{where} ORDER BY stem ASC, wav_id ASC LIMIT ? OFFSET ?",
+        [*args, limit, offset],
+    )
+    return rows, total
+
+
+def wav_facets(
+    conn: sqlite3.Connection,
+    *,
+    filters: dict[str, str | None] | None = None,
+    q: str = "",
+    library_roots: Sequence[str] | None = None,
+    keys: Sequence[str] | None = None,
+) -> dict[str, list[dict[str, Any]]]:
+    """Distinct values (+ counts) for each component key under the other filters.
+
+    For key ``K``, the filter for ``K`` itself is ignored so the dropdown lists
+    every value still available given the remaining chips.
+    """
+    base = dict(filters or {})
+    out: dict[str, list[dict[str, Any]]] = {}
+    for key in keys or _WAV_COMPONENT_COLUMNS:
+        if key not in _WAV_COMPONENT_COLUMNS:
+            continue
+        others = {k: v for k, v in base.items() if k != key}
+        where, args = _wav_filter_clause(others, q=q, library_roots=library_roots)
+        # Only list non-NULL facet values.
+        extra = f"{' AND ' if where else ' WHERE '}{key} IS NOT NULL"
+        sql = (
+            f"SELECT {key} AS value, COUNT(*) AS count FROM wav_files"
+            f"{where}{extra} GROUP BY {key} ORDER BY {key} ASC"
+        )
+        out[key] = [
+            {"value": row["value"], "count": int(row["count"])}
+            for row in _all(conn, sql, args)
+        ]
+    return out
 
 
 # ── GPL segmentations and windows ────────────────────────────────────────────

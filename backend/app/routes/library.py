@@ -1,11 +1,45 @@
+from contextlib import closing
+
 from fastapi import APIRouter, Query
 
+from app import config
 from app.config import WAV_LIBRARY_ROOTS
 from app.services import catalog_service
 from app.services.gpl_cache import is_gpl_cached
-from app.services.library_service import list_entries, resolve_file_id
+from app.services.library_service import (
+    list_entries,
+    match_recordings,
+    recording_facets,
+    resolve_file_id,
+)
+from database import catalog
 
 router = APIRouter()
+
+
+def _component_filters(
+    family: str | None,
+    site: str | None,
+    deployment: str | None,
+    disk: str | None,
+    date: str | None,
+    time: str | None,
+    df: str | None,
+    channel: str | None,
+    resample: str | None,
+) -> dict[str, str | None]:
+    raw = {
+        "family": family,
+        "site": site,
+        "deployment": deployment,
+        "disk": disk,
+        "date": date,
+        "time": time,
+        "df": df,
+        "channel": channel,
+        "resample": resample,
+    }
+    return {k: v for k, v in raw.items() if v}
 
 
 @router.get("/api/library/roots")
@@ -49,3 +83,51 @@ def browse(
         limit=limit,
         recursive=recursive,
     )
+
+
+@router.get("/api/library/facets")
+def facets(
+    q: str = Query(""),
+    family: str | None = Query(None),
+    site: str | None = Query(None),
+    deployment: str | None = Query(None),
+    disk: str | None = Query(None),
+    date: str | None = Query(None),
+    time: str | None = Query(None),
+    df: str | None = Query(None),
+    channel: str | None = Query(None),
+    resample: str | None = Query(None),
+) -> dict:
+    """Distinct component values (+ counts) given the other filled filters."""
+    filters = _component_filters(
+        family, site, deployment, disk, date, time, df, channel, resample
+    )
+    with closing(catalog.connect(config.CATALOG_DB)) as conn:
+        result = recording_facets(conn, filters=filters, q=q)
+        conn.commit()
+        return result
+
+
+@router.get("/api/library/match")
+def match(
+    q: str = Query(""),
+    offset: int = Query(0, ge=0),
+    limit: int = Query(50, ge=1, le=200),
+    family: str | None = Query(None),
+    site: str | None = Query(None),
+    deployment: str | None = Query(None),
+    disk: str | None = Query(None),
+    date: str | None = Query(None),
+    time: str | None = Query(None),
+    df: str | None = Query(None),
+    channel: str | None = Query(None),
+    resample: str | None = Query(None),
+) -> dict:
+    """WAV files matching component filters (and optional substring ``q``)."""
+    filters = _component_filters(
+        family, site, deployment, disk, date, time, df, channel, resample
+    )
+    with closing(catalog.connect(config.CATALOG_DB)) as conn:
+        result = match_recordings(conn, filters=filters, q=q, offset=offset, limit=limit)
+        conn.commit()
+        return result

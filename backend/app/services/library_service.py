@@ -2,14 +2,24 @@ from __future__ import annotations
 
 import base64
 import json
+import logging
 import os
+import threading
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import Any
 
 from fastapi import HTTPException
 
-from app.config import WAV_LIBRARY_ROOTS
+from app.config import CATALOG_DB, GPL_RESULT_DIRNAME, WAV_LIBRARY_ROOTS
 from app.services.gpl_cache import is_gpl_cached
+from app.services.wav_name import COMPONENT_KEYS
+from database import catalog
+from database.index_existing import index_wav_root
+
+logger = logging.getLogger(__name__)
+_index_lock = threading.Lock()
+_indexing_roots: set[str] = set()
 
 
 # ── fileId codec ──────────────────────────────────────────────────────────────
@@ -140,3 +150,123 @@ def list_entries(
         "limit": limit,
         "entries": page,
     }
+
+
+# ── component facets / match ─────────────────────────────────────────────────
+
+
+def _root_index_for(library_root: str) -> int | None:
+    target = Path(library_root).resolve()
+    for i, root in enumerate(WAV_LIBRARY_ROOTS):
+        if root.resolve() == target:
+            return i
+    return None
+
+
+def _resolved_root_strings() -> list[str]:
+    return [str(r.resolve()) for r in WAV_LIBRARY_ROOTS]
+
+
+def _index_root_background(root: Path) -> None:
+    root_s = str(root.resolve())
+    try:
+        with catalog.connect(CATALOG_DB) as conn:
+            index_wav_root(conn, root, result_dirname=GPL_RESULT_DIRNAME)
+            conn.commit()
+        logger.info("Finished indexing WAV root %s", root_s)
+    except Exception:
+        logger.exception("Background index failed for %s", root_s)
+    finally:
+        with _index_lock:
+            _indexing_roots.discard(root_s)
+
+
+def ensure_wav_component_index(conn: Any) -> None:
+    """Index library roots when empty or missing parsed components.
+
+    Small / already-started roots index in-process. Large empty roots (e.g. SiteH
+    on ``/mnt/sda``) are indexed in a background thread so match/facets stay responsive.
+    """
+    for root in WAV_LIBRARY_ROOTS:
+        if not root.is_dir():
+            continue
+        root_s = str(root.resolve())
+        total = int(
+            conn.execute(
+                "SELECT COUNT(*) FROM wav_files WHERE library_root = ?", (root_s,)
+            ).fetchone()[0]
+        )
+        unparsed = int(
+            conn.execute(
+                "SELECT COUNT(*) FROM wav_files WHERE library_root = ? AND family IS NULL",
+                (root_s,),
+            ).fetchone()[0]
+        )
+        if total > 0 and unparsed == 0:
+            continue
+        # /mnt/sda SiteH: do not auto rglob (exFAT listing can hang). Use
+        # ``python backend/scripts/index_siteh.py`` instead.
+        if root_s.startswith("/mnt/sda"):
+            logger.info("Skipping auto-index for %s (run backend/scripts/index_siteh.py)", root_s)
+            continue
+        index_wav_root(conn, root, result_dirname=GPL_RESULT_DIRNAME)
+
+
+def match_recordings(
+    conn: Any,
+    *,
+    filters: dict[str, str | None],
+    q: str = "",
+    offset: int = 0,
+    limit: int = 50,
+) -> dict:
+    """Paginated WAV matches with ``fileId`` + GPL cache flag."""
+    ensure_wav_component_index(conn)
+    roots = _resolved_root_strings()
+    rows, total = catalog.match_wav_files(
+        conn,
+        filters=filters,
+        q=q,
+        library_roots=roots,
+        offset=offset,
+        limit=limit,
+    )
+    entries: list[dict] = []
+    for row in rows:
+        root_idx = _root_index_for(row["library_root"])
+        if root_idx is None:
+            continue
+        abs_path = Path(row["abs_path"])
+        entries.append({
+            "type": "file",
+            "name": abs_path.name,
+            "fileId": encode_file_id(root_idx, row["rel_path"]),
+            "sizeBytes": row.get("size_bytes"),
+            "mtime": row.get("mtime"),
+            "cached": is_gpl_cached(abs_path) if abs_path.is_file() else False,
+            "stem": row.get("stem"),
+            "components": {k: row.get(k) for k in COMPONENT_KEYS},
+        })
+    return {
+        "total": total,
+        "offset": offset,
+        "limit": limit,
+        "entries": entries,
+    }
+
+
+def recording_facets(
+    conn: Any,
+    *,
+    filters: dict[str, str | None],
+    q: str = "",
+) -> dict:
+    ensure_wav_component_index(conn)
+    facets = catalog.wav_facets(
+        conn,
+        filters=filters,
+        q=q,
+        library_roots=_resolved_root_strings(),
+        keys=COMPONENT_KEYS,
+    )
+    return {"facets": facets}

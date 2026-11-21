@@ -5,7 +5,7 @@ import { useSpectrogramScale } from './components/SpectrogramViewer/useSpectrogr
 import type { SpectrogramViewerProps } from './components/SpectrogramViewer/types';
 import { fetchRepeats, type RepeatMatches } from './api/repeats';
 import { WavFileUpload } from './components/WavFileUpload';
-import { WavLibraryPicker } from './components/WavLibraryPicker';
+import { RecordingPicker } from './components/RecordingPicker';
 import { AnalysisPicker } from './components/AnalysisPicker';
 import { describeChoice, type AnalysisChoice } from './api/catalog';
 import { JobProgress } from './components/JobProgress';
@@ -277,7 +277,7 @@ export default function App() {
               ? <WavFileUpload onFile={handleUpload} disabled={isProcessing} />
               : (
                 <>
-                  <WavLibraryPicker
+                  <RecordingPicker
                     onSelectFile={setSelectedFile}
                     selectedFileId={selectedFile?.fileId ?? null}
                     disabled={isProcessing}

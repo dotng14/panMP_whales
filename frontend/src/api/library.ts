@@ -74,3 +74,71 @@ export async function createJobFromLibrary(fileId: string): Promise<JobCreated> 
   }
   return res.json() as Promise<JobCreated>;
 }
+
+/** Component filters for facets / match (SOCAL fields; omit empty). */
+export type RecordingFilters = Partial<{
+  family: string;
+  site: string;
+  deployment: string;
+  disk: string;
+  date: string;
+  time: string;
+  df: string;
+  channel: string;
+  resample: string;
+  q: string;
+}>;
+
+export interface FacetValue {
+  value: string;
+  count: number;
+}
+
+export interface FacetsResponse {
+  facets: Record<string, FacetValue[]>;
+}
+
+export interface MatchEntry {
+  type: 'file';
+  name: string;
+  fileId: string;
+  sizeBytes?: number;
+  mtime?: string;
+  cached?: boolean;
+  stem?: string;
+  components?: Record<string, string | null>;
+}
+
+export interface MatchResponse {
+  total: number;
+  offset: number;
+  limit: number;
+  entries: MatchEntry[];
+}
+
+function filtersToParams(filters: RecordingFilters): URLSearchParams {
+  const q = new URLSearchParams();
+  for (const [key, value] of Object.entries(filters)) {
+    if (value != null && value !== '') q.set(key, value);
+  }
+  return q;
+}
+
+export async function getFacets(filters: RecordingFilters = {}): Promise<FacetsResponse> {
+  const q = filtersToParams(filters);
+  const res = await fetch(`${API_BASE}/api/library/facets?${q}`);
+  if (!res.ok) throw new Error(`Facets fetch failed: ${res.status}`);
+  return res.json() as Promise<FacetsResponse>;
+}
+
+export async function matchRecordings(
+  filters: RecordingFilters & { offset?: number; limit?: number } = {},
+): Promise<MatchResponse> {
+  const { offset, limit, ...rest } = filters;
+  const q = filtersToParams(rest);
+  if (offset !== undefined) q.set('offset', String(offset));
+  if (limit !== undefined) q.set('limit', String(limit));
+  const res = await fetch(`${API_BASE}/api/library/match?${q}`);
+  if (!res.ok) throw new Error(`Match fetch failed: ${res.status}`);
+  return res.json() as Promise<MatchResponse>;
+}

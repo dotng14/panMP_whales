@@ -23,8 +23,20 @@ CREATE TABLE IF NOT EXISTS wav_files (
     size_bytes   INTEGER,
     mtime        TEXT,
     indexed_at   TEXT NOT NULL,
+    -- Parsed filename components (SOCAL v1; family NULL when unparsed).
+    family       TEXT,
+    site         TEXT,
+    deployment   TEXT,
+    disk         TEXT,
+    date         TEXT,
+    time         TEXT,
+    df           TEXT,
+    channel      TEXT,
+    resample     TEXT,
     UNIQUE (library_root, rel_path)
 );
+CREATE INDEX IF NOT EXISTS idx_wav_files_components
+    ON wav_files(family, site, deployment, date, time, df);
 
 -- 2. GPL segmentation --------------------------------------------------------
 -- The on-disk output of GPL_Python for one WAV: a set of windows. `csv_path`
