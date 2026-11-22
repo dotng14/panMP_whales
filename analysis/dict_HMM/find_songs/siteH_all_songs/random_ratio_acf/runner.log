@@ -1,0 +1,139 @@
+eligible 6795 files_done 0 pngs 0 out /home/yfreund/projects/panMP_whales/analysis/dict_HMM/find_songs/siteH_all_songs/random_ratio_acf
+ACF lag 1–20s; full file + 300s chunks
+start SOCAL_H_67_HE_190528_210300_df20.x.wav
+wrote SOCAL_H_67_HE_190528_210300_df20.x.ratio_acf.png + 262 five-min plots  minutes 1312  90.8s  files 1 pngs 263
+start SOCAL_H_63_171201_140230_df20.x.wav
+eligible 6795 song_known 4684 files_done 1 pngs 263 out /home/yfreund/projects/panMP_whales/analysis/dict_HMM/find_songs/siteH_all_songs/random_ratio_acf
+ACF lag 1–20s; full file + 300s chunks; pick 50% any / 50% ok_song
+start [any] SONGS SOCAL_H_72_HE_210817_000115_df20.x.wav
+eligible 6795 song_known 4684 files_done 2 pngs 2 out /home/yfreund/projects/panMP_whales/analysis/dict_HMM/find_songs/siteH_all_songs/random_ratio_acf
+ACF lag 1–20s; full-file plots only; pick 50% any / 50% ok_song
+start [song] SONGS SOCAL_H_65_180823_095000_df20.x.wav
+wrote SOCAL_H_65_180823_095000_df20.x.ratio_acf.png  minutes 1312  29.2s  files 3 pngs 3 (any 0 song 1)
+start [song] SONGS SOCAL_H_64_180519_161730_df20.x.wav
+wrote SOCAL_H_64_180519_161730_df20.x.ratio_acf.png  minutes 1312  31.9s  files 4 pngs 4 (any 0 song 2)
+start [any] SONGS SOCAL_H_65_181103_093230_df20.x.wav
+wrote SOCAL_H_65_181103_093230_df20.x.ratio_acf.png  minutes 1312  29.7s  files 5 pngs 5 (any 1 song 2)
+start [any] SONGS SOCAL_H_81_260830_141729_df20.x.wav
+wrote SOCAL_H_81_260830_141729_df20.x.ratio_acf.png  minutes 938  21.4s  files 6 pngs 6 (any 2 song 2)
+start [any] SONGS SOCAL_H_67_HE_190607_091000_df20.x.wav
+wrote SOCAL_H_67_HE_190607_091000_df20.x.ratio_acf.png  minutes 1312  30.7s  files 7 pngs 7 (any 3 song 2)
+start [any] SONGS SOCAL_H_63_171226_044000_df20.x.wav
+wrote SOCAL_H_63_171226_044000_df20.x.ratio_acf.png  minutes 1312  30.8s  files 8 pngs 8 (any 4 song 2)
+start [any] no-songs SOCAL_H_67_HE_190731_030500_df20.x.wav
+wrote SOCAL_H_67_HE_190731_030500_df20.x.ratio_acf.png  minutes 1312  30.3s  files 9 pngs 9 (any 5 song 2)
+start [any] SONGS SOCAL_H_69_201017_081730_df20.x.wav
+wrote SOCAL_H_69_201017_081730_df20.x.ratio_acf.png  minutes 1312  30.5s  files 10 pngs 10 (any 6 song 2)
+start [song] SONGS SOCAL_H_62_170917_234620_df20.x.wav
+wrote SOCAL_H_62_170917_234620_df20.x.ratio_acf.png  minutes 1218  27.9s  files 11 pngs 11 (any 6 song 3)
+start [any] no-songs SOCAL38H_DL17_100617_040345.df20.x.wav
+wrote SOCAL38H_DL17_100617_040345.df20.x.ratio_acf.png  minutes 377  8.7s  files 12 pngs 12 (any 7 song 3)
+start [any] SONGS SOCAL_H_69_201001_202500_df20.x.wav
+eligible 6795 song_known 4684 with_intervals 703 files_done 12 pngs 12 out /home/yfreund/projects/panMP_whales/analysis/dict_HMM/find_songs/siteH_all_songs/random_ratio_acf
+ACF lag 1–20s; full-file + per-song plots; pick 50% any / 50% ok_song
+start [song] SONGS n_songs=0 SOCAL_H_68_200123_140115_df20.x.wav
+eligible 6795 song_known 4684 with_intervals 703 files_done 12 pngs 12 out /home/yfreund/projects/panMP_whales/analysis/dict_HMM/find_songs/siteH_all_songs/random_ratio_acf
+ACF lag 1–20s; full-file + per-song plots; pick 50% any / 50% ok_song
+start [song] SONGS n_songs=2 SOCAL_H_79_250226_113200_df20.x.wav
+wrote SOCAL_H_79_250226_113200_df20.x.ratio_acf.png + 2 song plots  minutes 1312  31.3s  files 13 pngs 15 (any 0 song 1)
+start [any] SONGS n_songs=0 SOCAL_H_74_HE_220906_052615_df20.x.wav
+wrote SOCAL_H_74_HE_220906_052615_df20.x.ratio_acf.png + 0 song plots  minutes 1312  30.3s  files 14 pngs 16 (any 1 song 1)
+start [song] SONGS n_songs=4 SOCAL_H_81_260131_232353_df20.x.wav
+wrote SOCAL_H_81_260131_232353_df20.x.ratio_acf.png + 4 song plots  minutes 1312  32.4s  files 15 pngs 21 (any 1 song 2)
+start [song] SONGS n_songs=4 SOCAL_H_75_HE_230417_073832_df20.x.wav
+wrote SOCAL_H_75_HE_230417_073832_df20.x.ratio_acf.png + 4 song plots  minutes 985  23.8s  files 16 pngs 26 (any 1 song 3)
+start [any] SONGS n_songs=0 SOCAL55H_DL13_150423_221615.df20.x.wav
+wrote SOCAL55H_DL13_150423_221615.df20.x.ratio_acf.png + 0 song plots  minutes 1341  31.4s  files 17 pngs 27 (any 2 song 3)
+start [song] SONGS n_songs=1 SOCAL40H_DL29_101101_150345.df20.x.wav
+wrote SOCAL40H_DL29_101101_150345.df20.x.ratio_acf.png + 1 song plots  minutes 1341  32.2s  files 18 pngs 29 (any 2 song 4)
+start [song] SONGS n_songs=17 SOCAL_H_75_HE_230410_223102_df20.x.wav
+wrote SOCAL_H_75_HE_230410_223102_df20.x.ratio_acf.png + 17 song plots  minutes 1312  36.0s  files 19 pngs 47 (any 2 song 5)
+start [any] SONGS n_songs=0 SOCAL_H_76_230831_183115_df20.x.wav
+wrote SOCAL_H_76_230831_183115_df20.x.ratio_acf.png + 0 song plots  minutes 1312  26.3s  files 20 pngs 48 (any 3 song 5)
+start [any] SONGS n_songs=3 SOCAL54H_DL83_150124_010845.df20.x.wav
+wrote SOCAL54H_DL83_150124_010845.df20.x.ratio_acf.png + 3 song plots  minutes 1341  30.6s  files 21 pngs 52 (any 4 song 5)
+start [song] SONGS n_songs=15 SOCAL_H_75_HE_230314_212832_df20.x.wav
+wrote SOCAL_H_75_HE_230314_212832_df20.x.ratio_acf.png + 15 song plots  minutes 1312  34.7s  files 22 pngs 68 (any 4 song 6)
+start [any] SONGS n_songs=0 SOCAL_H_63_171216_040230_df20.x.wav
+wrote SOCAL_H_63_171216_040230_df20.x.ratio_acf.png + 0 song plots  minutes 1312  29.5s  files 23 pngs 69 (any 5 song 6)
+start [any] SONGS n_songs=0 SOCAL_H_76_231008_133345_df20.x.wav
+wrote SOCAL_H_76_231008_133345_df20.x.ratio_acf.png + 0 song plots  minutes 1312  30.4s  files 24 pngs 70 (any 6 song 6)
+start [any] no-songs n_songs=0 SOCAL49H_DL68_130807_095730.df20.x.wav
+wrote SOCAL49H_DL68_130807_095730.df20.x.ratio_acf.png + 0 song plots  minutes 1341  30.8s  files 25 pngs 71 (any 7 song 6)
+start [any] SONGS n_songs=0 SOCAL_H_69_201006_094730_df20.x.wav
+wrote SOCAL_H_69_201006_094730_df20.x.ratio_acf.png + 0 song plots  minutes 1312  30.4s  files 26 pngs 72 (any 8 song 6)
+start [any] SONGS n_songs=0 SOCAL_H_59_d03_161028_170621.df20.x.wav
+wrote SOCAL_H_59_d03_161028_170621.df20.x.ratio_acf.png + 0 song plots  minutes 1341  31.1s  files 27 pngs 73 (any 9 song 6)
+start [any] SONGS n_songs=0 SOCAL50H_DL86_131208_141730.df20.x.wav
+wrote SOCAL50H_DL86_131208_141730.df20.x.ratio_acf.png + 0 song plots  minutes 1341  30.8s  files 28 pngs 74 (any 10 song 6)
+start [song] SONGS n_songs=3 SOCAL_H_66_190318_085345_df20.x.wav
+wrote SOCAL_H_66_190318_085345_df20.x.ratio_acf.png + 3 song plots  minutes 1312  30.7s  files 29 pngs 78 (any 10 song 7)
+start [song] SONGS n_songs=6 SOCAL_H_75_HE_230216_175832_df20.x.wav
+wrote SOCAL_H_75_HE_230216_175832_df20.x.ratio_acf.png + 6 song plots  minutes 1312  32.0s  files 30 pngs 85 (any 10 song 8)
+start [any] no-songs n_songs=0 SOCAL45H_DL37_111019_172345.df20.x.wav
+wrote SOCAL45H_DL37_111019_172345.df20.x.ratio_acf.png + 0 song plots  minutes 1341  30.7s  files 31 pngs 86 (any 11 song 8)
+start [song] SONGS n_songs=5 SOCAL_H_79_250222_200200_df20.x.wav
+wrote SOCAL_H_79_250222_200200_df20.x.ratio_acf.png + 5 song plots  minutes 1312  33.0s  files 32 pngs 92 (any 11 song 9)
+start [song] SONGS n_songs=1 SOCAL35H_DL24_091110_135000.df20.x.wav
+wrote SOCAL35H_DL24_091110_135000.df20.x.ratio_acf.png + 1 song plots  minutes 1341  30.5s  files 33 pngs 94 (any 11 song 10)
+start [song] SONGS n_songs=1 SOCAL_H_79_241130_191200_df20.x.wav
+wrote SOCAL_H_79_241130_191200_df20.x.ratio_acf.png + 1 song plots  minutes 1312  30.7s  files 34 pngs 96 (any 11 song 11)
+start [song] SONGS n_songs=2 SOCAL_H_73_HE_220112_194730_df20.x.wav
+wrote SOCAL_H_73_HE_220112_194730_df20.x.ratio_acf.png + 2 song plots  minutes 1312  31.0s  files 35 pngs 99 (any 11 song 12)
+start [song] SONGS n_songs=1 SOCAL_H_75_HE_230128_215332_df20.x.wav
+wrote SOCAL_H_75_HE_230128_215332_df20.x.ratio_acf.png + 1 song plots  minutes 1312  30.5s  files 36 pngs 101 (any 11 song 13)
+start [any] SONGS n_songs=0 SOCAL_H_76_230518_184845_df20.x.wav
+wrote SOCAL_H_76_230518_184845_df20.x.ratio_acf.png + 0 song plots  minutes 1312  29.9s  files 37 pngs 102 (any 12 song 13)
+start [song] SONGS n_songs=5 SOCAL_H_68_200310_234615_df20.x.wav
+wrote SOCAL_H_68_200310_234615_df20.x.ratio_acf.png + 5 song plots  minutes 1312  30.9s  files 38 pngs 108 (any 12 song 14)
+start [song] SONGS n_songs=1 SOCAL54H_DL83_141117_083500.df20.x.wav
+wrote SOCAL54H_DL83_141117_083500.df20.x.ratio_acf.png + 1 song plots  minutes 1341  31.8s  files 39 pngs 110 (any 12 song 15)
+start [any] SONGS n_songs=0 SOCAL_H_63_171224_085500_df20.x.wav
+wrote SOCAL_H_63_171224_085500_df20.x.ratio_acf.png + 0 song plots  minutes 1312  29.1s  files 40 pngs 111 (any 13 song 15)
+start [song] SONGS n_songs=1 SOCAL_H_78_240525_203230_df20.x.wav
+wrote SOCAL_H_78_240525_203230_df20.x.ratio_acf.png + 1 song plots  minutes 1312  30.6s  files 41 pngs 113 (any 13 song 16)
+start [any] SONGS n_songs=0 SOCAL56H_DL86_150806_104845.df20.x.wav
+wrote SOCAL56H_DL86_150806_104845.df20.x.ratio_acf.png + 0 song plots  minutes 1341  31.4s  files 42 pngs 114 (any 14 song 16)
+start [song] SONGS n_songs=3 SOCAL_H_77_240321_044500_df20.x.wav
+wrote SOCAL_H_77_240321_044500_df20.x.ratio_acf.png + 3 song plots  minutes 1312  31.6s  files 43 pngs 118 (any 14 song 17)
+start [any] no-songs n_songs=0 SOCAL40H_DL29_100824_163345.df20.x.wav
+wrote SOCAL40H_DL29_100824_163345.df20.x.ratio_acf.png + 0 song plots  minutes 1341  30.9s  files 44 pngs 119 (any 15 song 17)
+start [any] SONGS n_songs=0 SOCAL_H_76_230705_202115_df20.x.wav
+wrote SOCAL_H_76_230705_202115_df20.x.ratio_acf.png + 0 song plots  minutes 1312  30.4s  files 45 pngs 120 (any 16 song 17)
+start [song] SONGS n_songs=1 SOCAL_H_64_180704_060230_df20.x.wav
+wrote SOCAL_H_64_180704_060230_df20.x.ratio_acf.png + 1 song plots  minutes 1312  29.6s  files 46 pngs 122 (any 16 song 18)
+start [song] SONGS n_songs=3 SOCAL_H_75_HE_230215_200602_df20.x.wav
+wrote SOCAL_H_75_HE_230215_200602_df20.x.ratio_acf.png + 3 song plots  minutes 1312  31.1s  files 47 pngs 126 (any 16 song 19)
+start [song] SONGS n_songs=1 SOCAL_H_68_191228_032115_df20.x.wav
+wrote SOCAL_H_68_191228_032115_df20.x.ratio_acf.png + 1 song plots  minutes 1312  30.7s  files 48 pngs 128 (any 16 song 20)
+start [any] SONGS n_songs=1 SOCAL27H_DL19_080827_152500.df20.x.wav
+wrote SOCAL27H_DL19_080827_152500.df20.x.ratio_acf.png + 1 song plots  minutes 860  19.5s  files 49 pngs 130 (any 17 song 20)
+start [song] SONGS n_songs=6 SOCAL_H_79_250330_030929_df20.x.wav
+wrote SOCAL_H_79_250330_030929_df20.x.ratio_acf.png + 6 song plots  minutes 1312  31.9s  files 50 pngs 137 (any 17 song 21)
+start [song] SONGS n_songs=6 SOCAL55H_DL13_150204_173600.df20.x.wav
+wrote SOCAL55H_DL13_150204_173600.df20.x.ratio_acf.png + 6 song plots  minutes 1341  33.0s  files 51 pngs 144 (any 17 song 22)
+start [song] SONGS n_songs=4 SOCAL_H_77_240308_103000_df20.x.wav
+wrote SOCAL_H_77_240308_103000_df20.x.ratio_acf.png + 4 song plots  minutes 1312  31.0s  files 52 pngs 149 (any 17 song 23)
+start [any] SONGS n_songs=0 SOCAL_H_58_d04_160312_130730.df20.x.wav
+wrote SOCAL_H_58_d04_160312_130730.df20.x.ratio_acf.png + 0 song plots  minutes 1341  29.9s  files 53 pngs 150 (any 18 song 23)
+start [any] SONGS n_songs=0 SOCAL47H_DL13_121108_114615.df20.x.wav
+wrote SOCAL47H_DL13_121108_114615.df20.x.ratio_acf.png + 0 song plots  minutes 1341  29.6s  files 54 pngs 151 (any 19 song 23)
+start [song] SONGS n_songs=4 SOCAL_H_79_250405_061929_df20.x.wav
+wrote SOCAL_H_79_250405_061929_df20.x.ratio_acf.png + 4 song plots  minutes 1312  31.1s  files 55 pngs 156 (any 19 song 24)
+start [song] SONGS n_songs=10 SOCAL_H_75_HE_230224_005832_df20.x.wav
+wrote SOCAL_H_75_HE_230224_005832_df20.x.ratio_acf.png + 10 song plots  minutes 1312  32.0s  files 56 pngs 167 (any 19 song 25)
+start [song] SONGS n_songs=1 SOCAL_H_70_210106_083229_df20.x.wav
+wrote SOCAL_H_70_210106_083229_df20.x.ratio_acf.png + 1 song plots  minutes 1312  29.9s  files 57 pngs 169 (any 19 song 26)
+start [any] SONGS n_songs=0 SOCAL47H_DL13_121108_022615.df20.x.wav
+wrote SOCAL47H_DL13_121108_022615.df20.x.ratio_acf.png + 0 song plots  minutes 560  12.6s  files 58 pngs 170 (any 20 song 26)
+start [song] SONGS n_songs=8 SOCAL_H_81_260105_185000_df20.x.wav
+wrote SOCAL_H_81_260105_185000_df20.x.ratio_acf.png + 8 song plots  minutes 1312  34.0s  files 59 pngs 179 (any 20 song 27)
+start [song] SONGS n_songs=3 SOCAL_H_79_250115_190545_df20.x.wav
+wrote SOCAL_H_79_250115_190545_df20.x.ratio_acf.png + 3 song plots  minutes 1312  31.1s  files 60 pngs 183 (any 20 song 28)
+start [any] SONGS n_songs=0 SOCAL_H_71_210627_190345_df20.x.wav
+wrote SOCAL_H_71_210627_190345_df20.x.ratio_acf.png + 0 song plots  minutes 1312  30.1s  files 61 pngs 184 (any 21 song 28)
+start [song] SONGS n_songs=11 SOCAL_H_73_HE_220301_150615_df20.x.wav
+wrote SOCAL_H_73_HE_220301_150615_df20.x.ratio_acf.png + 11 song plots  minutes 1312  34.3s  files 62 pngs 196 (any 21 song 29)
+start [any] no-songs n_songs=0 SOCAL45H_DL37_120220_122000.df20.x.wav
+wrote SOCAL45H_DL37_120220_122000.df20.x.ratio_acf.png + 0 song plots  minutes 1341  30.7s  files 63 pngs 197 (any 22 song 29)
+start [song] SONGS n_songs=4 SOCAL_H_75_HE_230323_022102_df20.x.wav

@@ -6,9 +6,9 @@ LDFLAGS = -l:libfftw3f_threads.so.3 -l:libfftw3f.so.3 -pthread -lm \
 	-l:libcudart.so.12 -l:libcufft.so.11 \
 	-Wl,-rpath,$(NV)/cuda_runtime/lib:$(NV)/cufft/lib
 
-.PHONY: all check check-minute
+.PHONY: all check check-minute check-minute-acf
 
-all: energy_filter minute_energy
+all: energy_filter minute_energy minute_acf
 
 energy_filter: energy_filter.c
 	$(CC) $(CFLAGS) -o $@ energy_filter.c $(LDFLAGS)
@@ -16,8 +16,14 @@ energy_filter: energy_filter.c
 minute_energy: minute_energy.c
 	$(CC) $(CFLAGS) -fopenmp -o $@ minute_energy.c $(LDFLAGS) -fopenmp
 
+minute_acf: minute_acf.c
+	$(CC) $(CFLAGS) -fopenmp -o $@ minute_acf.c $(LDFLAGS) -fopenmp
+
 check: energy_filter
 	./energy_filter --self-test
 
 check-minute: minute_energy
 	./minute_energy --self-test
+
+check-minute-acf: minute_acf
+	./minute_acf --self-test
