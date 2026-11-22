@@ -7,6 +7,11 @@ alwaysApply: true
 
 * when plotting a spectrogram, use the jet color map and scale the values so that they occupy the whole range.
 
-* When commiting to git, make sure that no file is larger than 10MB, such files should be ignored using .gitignore
+* **No files larger than 10MB in git.** Git ignore rules match paths, not sizes, so enforce this explicitly:
+  1. Before every commit (and whenever creating large outputs), find oversize files from the repo root:
+     `find . -type f -size +10M ! -path './.git/*' ! -path './.venv/*' ! -path '*/node_modules/*'`
+  2. Append each path (repo-relative) to the root `.gitignore` under the “Files larger than 10MB” section if not already listed.
+  3. If a file is tracked, run `git rm --cached -- <path>` so it stays on disk but leaves the index.
+  4. Do not stage or commit any file over 10MB.
 
 

@@ -63,3 +63,8 @@ analysis/dict_HMM/find_songs/c/build/
 analysis/dict_HMM/find_songs/c/song_detector
 analysis/dict_HMM/find_songs/c/song_detector_double
 pre_processing/c/energy_filter
+
+# Files larger than 10MB (git cannot match by size; list paths explicitly.
+# When adding new large artifacts, append them here and `git rm --cached` if tracked.)
+analysis/dict_HMM/find_songs/siteH_all_songs/energy_segments.csv
+analysis/matrix_profile/replicate_report/cache_193500/coeffs_10hz.npz
