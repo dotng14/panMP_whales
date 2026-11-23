@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+import copy
+import json
+from dataclasses import dataclass, field, fields, is_dataclass
+from pathlib import Path
 from typing import Any
 
 import numpy as np
@@ -58,6 +61,72 @@ class FilterParams:
     values: FilterValues = field(default_factory=FilterValues)
 
 
+CONTOURS = ("cm", "cm_max", "cm_max2")
+
+
+@dataclass
+class MeasureSwitches:
+    """``parm.measure.*`` of ``GPL_parameter_Humpback.m``: which contour measurements to take."""
+
+    cm_freq_limits: int = 1
+    cm_max_freq_limits: int = 0
+    cm_max2_freq_limits: int = 0
+    cm_freq_bandwidth: int = 1
+    cm_max_freq_bandwidth: int = 0
+    cm_max2_freq_bandwidth: int = 0
+    cm_duration: int = 1
+    cm_max_duration: int = 0
+    cm_max2_duration: int = 0
+    cm_slope: int = 1
+    cm_max_slope: int = 0
+    cm_max2_slope: int = 0
+    spec_noise: int = 0
+    rl_min_size: int = 5
+    spec_rl: int = 0
+
+    def on(self, contour: str, measure: str) -> bool:
+        return bool(getattr(self, f"{contour}_{measure}"))
+
+
+@dataclass
+class ContourLimits:
+    """Acceptance limits for one contour (``parm.filter_parm.values.<contour>_*``).
+
+    ``None`` takes the MATLAB default: ``min_duration_s`` = ``min_call_duration``,
+    the start / min frequencies = ``freq_lo``, the end / max frequencies = ``freq_hi``.
+    """
+
+    min_duration_s: float | None = None
+    min_freq_bandwidth_hz: float = 50.0
+    start_freq_hz: float | None = None
+    end_freq_hz: float | None = None
+    min_freq_hz: float | None = None
+    max_freq_hz: float | None = None
+    slope_lower: float = -200.0
+    slope_upper: float = 2000.0
+
+
+@dataclass
+class ContourParams:
+    """Contour extraction, measurement and filter switches (``GPL_parameter_Humpback.m`` defaults)."""
+
+    template_on: int = 1  # extract contours (0: start/end times only)
+    cm_on: int = 1  # all islands
+    cm_max_on: int = 0  # the strongest island
+    cm_max2_on: int = 0  # the second strongest island
+    measurements_on: int = 1
+    filter_on: int = 1  # pass/fail flags against ``limits``
+    contour_cutoff: float = 6.0  # ContourCutoff: whitened level (over the call's noise) a pixel must pass
+    min_island_size: int = 10  # MinIslandSize: pixels needed for a contour
+    smaller_island_cutoff: float = 0.05  # islands in cm must be this fraction of the largest island's area
+    island_radius: int = 1  # only 1 (direct neighbours) is supported
+    measure: MeasureSwitches = field(default_factory=MeasureSwitches)
+    limits: dict[str, ContourLimits] = field(default_factory=lambda: {c: ContourLimits() for c in CONTOURS})
+
+    def contour_on(self, contour: str) -> bool:
+        return bool(getattr(self, f"{contour}_on"))
+
+
 @dataclass
 class DetectorParams:
     sample_freq: float
@@ -85,6 +154,7 @@ class DetectorParams:
     save_csv: int = 1
     output_size_separation: int = 1
     filter_parm: FilterParams = field(default_factory=FilterParams)
+    contour: ContourParams = field(default_factory=ContourParams)
     noise_ceiling: float = 0.0
     thresh: float = 0.0
     noise_level: float = 0.0
@@ -179,7 +249,7 @@ class DetectorParams:
         return p
 
     def with_window_samples(self, window_samples: int) -> "DetectorParams":
-        out = DetectorParams(**self.to_dict())
+        out = copy.deepcopy(self)
         out.nrec = int(window_samples)
         out.num_time_bins = int(np.floor((out.nrec - out.fftl) / out.fft_overlap))
         return out
@@ -187,7 +257,68 @@ class DetectorParams:
     def to_dict(self) -> dict[str, Any]:
         d = dict(self.__dict__)
         d["filter_parm"] = FilterParams(values=FilterValues(self.filter_parm.values.adjacent_call_bin_num))
+        d["contour"] = copy.deepcopy(self.contour)
         return d
+
+    def with_overrides(self, overrides: dict[str, Any]) -> "DetectorParams":
+        """A copy with values from a parameters file (``load_params_file``) applied.
+
+        Nested sections (``contour``, ``contour.measure``, ``contour.limits.cm`` ...)
+        merge key by key. Values derived from the sample rate and band
+        (``fftl``, bins, thresholds) and the band itself (``--freq-lo`` /
+        ``--freq-hi``) cannot be set here.
+        """
+        out = copy.deepcopy(self)
+        bad = sorted(set(overrides) & DERIVED_PARAMS)
+        if bad:
+            raise ValueError(f"parameters file cannot set {', '.join(bad)} (derived, or set on the command line)")
+        _apply(out, overrides, "")
+        return out
+
+
+# Set by ``for_audio`` from the sample rate and band, not by a parameters file.
+DERIVED_PARAMS = frozenset(
+    {
+        "sample_freq", "total_samples", "nwav", "freq_lo", "freq_hi", "noise_ceiling", "thresh",
+        "noise_level", "fftl", "fft_overlap", "nrec", "freq_bin_lo", "freq_bin_hi",
+        "sum_freq_bin_lo", "sum_freq_bin_hi", "num_freq_bins", "num_time_bins",
+    }
+)
+
+
+def _apply(target: Any, values: dict[str, Any], where: str) -> None:
+    for key, value in values.items():
+        name = f"{where}{key}"
+        if isinstance(target, dict):
+            if key not in target:
+                raise ValueError(f"unknown parameter {name!r}")
+            current = target[key]
+        else:
+            known = {f.name for f in fields(target)}
+            if key not in known:
+                raise ValueError(f"unknown parameter {name!r}")
+            current = getattr(target, key)
+        if is_dataclass(current) or isinstance(current, dict):
+            if not isinstance(value, dict):
+                raise ValueError(f"parameter {name!r} is a section; give an object")
+            _apply(current, value, f"{name}.")
+        elif isinstance(target, dict):
+            target[key] = value
+        else:
+            setattr(target, key, value)
+
+
+def load_params_file(path: Path | str) -> dict[str, Any]:
+    """Read a JSON parameters file (see ``gpl_params.example.json``); keys starting with ``_`` are comments."""
+    def strip(obj: Any) -> Any:
+        if isinstance(obj, dict):
+            return {k: strip(v) for k, v in obj.items() if not k.startswith("_")}
+        return obj
+
+    data = json.loads(Path(path).read_text())
+    if not isinstance(data, dict):
+        raise ValueError(f"{path}: a parameters file holds one JSON object")
+    return strip(data)
 
 import os
 import numpy as np

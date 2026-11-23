@@ -1,0 +1,33 @@
+{
+  "_comment": "GPL parameters file for process_v4.py --params / preprocess.py --params / $GPL_PARAMS_FILE. Every key is optional; these are the defaults (GPL_parameter_Humpback.m). The band is set with --freq-lo / --freq-hi, and fftl, bins and thresholds follow from the sample rate. Keys starting with _ are ignored.",
+  "min_call_duration": 0.2,
+  "max_call_duration": 10.0,
+  "contour": {
+    "_comment": "template_on: extract contours. cm: all islands, cm_max: strongest island, cm_max2: second strongest.",
+    "template_on": 1,
+    "cm_on": 1,
+    "cm_max_on": 0,
+    "cm_max2_on": 0,
+    "measurements_on": 1,
+    "filter_on": 1,
+    "contour_cutoff": 6.0,
+    "min_island_size": 10,
+    "smaller_island_cutoff": 0.05,
+    "island_radius": 1,
+    "measure": {
+      "cm_freq_limits": 1, "cm_max_freq_limits": 0, "cm_max2_freq_limits": 0,
+      "cm_freq_bandwidth": 1, "cm_max_freq_bandwidth": 0, "cm_max2_freq_bandwidth": 0,
+      "cm_duration": 1, "cm_max_duration": 0, "cm_max2_duration": 0,
+      "cm_slope": 1, "cm_max_slope": 0, "cm_max2_slope": 0,
+      "spec_noise": 0,
+      "rl_min_size": 5,
+      "spec_rl": 0
+    },
+    "limits": {
+      "_comment": "null: MATLAB default (min_duration_s = min_call_duration; start/min freq = freq_lo; end/max freq = freq_hi).",
+      "cm":      {"min_duration_s": null, "min_freq_bandwidth_hz": 50, "start_freq_hz": null, "end_freq_hz": null, "min_freq_hz": null, "max_freq_hz": null, "slope_lower": -200, "slope_upper": 2000},
+      "cm_max":  {"min_duration_s": null, "min_freq_bandwidth_hz": 50, "start_freq_hz": null, "end_freq_hz": null, "min_freq_hz": null, "max_freq_hz": null, "slope_lower": -200, "slope_upper": 2000},
+      "cm_max2": {"min_duration_s": null, "min_freq_bandwidth_hz": 50, "start_freq_hz": null, "end_freq_hz": null, "min_freq_hz": null, "max_freq_hz": null, "slope_lower": -200, "slope_upper": 2000}
+    }
+  }
+}

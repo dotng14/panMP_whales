@@ -24,6 +24,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from analysis.GPL_Python.gpl_outputs import DEFAULT_INTENSITY_CLIP_HI_PERCENTILE
+from analysis.GPL_Python.gpl_signal import load_params_file
 from analysis.GPL_Python.process_v4 import ProcessingOrchestrator, is_wav_file, normalize_input_path
 from analysis.dict_learning.code.core import defaults
 from analysis.dict_learning.code.learn.build_dictionary import register_averaged_result
@@ -50,6 +51,8 @@ class PreprocessOptions:
     # Re-run learning even when the segmentation already has a dictionary
     # (e.g. after changing GPL_REPEATS_N_ROUNDS / --n-rounds).
     relearn: bool = False
+    # JSON parameters file for GPL (contour / measurement switches); None: humpback defaults.
+    params_file: Path | None = None
 
 
 def cache_dir_for(wav_path: Path, library_roots: list[Path], result_dirname: str) -> Path:
@@ -235,6 +238,7 @@ def preprocess_one(
         freq_lo=opts.freq_lo,
         freq_hi=opts.freq_hi,
         intensity_clip_hi_percentile=opts.intensity_clip_hi_percentile,
+        params=load_params_file(opts.params_file) if opts.params_file else None,
     ).process(wav_path)
 
     cache_dir.mkdir(parents=True, exist_ok=True)
@@ -283,6 +287,8 @@ def main(argv: list[str] | None = None) -> int:
         action="store_true",
         help="Re-learn the dictionary for cached files (default: keep the existing one)",
     )
+    p.add_argument("--params", type=Path, default=None,
+                   help="GPL parameters file (JSON; see GPL_Python/gpl_params.example.json)")
     args = p.parse_args(argv)
 
     roots = [Path(r) for r in args.library_root]
@@ -306,6 +312,7 @@ def main(argv: list[str] | None = None) -> int:
             db_path = roots[0] / args.result_dirname / "dict_learning_catalog.sqlite"
 
     opts = PreprocessOptions(
+        params_file=args.params,
         force=args.force,
         freq_lo=args.freq_lo,
         freq_hi=args.freq_hi,

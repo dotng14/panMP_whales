@@ -14,6 +14,37 @@ Object-oriented Python translation baseline of the `GPL_v4` core pipeline (`proc
   - `Labels_<name>.tlab`
   - `CSV_<name>.csv`
   - whitened spectrogram windows as `.npy` in `spectrogram_npy/` (with sidecar JSON)
+- Extracts each call's contours and measures them (`gpl_contour.py`, from `GPL_template.m`,
+  `GPL_contour.m`, `GPL_measurements.m`, `GPL_filter.m`), as the parameters ask
+
+### Contours and measurements
+
+Per detection, as MATLAB's `GPL_struct(k)`:
+
+- **Contours**: `cm` (all islands of pixels over `contour_cutoff`), `cm_max` (the strongest
+  island), `cm_max2` (the second). Each is kept sparse, as `GPL_sparse.m` keeps it
+  (`values` uint16 of `scale`, 1-based column-major `index`, `size`), in the `.mat`'s `calls`.
+- **Measurements** of each contour: `duration_sec`, `slope` (Hz/s) with `slope_ci` and
+  `slope_y_int`, `freq_bandwidth_hz`, `start_freq_hz` / `end_freq_hz` / `min_freq_hz` /
+  `max_freq_hz` / `abs_bandwidth_hz`; per call, `spec_rl` and `spec_noise`.
+- **Filter flags** (`filter_v3`): 1 where a measurement passes its limit, 0 where not.
+
+The CSV gets a column per measurement that is on (`cm_slope`, `cm_max_duration_sec`, ...,
+flags as `filter_cm_slope`); `start_freq_hz` ... `max_freq_hz` come from `cm`, as MATLAB's
+CSV does.
+
+What is computed is set by the **parameters**: `DetectorParams.contour` (switches
+`template_on`, `cm_on`, `cm_max_on`, `cm_max2_on`, `measurements_on`, `filter_on`;
+`measure.*` per contour; `limits.*` per contour), defaulting to `GPL_parameter_Humpback.m`
+(`cm` only; duration, slope, bandwidth and frequency limits; no RL or noise). Override them
+with a JSON parameters file, `--params FILE` (`process_v4.py`, `preprocess.py`) or
+`$GPL_PARAMS_FILE` (the web backend); `gpl_params.example.json` lists every key with its
+default.
+
+Differences from MATLAB, all in `gpl_contour.py`'s docstring: indices are uint32 (MATLAB's
+uint16 saturates at 65,535, which a 200 kHz call passes after about 40 columns); the
+slope filter tests each call's own slope (MATLAB tests the first call's against the upper
+limit); only `island_radius = 1` is ported.
 
 Downstream matching (`searchingForMatches`) uses GPL detection `start_time` / `end_time` from `CSV_*.csv` as **segment boundaries** (one detection = one segment) when `segmentation_mode=gpl`.
 
@@ -89,7 +120,7 @@ python3 "GPL_Python/process_v4.py" "/path/to/wav_folder" --output-dir "GPL_Pytho
 
 - This is a **core translation baseline** focused on orchestration, whitening, detection loop, and exports.
 - STFT and frequency-band cropping follow `GPL_v4/GPL_fft.m` and `GPL_parameter_Humpback.m`: full `fftl` spectrogram rows, `linspace` crop indices (1-based `FreqBinLo`/`FreqBinHi`), and a separate `arange` grid for noise-level `K`.
-- Advanced optional branches from MATLAB (contour template extraction, measurement-heavy filtering, deck-test jumps, and all legacy analysis scripts) are intentionally deferred.
+- Contour extraction, measurements and the contour filter flags are ported (above). Deck-test jumps, waveform export (`ww365`), `radial_island` and the legacy analysis scripts are not.
 - `.npy` output naming:
   - `spectrogram_npy/spwhiten_<wav_stem>_w<window>_s<start>_e<end>.npy`
   - `spectrogram_npy/spwhiten_*_display.npy` — cube-root display transform for plotting
