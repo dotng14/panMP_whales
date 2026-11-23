@@ -206,8 +206,12 @@ def test_song_structure_from_a_catalog_csv(client, catalog_runs, tmp_path):
     # Without csvId: the CSV named after the WAV under backend/data/song_structure (none here).
     assert client.get(f"/api/jobs/{job_id}/song-structure").status_code == 404
     assert client.get(f"/api/jobs/{job_id}/song-structure", params={"csvId": 999}).status_code == 404
+    # The catalog's Parquet copy serves the CSV once the CSV is gone; without either, 404.
     with closing(sqlite3.connect(config.CATALOG_DB)) as conn, conn:
         conn.execute("UPDATE annotation_csvs SET csv_path = '/nonexistent.motif_segments.csv'")
+    assert client.get(f"/api/jobs/{job_id}/song-structure", params={"csvId": csv_id}).json() == body
+    with closing(sqlite3.connect(config.CATALOG_DB)) as conn, conn:
+        conn.execute("UPDATE annotation_csvs SET parquet_path = NULL")
     res = client.get(f"/api/jobs/{job_id}/song-structure", params={"csvId": csv_id})
     assert res.status_code == 404 and "CSV file missing" in res.json()["detail"]
 

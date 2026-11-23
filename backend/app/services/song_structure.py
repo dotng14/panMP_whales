@@ -1,17 +1,17 @@
-"""Load motif / song / theme / phrase structure from a song-structure CSV.
+"""Load motif / song / theme / phrase structure for the viewer.
 
-A CSV is picked from the catalog (``load_song_structure_csv``), or, when the
-viewer asks without one, looked up by WAV stem under
+A CSV is picked from the catalog, which keeps a Parquet copy of its segments
+(``load_song_structure_parquet``; ``database.song_segments`` has the layouts),
+or, when the viewer asks without one, looked up by WAV stem under
 ``backend/data/song_structure/<wav_stem>.motif_segments.csv``.
 
-CSV times are unix seconds; the WAV's start comes from a date-time in its stem,
+Segment times are unix seconds; the WAV's start comes from a date-time in its stem,
 or, for a stem without one (``wav23``), from ``wav_starts.json`` in the same
 folder, which maps stem to ``YYMMDD_HHMMSS``.
 """
 
 from __future__ import annotations
 
-import csv
 import json
 import re
 from datetime import datetime, timezone
@@ -19,6 +19,7 @@ from pathlib import Path
 from typing import Any
 
 from app.config import BACKEND_DIR
+from database import song_segments
 
 SONG_STRUCTURE_DIR = BACKEND_DIR / "data" / "song_structure"
 WAV_STARTS_FILE = SONG_STRUCTURE_DIR / "wav_starts.json"
@@ -67,62 +68,49 @@ def load_song_structure(stem: str) -> dict[str, Any] | None:
 
 
 def load_song_structure_csv(path: Path, stem: str) -> dict[str, Any]:
-    """Units + song spans from one CSV; times are relative to the start parsed from ``stem``."""
+    """The viewer payload from a CSV in either layout."""
+    return _payload(_read(song_segments.read_csv, path), stem)
+
+
+def load_song_structure_parquet(path: Path, stem: str) -> dict[str, Any]:
+    """The viewer payload from the catalog's Parquet copy of a CSV."""
+    return _payload(song_segments.read_parquet(path), stem)
+
+
+def _read(reader, path: Path):
+    try:
+        return reader(path)
+    except song_segments.SegmentsError as exc:
+        raise ValueError(str(exc)) from exc
+
+
+def _payload(table, stem: str) -> dict[str, Any]:
+    """Units (motifs), songs and themes, in seconds from the WAV's start (``wav_start_unix``).
+
+    ``themes`` is None when the themes are given per motif (wide layout).
+    """
     start_unix0 = wav_start_unix(stem)
     if start_unix0 is None:
         raise ValueError(f"cannot parse recording start time from stem {stem!r}")
-
     units: list[dict[str, Any]] = []
-    song_bounds: dict[int, dict[str, float]] = {}
-
-    with path.open(newline="", encoding="utf-8") as fh:
-        reader = csv.DictReader(fh)
-        required = {
-            "motif",
-            "song",
-            "theme",
-            "phrase_id",
-            "phrase_count",
-            "start_unix",
-            "end_unix",
-        }
-        if reader.fieldnames is None or not required.issubset(set(reader.fieldnames)):
-            raise ValueError(
-                f"motif CSV missing required columns; got {reader.fieldnames!r}"
-            )
-        for row in reader:
-            start_sec = float(row["start_unix"]) - start_unix0
-            end_sec = float(row["end_unix"]) - start_unix0
-            if end_sec <= start_sec:
-                continue
-            song = int(float(row["song"]))
-            theme = int(float(row["theme"]))
-            phrase_id = int(float(row["phrase_id"]))
-            phrase_count = int(float(row["phrase_count"]))
+    songs: list[dict[str, Any]] = []
+    themes: list[dict[str, Any]] = []
+    for r in table.to_pylist():
+        start_sec, end_sec = r["start_unix"] - start_unix0, r["end_unix"] - start_unix0
+        if r["kind"] == "motif":
             units.append(
                 {
-                    "motif": str(row["motif"]).strip(),
-                    "song": song,
-                    "theme": theme,
-                    "phraseId": phrase_id,
-                    "phraseCount": phrase_count,
+                    "motif": r["label"],
+                    "song": r["song"],
+                    "theme": r["theme"],
+                    "phraseId": r["phrase_id"],
+                    "phraseCount": r["phrase_count"],
                     "startSec": start_sec,
                     "endSec": end_sec,
                 }
             )
-            bounds = song_bounds.get(song)
-            if bounds is None:
-                song_bounds[song] = {"startSec": start_sec, "endSec": end_sec}
-            else:
-                bounds["startSec"] = min(bounds["startSec"], start_sec)
-                bounds["endSec"] = max(bounds["endSec"], end_sec)
-
-    songs = [
-        {"song": song, "startSec": bounds["startSec"], "endSec": bounds["endSec"]}
-        for song, bounds in sorted(song_bounds.items())
-    ]
-    return {
-        "wavStartUnix": start_unix0,
-        "units": units,
-        "songs": songs,
-    }
+        elif r["kind"] == "song":
+            songs.append({"song": r["song"], "startSec": start_sec, "endSec": end_sec})
+        elif r["kind"] == "theme":
+            themes.append({"theme": r["theme"], "startSec": start_sec, "endSec": end_sec})
+    return {"wavStartUnix": start_unix0, "units": units, "songs": songs, "themes": themes or None}

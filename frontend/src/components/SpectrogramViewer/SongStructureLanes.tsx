@@ -8,7 +8,7 @@ import {
   type RefObject,
 } from 'react';
 import type { Placement } from '../../api/catalog';
-import type { SongStructureSong, SongStructureUnit } from '../../api/songStructure';
+import type { SongStructureSong, SongStructureTheme, SongStructureUnit } from '../../api/songStructure';
 import { atomColor, motifColor, phraseColor, songColor, themeColor } from './songStructureColors';
 
 export const LANE_H = 18;
@@ -35,11 +35,14 @@ export function secToCol(sec: number, audioDurationSec: number, timeCols: number
   return Math.max(0, Math.min(timeCols, Math.round((sec / audioDurationSec) * timeCols)));
 }
 
+/** Segments per lane. Themes come from `themes` spans when given, else from each motif;
+ *  the phrase lane is empty when no motif has a phrase. */
 export function buildLanes(
   units: SongStructureUnit[],
   songs: SongStructureSong[],
   audioDurationSec: number,
   timeCols: number,
+  themes?: SongStructureTheme[] | null,
 ): Record<(typeof LANE_ORDER)[number], LaneSeg[]> {
   const motif: LaneSeg[] = [];
   const theme: LaneSeg[] = [];
@@ -50,7 +53,12 @@ export function buildLanes(
     const startCol = secToCol(u.startSec, audioDurationSec, timeCols);
     const endCol = secToCol(u.endSec, audioDurationSec, timeCols);
     if (endCol <= startCol) continue;
-    const title = `motif ${u.motif} · song ${u.song} · theme ${u.theme} · phrase ${u.phraseId}×${u.phraseCount}`;
+    const title = [
+      `motif ${u.motif}`,
+      u.song !== null ? `song ${u.song}` : null,
+      u.theme !== null ? `theme ${u.theme}` : null,
+      u.phraseId !== null ? `phrase ${u.phraseId}×${u.phraseCount ?? '?'}` : null,
+    ].filter(Boolean).join(' · ');
     motif.push({
       startCol,
       endCol,
@@ -58,19 +66,36 @@ export function buildLanes(
       label: u.motif,
       title,
     });
+    if (!themes && u.theme !== null) {
+      theme.push({
+        startCol,
+        endCol,
+        color: themeColor(u.theme),
+        label: String(u.theme),
+        title,
+      });
+    }
+    if (u.phraseId !== null) {
+      phrase.push({
+        startCol,
+        endCol,
+        color: phraseColor(u.phraseId),
+        label: `${u.phraseId}·${u.phraseCount ?? '?'}`,
+        title,
+      });
+    }
+  }
+
+  for (const t of themes ?? []) {
+    const startCol = secToCol(t.startSec, audioDurationSec, timeCols);
+    const endCol = secToCol(t.endSec, audioDurationSec, timeCols);
+    if (endCol <= startCol) continue;
     theme.push({
       startCol,
       endCol,
-      color: themeColor(u.theme),
-      label: String(u.theme),
-      title,
-    });
-    phrase.push({
-      startCol,
-      endCol,
-      color: phraseColor(u.phraseId),
-      label: `${u.phraseId}·${u.phraseCount}`,
-      title,
+      color: themeColor(t.theme),
+      label: String(t.theme),
+      title: `theme ${t.theme}`,
     });
   }
 

@@ -242,7 +242,8 @@ CREATE TABLE IF NOT EXISTS annotation_csvs (
     n_songs     INTEGER,
     size_bytes  INTEGER,
     created_at  TEXT NOT NULL,       -- file mtime
-    indexed_at  TEXT NOT NULL
+    indexed_at  TEXT NOT NULL,
+    parquet_path TEXT                -- the segments as Parquet (database/song_segments.py)
 );
 
 -- 9. Action history ----------------------------------------------------------
