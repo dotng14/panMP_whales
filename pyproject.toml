@@ -14,6 +14,7 @@ dependencies = [
     "matplotlib",
     "numba",
     "tqdm",
+    "pyarrow",       # song-structure segments as Parquet (database/song_segments.py)
     # backend webserver
     "fastapi",
     "uvicorn[standard]",

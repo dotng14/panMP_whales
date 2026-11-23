@@ -1,11 +1,13 @@
 import { API_BASE } from './base';
 
+/** One motif. A long-layout CSV (type, segment index, start, end) has no phrases,
+ *  and a motif outside every song or theme span has a null song or theme. */
 export interface SongStructureUnit {
   motif: string;
-  song: number;
-  theme: number;
-  phraseId: number;
-  phraseCount: number;
+  song: number | null;
+  theme: number | null;
+  phraseId: number | null;
+  phraseCount: number | null;
   startSec: number;
   endSec: number;
 }
@@ -16,10 +18,18 @@ export interface SongStructureSong {
   endSec: number;
 }
 
+export interface SongStructureTheme {
+  theme: number;
+  startSec: number;
+  endSec: number;
+}
+
 export interface SongStructure {
   wavStartUnix: number;
   units: SongStructureUnit[];
   songs: SongStructureSong[];
+  /** Theme spans from a long-layout CSV; null when themes are given per motif. */
+  themes?: SongStructureTheme[] | null;
 }
 
 /** Motif / song / theme / phrase lanes for one job; null when no CSV exists.

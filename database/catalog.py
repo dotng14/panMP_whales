@@ -1,6 +1,7 @@
 """SQLite catalog for WAV files, GPL segmentations, dictionaries, MP runs and CSVs.
 
-Large arrays stay on disk as ``.npy``; this module stores metadata and paths.
+Large arrays stay on disk as ``.npy``, and song-structure segments as Parquet
+(``segments/<csv_id>.parquet``); this module stores metadata and paths.
 Writers are the dict_learning CLIs (``--catalog``), ``python -m database`` and
 the backend's rename / feedback routes; the backend reads.
 
@@ -20,7 +21,6 @@ Typical use::
 
 from __future__ import annotations
 
-import csv
 import json
 import re
 import sqlite3
@@ -31,6 +31,8 @@ from typing import Any
 
 import numpy as np
 
+from . import song_segments
+
 SCHEMA_PATH = Path(__file__).with_name("schema.sql")
 
 DICT_SOURCES = ("seed", "refinement", "matching", "edit")
@@ -39,9 +41,9 @@ TOOL_NAMES = ("randomized_build", "pan_build", "matching_pursuit", "split")
 BUILD_TOOLS = {"randomized-build": "randomized_build", "pan-build": "pan_build", "split": "split"}
 FEEDBACK_LABELS = ("good", "bad")
 MOTIF_CSV_SUFFIX = ".motif_segments.csv"
-MOTIF_CSV_COLUMNS = frozenset(
-    {"motif", "song", "theme", "phrase_id", "phrase_count", "start_unix", "end_unix"}
-)
+MOTIF_CSV_COLUMNS = song_segments.WIDE_COLUMNS
+# Parquet copies of the CSVs' segments, in this folder next to the catalog file.
+SEGMENTS_DIRNAME = "segments"
 # The build knobs kept on the dictionary row (the rest stay in summary.json).
 # A randomized build has no `seeder`; a pan build has no `epsilon`, width
 # limits or `seed` (kept as null).
@@ -1189,27 +1191,45 @@ def _register_matching_pursuit(
 
 
 def read_motif_csv_counts(path: Path | str) -> tuple[int, int]:
-    """``(rows, songs)`` of a song-structure CSV; raises CatalogError on missing columns."""
-    path = Path(path)
-    with path.open(newline="", encoding="utf-8") as handle:
-        reader = csv.DictReader(handle)
-        missing = MOTIF_CSV_COLUMNS - set(reader.fieldnames or ())
-        if missing:
-            raise CatalogError(f"{path.name} is missing columns: {', '.join(sorted(missing))}")
-        n_rows = 0
-        songs: set[str] = set()
-        for row in reader:
-            n_rows += 1
-            songs.add(row["song"])
-    return n_rows, len(songs)
+    """``(motifs, songs)`` of a song-structure CSV, either layout; raises CatalogError if it is neither."""
+    return song_segments.counts(_read_segments(Path(path)))
+
+
+def _read_segments(path: Path):
+    try:
+        return song_segments.read_csv(path)
+    except song_segments.SegmentsError as exc:
+        raise CatalogError(str(exc)) from exc
+
+
+def segments_dir(conn: sqlite3.Connection) -> Path:
+    """Where this catalog keeps its Parquet segment files: ``segments/`` beside the catalog file."""
+    db_file = next(r["file"] for r in conn.execute("PRAGMA database_list") if r["name"] == "main")
+    if not db_file:
+        raise CatalogError("an in-memory catalog has no folder for segment files")
+    return Path(db_file).parent / SEGMENTS_DIRNAME
+
+
+def _ensure_annotation_parquet_column(conn: sqlite3.Connection) -> None:
+    """Add ``annotation_csvs.parquet_path`` to a catalog made before it existed."""
+    cols = {r["name"] for r in conn.execute("PRAGMA table_info(annotation_csvs)")}
+    if "parquet_path" not in cols:
+        conn.execute("ALTER TABLE annotation_csvs ADD COLUMN parquet_path TEXT")
 
 
 def upsert_annotation_csv(conn: sqlite3.Connection, path: Path | str, *, label: str | None = None) -> int:
-    """Index one song-structure CSV; returns its ``csv_id``. Re-indexing keeps the id and label."""
+    """Index one song-structure CSV and write its Parquet copy; returns its ``csv_id``.
+
+    The copy is ``segments/<csv_id>.parquet`` beside the catalog file
+    (``database.song_segments`` has its columns). Re-indexing keeps the id and
+    label and rewrites the copy.
+    """
     csv_path = Path(path).resolve()
     if not csv_path.is_file():  # no-pipeline-cover: the CLI and indexer pass existing files
         raise CatalogError(f"CSV not found: {csv_path}")
-    n_rows, n_songs = read_motif_csv_counts(csv_path)
+    _ensure_annotation_parquet_column(conn)
+    table = _read_segments(csv_path)
+    n_rows, n_songs = song_segments.counts(table)
     conn.execute(
         """
         INSERT INTO annotation_csvs (csv_path, name, label, wav_stem, n_rows, n_songs,
@@ -1233,7 +1253,10 @@ def upsert_annotation_csv(conn: sqlite3.Connection, path: Path | str, *, label: 
             _now(),
         ),
     )
-    return int(_one(conn, "SELECT csv_id FROM annotation_csvs WHERE csv_path = ?", (str(csv_path),))["csv_id"])
+    csv_id = int(_one(conn, "SELECT csv_id FROM annotation_csvs WHERE csv_path = ?", (str(csv_path),))["csv_id"])
+    parquet = song_segments.write_parquet(table, segments_dir(conn) / f"{csv_id}.parquet")
+    conn.execute("UPDATE annotation_csvs SET parquet_path = ? WHERE csv_id = ?", (str(parquet), csv_id))
+    return csv_id
 
 
 def list_annotation_csvs(conn: sqlite3.Connection) -> list[dict[str, Any]]:

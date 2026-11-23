@@ -288,7 +288,9 @@ export function SpectrogramViewer({
     if (!audioDurationSec || (!songStructure && !placements)) return null;
     const lanes: Partial<Record<LaneName, LaneSeg[]>> = {};
     if (songStructure) {
-      const raw = buildLanes(songStructure.units, songStructure.songs, audioDurationSec, timeCols);
+      const raw = buildLanes(
+        songStructure.units, songStructure.songs, audioDurationSec, timeCols, songStructure.themes,
+      );
       lanes.motif = mergeAdjacent(raw.motif);
       lanes.phrase = mergeAdjacent(raw.phrase);
       lanes.theme = mergeAdjacent(raw.theme);
@@ -299,7 +301,10 @@ export function SpectrogramViewer({
   }, [songStructure, placements, audioDurationSec, timeCols]);
   // Song-structure lanes first, then the atom lane under them.
   const laneOrder = useMemo((): readonly LaneName[] => [
-    ...(songStructure ? LANE_ORDER : []),
+    // A CSV without phrases (the long layout) gets no phrase lane.
+    ...(songStructure
+      ? LANE_ORDER.filter(name => name !== 'phrase' || songStructure.units.some(u => u.phraseId !== null))
+      : []),
     ...(placements ? ATOM_LANES : []),
   ], [songStructure, placements]);
   const laneSongs = songStructure?.songs ?? [];
