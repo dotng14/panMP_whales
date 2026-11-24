@@ -8,11 +8,19 @@ Singing occurs mostly during mating season, which takes place December–April,
 
 A season counts as *detected* when we have enough songs that those parameters can be estimated and compared with neighboring years.
 
+## Terminology
+
+- **Atom** — a model for a repeated segment: a dictionary kernel (spectrogram template) learned once and reused.
+- **Placement** (same as **detection**) — one occurrence of that segment in a recording: the time (and score) where an atom is matched. The two words are interchangeable.
+- **Motif** — informal umbrella for either atom or placement; use **atom** or **placement** when the distinction matters.
+
+In the Payne–McVay hierarchy below, “motif” means the short repeated unit in the song (what we model with atoms and observe as placements/detections).
+
 ## The structure of a song
 
 Following Payne and McVay, song structure is hierarchical: **motif → phrase → theme → song**.
 
-A **motif** is a short spectrogram atom—a kernel in the dictionary. Motifs chain into a **phrase** (roughly 2–20 seconds when treated as one unit). A **theme** is that phrase repeated a variable number of times. A **song** is a fixed cycle of themes; in the Site H model there are four themes, all present, in fixed order.
+A **motif** (biological unit) is a short repeated sound; in the pipeline it is represented by an **atom** and located by **placements**. Motifs chain into a **phrase** (roughly 2–20 seconds when treated as one unit). A **theme** is that phrase repeated a variable number of times. A **song** is a fixed cycle of themes; in the Site H model there are four themes, all present, in fixed order.
 
 ```mermaid
 flowchart TD
@@ -58,10 +66,10 @@ flowchart TB
     end
     subgraph fine["Fine analysis"]
       direction TB
-      islands["GPL island detections<br/>(0.5–4 seconds)"]
-      motifs["Motif detections<br/>(0.5–4 seconds)"]
-      phrases["Phrase detections<br/>(2–20 seconds)"]
-      longmotifs["Long 1-channel motifs<br/>(5–10 minutes)"]
+      islands["GPL island placements<br/>(0.5–4 seconds)"]
+      placements["Atom placements<br/>(0.5–4 seconds)"]
+      phrases["Phrase placements<br/>(2–20 seconds)"]
+      longatoms["Long 1-channel atoms<br/>(5–10 minutes)"]
     end
   end
 
@@ -69,9 +77,9 @@ flowchart TB
   spec --> fine
   rough -->|"gating"| fine
   islands --> hmm
-  motifs --> hmm
+  placements --> hmm
   phrases --> hmm
-  longmotifs --> hmm
+  longatoms --> hmm
 ```
 
 ### Energy 50–500 Hz
@@ -84,22 +92,22 @@ Periodicity of the band-energy envelope (ACF peak / FFT fraction). Cues phrase r
 
 ### Correlated pairs (panMP)
 
-Repeated energy ratio subsequences from matrix profile. Used to Seed dictionary learning to find long motifs that typically appear once in a song.
+Repeated energy ratio subsequences from matrix profile. Used to seed dictionary learning for long atoms that typically place once per song.
 
 ### Motif dictionary
 
-A set of short spectrogram atoms placed along time (matching pursuit). Motifs come from two sources:
+A set of short spectrogram **atoms**. Matching pursuit (or similar) writes **placements** of those atoms along time. Atoms come from two sources:
 
 - repeated templates found by matching pursuit / pan-build;
 - clustering of GPL contour islands (`cm` / `cm_max` / `cm_max2`).
 
 ### Repeating-phrase model
 
-Phrases as first-class units (~2–20 s) between motifs and themes. Phrase are relatively long (2-20 seconds) so we cannot find them from GPL segmentation. Instead, the plan is to use Matrix Profile to find seeds for the repeated phrase.
+Phrases as first-class units (~2–20 s) between motifs and themes. Phrases are relatively long (2–20 seconds), so we cannot find them from GPL segmentation. Instead, the plan is to use Matrix Profile to find seeds for the repeated phrase.
 
 ### Theme HMM
 
-Models fixed theme order and variable phrase-repeat counts from motif (or later phrase) scores. Used to decode start, end, and theme sequence of each song.
+Models fixed theme order and variable phrase-repeat counts from placement (or later phrase) scores. Used to decode start, end, and theme sequence of each song.
 
 ## How elements are scored
 
@@ -115,11 +123,11 @@ Per recording: pair count; median unusualness and copies; modal second-best leng
 
 ### Scoring the motif dictionary
 
-- **Coverage** — fraction of time when some motif is >2σ above its mean.
-- **Specificity** — peak score / score at ±½ length shift.
-- **Gap** — best motif − second-best on the same stretch.
+- **Coverage** — fraction of time when some atom score is >2σ above its mean.
+- **Specificity** — peak score / score at ±½ length shift (at a placement).
+- **Gap** — best atom − second-best on the same stretch.
 
-High coverage, specificity, and gap together mean: hits land on song, off-hits stay quiet, and one motif owns each hit. Per recording: coverage, hit count, median specificity and gap, modal second-best motif.
+High coverage, specificity, and gap together mean: placements land on song, off-placements stay quiet, and one atom owns each hit. Per recording: coverage, placement count, median specificity and gap, modal second-best atom.
 
 ### Scoring the theme HMM
 
@@ -135,7 +143,7 @@ Not defined yet. Plan analogs of coverage, specificity, and gap once the repeati
 
 ## How agents work
 
-An **agent** owns one element: prompt-driven (LLM plus tools), proposes changes, owned by a human developer. The **season** is always in scope because elements drift year to year.
+An **agent** owns one element: prompt-driven (LLM plus tools), proposes changes, owned by a human developer.
 
 Typical loop:
 
@@ -148,9 +156,12 @@ Typical loop:
 
 - **Correlated pairs** — find or improve panMP pairs for a season.
 - **Create motif dictionary** — build atoms from pairs or from a prior year.
-- **Improve motif dictionary** — split over-used atoms, merge near-ties, add atoms when coverage is low.
+- **Improve motif dictionary** —
+  * split atoms with too many placements,
+  * merge atoms that are second-best for each other on many placements,
+  * add atoms when coverage is low.
 - **Create phrase dictionary** — learn longer (2–20 s) repeating units.
-- **Create HMM** — fit a theme HMM on motif scores.
+- **Create HMM** — fit a theme HMM on placement scores.
 - **Compare HMMs** — try different theme counts; keep winners by score.
 
 ## Tools and data
