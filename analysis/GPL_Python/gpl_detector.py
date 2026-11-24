@@ -4,6 +4,7 @@ from dataclasses import dataclass
 
 import numpy as np
 
+from .gpl_contour import describe_call, spec_noise
 from .gpl_signal import (
     DetectorParams,
     QuietEstimator,
@@ -89,7 +90,7 @@ class GPLDetector:
         sp = slice_gpl_freq_band(sp_full, parm.freq_bin_lo, parm.freq_bin_hi)
         sp_whiten = self.whitener.apply(sp, parm)
         sp_loop = sp_whiten.copy()
-        quiet_whiten, _, blocked, baseline0 = self.quiet.estimate(sp, sp_whiten, parm)
+        quiet_whiten, quiet_fft, blocked, baseline0 = self.quiet.estimate(sp, sp_whiten, parm)
         base_save = baseline0.copy()
 
         mcalls = np.zeros((0, 2), dtype=int)
@@ -171,6 +172,9 @@ class GPLDetector:
         boundary_end = int(len(mcalls) > 0 and np.max(mcalls[:, 1]) == parm.num_time_bins)
         detections: list[dict] = []
         baseline_loop = base_in if "base_in" in locals() else baseline0
+        cp = parm.contour
+        describe = bool(cp.template_on or (cp.measurements_on and cp.measure.spec_noise))
+        window_noise = spec_noise(quiet_fft) if cp.measure.spec_noise else float("nan")
         for idx in range(len(times)):
             bflag = 0
             if idx == 0 and boundary_start:
@@ -189,6 +193,11 @@ class GPLDetector:
                     "sp": sp_whiten[:, sbin - 1 : fbin].copy(),
                 }
             )
+            if describe:
+                # Contours, measurements and filter flags (GPL_template / GPL_measurements / GPL_filter).
+                detections[-1].update(
+                    describe_call(sp_whiten[:, sbin - 1 : fbin], sp[:, sbin - 1 : fbin], window_noise, parm)
+                )
 
         return DetectorResult(
             detections=detections,

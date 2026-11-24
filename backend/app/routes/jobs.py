@@ -156,9 +156,13 @@ async def get_job_audio(job_id: str) -> FileResponse:
 
 @router.get("/api/jobs/{job_id}/song-structure")
 def get_song_structure(job_id: str, csvId: int | None = Query(None)) -> dict:
-    """Motif / song / theme / phrase units: from catalog CSV ``csvId``, else the CSV named after the WAV."""
+    """Motif / song / theme / phrase units: from catalog CSV ``csvId`` (its Parquet copy), else the CSV named after the WAV."""
     from app.services import catalog_service  # noqa: PLC0415
-    from app.services.song_structure import load_song_structure, load_song_structure_csv  # noqa: PLC0415
+    from app.services.song_structure import (  # noqa: PLC0415
+        load_song_structure,
+        load_song_structure_csv,
+        load_song_structure_parquet,
+    )
 
     job = _require_job(job_id)
     stem = Path(job.filename).stem
@@ -167,10 +171,15 @@ def get_song_structure(job_id: str, csvId: int | None = Query(None)) -> dict:
             payload = load_song_structure(stem)
         else:
             row = catalog_service.get_csv(csvId)
-            path = Path(row["csv_path"])
-            if not path.is_file():
-                raise HTTPException(status_code=404, detail=f"CSV file missing: {path}")
-            payload = load_song_structure_csv(path, row["wav_stem"])
+            # The catalog's Parquet copy; the CSV itself for a row indexed before copies existed.
+            parquet = Path(row["parquet_path"]) if row.get("parquet_path") else None
+            if parquet is not None and parquet.is_file():
+                payload = load_song_structure_parquet(parquet, row["wav_stem"])
+            else:
+                path = Path(row["csv_path"])
+                if not path.is_file():
+                    raise HTTPException(status_code=404, detail=f"CSV file missing: {path}")
+                payload = load_song_structure_csv(path, row["wav_stem"])
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     if payload is None:

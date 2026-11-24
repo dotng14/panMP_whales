@@ -13,7 +13,30 @@ import matplotlib.pyplot as plt
 import numpy as np
 from scipy.io import savemat
 
+from .gpl_contour import CONTOURS, table_columns, table_row
 from .gpl_signal import DetectorParams
+
+
+def _cm_value(d: dict[str, Any], key: str) -> float:
+    """``getFieldOrNaN``: ``call.cm.<key>``, NaN when absent."""
+    value = d.get("cm", {}).get(key, np.nan)
+    return float(value) if np.isscalar(value) else np.nan
+
+
+def _matlab_safe(value: Any) -> Any:
+    """``value`` with None as NaN, so ``savemat`` can write it."""
+    if value is None:
+        return np.nan
+    if isinstance(value, dict):
+        return {k: _matlab_safe(v) for k, v in value.items()}
+    return value
+
+
+def _call_struct(d: dict[str, Any]) -> dict[str, Any]:
+    """One detection as MATLAB's ``hyd.detection.calls(k)``: times, flag, contours, measurements, filter flags."""
+    keep = ("start_time", "end_time", "julian_start_time", "julian_end_time", "boundary_cross_flag",
+            "fname", "spec_noise", "spec_rl", "filter_v3", *CONTOURS)
+    return {k: d[k] for k in keep if k in d}
 
 
 def matlab_datenum_from_datetime(dt: datetime) -> float:
@@ -133,10 +156,10 @@ class OutputWriter:
                         "end_time": d["end_time"],
                         "julian_start_time": d["julian_start_time"],
                         "julian_end_time": d["julian_end_time"],
-                        "start_freq_hz": d.get("start_freq_hz", np.nan),
-                        "end_freq_hz": d.get("end_freq_hz", np.nan),
-                        "min_freq_hz": d.get("min_freq_hz", np.nan),
-                        "max_freq_hz": d.get("max_freq_hz", np.nan),
+                        "start_freq_hz": _cm_value(d, "start_freq_hz"),
+                        "end_freq_hz": _cm_value(d, "end_freq_hz"),
+                        "min_freq_hz": _cm_value(d, "min_freq_hz"),
+                        "max_freq_hz": _cm_value(d, "max_freq_hz"),
                         "energy": d.get("energy", np.array([])),
                         "fname": d["fname"],
                     }
@@ -144,7 +167,13 @@ class OutputWriter:
                 labels.append(int(d.get("boundary_cross_flag", 0)))
             savemat(
                 mat_path,
-                {"Times": np.array(times_struct, dtype=object), "Labels": np.array(labels, dtype=object), "parm": asdict(parm)},
+                {
+                    "Times": np.array(times_struct, dtype=object),
+                    "Labels": np.array(labels, dtype=object),
+                    "parm": _matlab_safe(asdict(parm)),
+                    # Contours (sparse: values / index / scale / size) and their measurements.
+                    "calls": np.array([_call_struct(d) for d in detections], dtype=object),
+                },
                 do_compression=True,
             )
             with tlab_path.open("w") as f:
@@ -152,6 +181,7 @@ class OutputWriter:
                     # Keep simple: absolute MATLAB datenums in file.
                     f.write(f"{d['julian_start_time']:.10f}\t{d['julian_end_time']:.10f}\t{lbl}\n")
 
+            measure_cols = table_columns(parm)
             with csv_path.open("w", newline="") as f:
                 writer = csv.DictWriter(
                     f,
@@ -166,6 +196,7 @@ class OutputWriter:
                         "max_freq_hz",
                         "boundary_cross_flag",
                         "fname",
+                        *measure_cols,
                     ],
                 )
                 writer.writeheader()
@@ -176,12 +207,13 @@ class OutputWriter:
                             "end_time": d["end_time"],
                             "julian_start_time": d["julian_start_time"],
                             "julian_end_time": d["julian_end_time"],
-                            "start_freq_hz": d.get("start_freq_hz", np.nan),
-                            "end_freq_hz": d.get("end_freq_hz", np.nan),
-                            "min_freq_hz": d.get("min_freq_hz", np.nan),
-                            "max_freq_hz": d.get("max_freq_hz", np.nan),
+                            "start_freq_hz": _cm_value(d, "start_freq_hz"),
+                            "end_freq_hz": _cm_value(d, "end_freq_hz"),
+                            "min_freq_hz": _cm_value(d, "min_freq_hz"),
+                            "max_freq_hz": _cm_value(d, "max_freq_hz"),
                             "boundary_cross_flag": d.get("boundary_cross_flag", 0),
                             "fname": d["fname"],
+                            **table_row(d, measure_cols),
                         }
                     )
         else:

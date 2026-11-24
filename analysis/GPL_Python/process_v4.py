@@ -8,20 +8,27 @@ Core behavior:
 - run GPL-like detector per window
 - aggregate detections
 - export whitened spectrogram windows as .npy (+ sidecar JSON)
-- export Detections_*.mat, Labels_*.tlab, CSV_*.csv summaries
+- export Detections_*.mat, Labels_*.tlab, CSV_*.csv summaries, with call contours
+  and their measurements (``gpl_contour``) as the parameters ask
+
+The contour, measurement and filter switches default to
+``GPL_parameter_Humpback.m``; ``--params FILE`` (JSON, see
+``gpl_params.example.json``) overrides them and the other detector values.
 """
 
 from __future__ import annotations
 
 import argparse
+import os
 import re
 from datetime import datetime, timedelta
 from pathlib import Path
+from typing import Any
 
 import numpy as np
 
 from .gpl_detector import GPLDetector
-from .gpl_signal import DetectorParams, read_wav_mono
+from .gpl_signal import DetectorParams, load_params_file, read_wav_mono
 from .gpl_outputs import (
     DEFAULT_INTENSITY_CLIP_HI_PERCENTILE,
     OutputWriter,
@@ -57,8 +64,18 @@ class ProcessingOrchestrator:
         freq_lo: float = 10.0,
         freq_hi: float = 10000.0,
         intensity_clip_hi_percentile: float = DEFAULT_INTENSITY_CLIP_HI_PERCENTILE,
+        params: dict[str, Any] | None = None,
     ) -> None:
+        """``params``: overrides from a parameters file (``load_params_file``).
+
+        Without it, the file named by ``$GPL_PARAMS_FILE`` is used when set (so
+        the web backend can take one), else the humpback defaults.
+        """
         self.output_dir = output_dir
+        env_file = os.environ.get("GPL_PARAMS_FILE", "").strip()
+        if params is None and env_file:
+            params = load_params_file(env_file)
+        self.params = params or {}
         self.freq_lo = freq_lo
         self.freq_hi = freq_hi
         self.detector = GPLDetector()
@@ -114,7 +131,7 @@ class ProcessingOrchestrator:
                 nwav=1,
                 freq_lo=self.freq_lo,
                 freq_hi=effective_freq_hi,
-            )
+            ).with_overrides(self.params)
             start_dt = self.wav_start_datetime(wav_path)
             num_wav_loops = int(np.ceil(len(data) / parm.nrec))
 
@@ -198,6 +215,15 @@ def parse_args() -> argparse.Namespace:
             "100 = clip at max, i.e. no upper trim)."
         ),
     )
+    p.add_argument(
+        "--params",
+        type=Path,
+        default=None,
+        help=(
+            "JSON parameters file: contour / measurement / filter switches and other "
+            "detector values (see gpl_params.example.json). Default: the humpback values."
+        ),
+    )
     return p.parse_args()
 
 
@@ -210,6 +236,7 @@ def main() -> None:
         freq_lo=args.freq_lo,
         freq_hi=args.freq_hi,
         intensity_clip_hi_percentile=args.intensity_clip_hi_percentile,
+        params=load_params_file(args.params) if args.params else None,
     )
     orchestrator.process(input_path)
 

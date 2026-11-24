@@ -25,7 +25,7 @@ DB file; it never touches gplrev3's catalog.
 | `dictionary_windows` | Window a dictionary's MP ran over |
 | `matchings` | MP placement: atom, window, `t_start`, amplitude, and `start_sec` / `end_sec` from the WAV start |
 | `matching_feedback` | Good/bad verdict on a placement (API only) |
-| `annotation_csvs` | Song-structure CSV (`*.motif_segments.csv`), linked to a WAV by stem |
+| `annotation_csvs` | Song-structure CSV (`*.motif_segments.csv`, wide or long layout), linked to a WAV by stem; its segments are copied to `segments/<csv_id>.parquet` beside the catalog (`song_segments.py`) |
 
 DDL: [`schema.sql`](schema.sql).
 
