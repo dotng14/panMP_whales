@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { SpectrogramViewer } from './components/SpectrogramViewer';
 import { RepeatSpectrogram } from './components/RepeatSpectrogram';
 import { RepeatActionForm } from './components/RepeatSpectrogram/RepeatActionForm';
+import { SpectrogramButton } from './components/SpectrogramViewer/PlayButton';
 import { useSpectrogramScale } from './components/SpectrogramViewer/useSpectrogramScale';
 import type { SpectrogramViewerProps } from './components/SpectrogramViewer/types';
 import { fetchRepeats, type RepeatMatches } from './api/repeats';
@@ -102,23 +103,22 @@ function PanelSection({
         repeats={repeatsWanted ? matches : null}
       />
       {showRepeats && effectiveJobId != null && !repeatsWanted && (
-        <div style={{ marginTop: 12, display: 'flex', alignItems: 'center', gap: 10 }}>
-          <button
-            type="button"
+        <div
+          style={{
+            marginTop: 12,
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'center',
+            gap: 6,
+          }}
+        >
+          <SpectrogramButton
             onClick={() => setActionsOpen(true)}
-            style={{
-              padding: '6px 12px',
-              borderRadius: 6,
-              border: '1px solid #d1d5db',
-              background: '#fff',
-              color: '#111827',
-              fontSize: 13,
-              fontWeight: 500,
-              cursor: 'pointer',
-            }}
+            title="Dictionary actions: randomized builder and action history"
+            style={{ padding: '6px 12px' }}
           >
             Actions
-          </button>
+          </SpectrogramButton>
           <span style={{ fontSize: 12, color: '#6b7280' }}>
             Build a dictionary (randomized_builder) or view history for this recording.
           </span>
