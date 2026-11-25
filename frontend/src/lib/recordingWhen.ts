@@ -161,34 +161,73 @@ export const WALL_CLOCK_MAX_LEN: Record<WallClockField, number> = {
 
 export type WallClockParts = Partial<Record<WallClockField, string>>;
 
-/** Build a ``start`` prefix from typed boxes (left-to-right; empty stops the chain). */
-export function partsToStartPrefix(parts: WallClockParts): string | null {
-  const y = (parts.year ?? '').trim();
-  const mo = (parts.month ?? '').trim();
-  const d = (parts.day ?? '').trim();
-  const h = (parts.hour ?? '').trim();
-  const mi = (parts.minute ?? '').trim();
-  const s = (parts.second ?? '').trim();
+const MAX_TENS_DIGIT: Record<Exclude<WallClockField, 'year'>, number> = {
+  month: 1,  // 01..12
+  day: 3,    // 01..31
+  hour: 2,   // 00..23
+  minute: 5, // 00..59
+  second: 5, // 00..59
+};
 
-  if (!y || !/^\d{1,4}$/.test(y)) return null;
-  // Partial year (e.g. "202") → LIKE '202%'; need full year before month/day.
-  if (y.length < 4) return y;
+function partSlot(field: WallClockField, raw: string | undefined): string | null {
+  const v = (raw ?? '').trim();
+  if (!v || !/^\d+$/.test(v)) return null;
+  if (field === 'year') {
+    return v.length >= 4 ? v.slice(0, 4) : `${v}${'_'.repeat(4 - v.length)}`;
+  }
+  if (v.length >= 2) return v.slice(0, 2);
+  // Single digit: if it can't be a tens digit (e.g. '5' in hour), pad to '05';
+  // otherwise match that tens digit (e.g. '1' in hour -> '1_' for 10..19).
+  return Number(v) > MAX_TENS_DIGIT[field] ? `0${v}` : `${v}_`;
+}
+
+/**
+ * Build a SQLite ``start_time`` filter pattern from ANY subset of typed boxes.
+ * Empty earlier boxes become ``_`` wildcards so typing e.g. Hour alone filters
+ * immediately (``____-__-__ 19`` → ``start_time LIKE '____-__-__ 19%'``).
+ */
+export function partsToStartPattern(parts: WallClockParts): string | null {
+  const slots: Record<WallClockField, string | null> = {
+    year: partSlot('year', parts.year),
+    month: partSlot('month', parts.month),
+    day: partSlot('day', parts.day),
+    hour: partSlot('hour', parts.hour),
+    minute: partSlot('minute', parts.minute),
+    second: partSlot('second', parts.second),
+  };
+
+  let lastIdx = -1;
+  for (let i = 0; i < WALL_CLOCK_FIELDS.length; i++) {
+    if (slots[WALL_CLOCK_FIELDS[i]] !== null) lastIdx = i;
+  }
+  if (lastIdx === -1) return null;
+
+  // If only a partial year was typed (e.g. "202"), return "202" without trailing "_".
+  if (lastIdx === 0 && (parts.year ?? '').trim().length < 4) {
+    return (parts.year ?? '').trim();
+  }
+
+  const y = slots.year ?? '____';
+  const mo = slots.month ?? '__';
+  const d = slots.day ?? '__';
+  const h = slots.hour ?? '__';
+  const mi = slots.minute ?? '__';
+  const s = slots.second ?? '__';
 
   let out = y;
-  if (!mo || !/^\d{1,2}$/.test(mo)) return out;
-  out = `${y}-${mo.padStart(2, '0')}`;
+  if (lastIdx >= 1) out += `-${mo}`;
+  if (lastIdx >= 2) out += `-${d}`;
+  if (lastIdx >= 3) out += ` ${h}`;
+  if (lastIdx >= 4) out += `:${mi}`;
+  if (lastIdx >= 5) out += `:${s}`;
+  return out;
+}
 
-  if (!d || !/^\d{1,2}$/.test(d)) return out;
-  out = `${out.slice(0, 7)}-${d.padStart(2, '0')}`;
-
-  if (!h || !/^\d{1,2}$/.test(h)) return out;
-  out = `${out} ${h.padStart(2, '0')}`;
-
-  if (!mi || !/^\d{1,2}$/.test(mi)) return out;
-  out = `${out}:${mi.padStart(2, '0')}`;
-
-  if (!s || !/^\d{1,2}$/.test(s)) return out;
-  return `${out}:${s.padStart(2, '0')}`;
+/** Build a clean ``When`` display string only when boxes are contiguous from Year. */
+export function partsToStartPrefix(parts: WallClockParts): string | null {
+  const pattern = partsToStartPattern(parts);
+  if (!pattern || pattern.includes('_')) return null;
+  return pattern;
 }
 
 /** Split a normalized start / stem into typed boxes. */

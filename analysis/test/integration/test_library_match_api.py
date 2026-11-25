@@ -175,3 +175,22 @@ def test_siteh_auto_index_skipped(tmp_path, monkeypatch):
 
     assert calls == []
     roots[:] = saved
+
+
+def test_siteh_cache_uses_local_fallback(tmp_path, monkeypatch):
+    """External /mnt/sdb/SiteH caches on local SSD (no PermissionError / exFAT writes)."""
+    from pathlib import Path
+
+    from app.services import gpl_cache
+
+    fallback = tmp_path / "gpl_cache"
+    monkeypatch.setattr(gpl_cache, "GPL_FALLBACK_CACHE_DIR", fallback)
+    roots = config.WAV_LIBRARY_ROOTS
+    saved = list(roots)
+    roots[:] = [Path("/mnt/sdb/SiteH")]
+    try:
+        wav = Path("/mnt/sdb/SiteH/SOCAL_H_76/SOCAL_H_76_230426_193500_df100.x.x.wav")
+        got = gpl_cache.cache_dir_for(wav)
+        assert got == fallback / "SiteH" / "SOCAL_H_76" / "SOCAL_H_76_230426_193500_df100.x.x.gpl"
+    finally:
+        roots[:] = saved

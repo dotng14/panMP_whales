@@ -156,21 +156,30 @@ def list_entries(
 # ── component facets / match ─────────────────────────────────────────────────
 
 
+def _is_external_exfat_mount(path_s: str) -> bool:
+    """External exFAT mounts (``/mnt/sda``, ``/mnt/sdb``, …) can hang on metadata I/O."""
+    return path_s.startswith("/mnt/sd")
+
+
+def _norm_root(root: Path | str) -> str:
+    """Normalize a library root without ``stat``/``resolve`` on ``/mnt/sd*``."""
+    p = Path(root)
+    s = str(p)
+    if p.is_absolute() and _is_external_exfat_mount(s):
+        return os.path.normpath(s)
+    return str(p.resolve())
+
+
 def _root_index_for(library_root: str) -> int | None:
-    target = Path(library_root).resolve()
+    target = _norm_root(library_root)
     for i, root in enumerate(WAV_LIBRARY_ROOTS):
-        if root.resolve() == target:
+        if _norm_root(root) == target:
             return i
     return None
 
 
 def _resolved_root_strings() -> list[str]:
-    return [str(r.resolve()) for r in WAV_LIBRARY_ROOTS]
-
-
-def _is_external_exfat_mount(path_s: str) -> bool:
-    """External exFAT mounts (``/mnt/sda``, ``/mnt/sdb``, …) can hang on metadata I/O."""
-    return path_s.startswith("/mnt/sd")
+    return [_norm_root(r) for r in WAV_LIBRARY_ROOTS]
 
 
 def ensure_wav_component_index(conn: Any) -> None:
@@ -256,9 +265,13 @@ def match_recordings(
         if root_idx is None:
             continue
         abs_path = Path(row["abs_path"])
-        # Avoid exists()/stat on /mnt/sd* — metadata I/O there can hang.
+        # For /mnt/sd* roots, is_gpl_cached checks only the local SSD fallback
+        # cache dir (zero I/O on the external mount); never call abs_path.is_file().
         if _is_external_exfat_mount(str(abs_path)):
-            cached = False
+            try:
+                cached = is_gpl_cached(abs_path)
+            except OSError:
+                cached = False
         else:
             try:
                 cached = is_gpl_cached(abs_path) if abs_path.is_file() else False

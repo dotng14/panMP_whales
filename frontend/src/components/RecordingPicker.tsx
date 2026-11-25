@@ -16,6 +16,7 @@ import {
   parseRecordingWhen,
   partsAreEmpty,
   partsFromStemDateTime,
+  partsToStartPattern,
   partsToStartPrefix,
   startToParts,
   type WallClockField,
@@ -40,10 +41,10 @@ interface Props {
 
 function toFilters(whenText: string, parts: WallClockParts): RecordingFilters {
   const filters: RecordingFilters = { site: DEFAULT_SITE, family: 'SOCAL' };
-  const fromParts = partsToStartPrefix(parts);
+  const fromParts = partsToStartPattern(parts);
   const fromWhen = parseRecordingWhen(whenText, DEFAULT_SITE).start;
 
-  // Prefer typed boxes when any are filled; otherwise When paste.
+  // Prefer typed boxes when any are filled (supports any subset, e.g. Hour alone).
   if (fromParts) {
     filters.start = fromParts;
   } else if (fromWhen) {

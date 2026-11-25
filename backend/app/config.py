@@ -28,8 +28,18 @@ WAV_LIBRARY_ROOTS: list[Path] = [
 # mirroring the source tree: <root>/<GPL_RESULT_DIRNAME>/<rel>.gpl/
 GPL_RESULT_DIRNAME = os.environ.get("GPL_RESULT_DIRNAME", "result").strip() or "result"
 
+# Local fallback cache dir for read-only / external mounts (e.g. /mnt/sdb/SiteH)
+# where writing <root>/result fails with PermissionError or risks exFAT hangs.
+GPL_FALLBACK_CACHE_DIR = Path(
+    os.environ.get("GPL_FALLBACK_CACHE_DIR", "").strip()
+    or BACKEND_DIR / "data" / "gpl_cache"
+)
+
 logger = logging.getLogger(__name__)
 for root in WAV_LIBRARY_ROOTS:
+    # Skip exists() on external /mnt/sd* mounts — metadata I/O can hang uvicorn startup.
+    if str(root).startswith("/mnt/sd"):
+        continue
     if not root.exists():
         logger.warning("WAV_LIBRARY_ROOTS entry does not exist: %s", root)
 
