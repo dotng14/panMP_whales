@@ -121,10 +121,13 @@ def match(
     channel: str | None = Query(None),
     resample: str | None = Query(None),
     start: str | None = Query(None, description="Wall-clock start YYYY-MM-DD[ HH:MM:SS] (prefix OK)"),
+    cached: bool | None = Query(None, description="Filter by GPL cache readiness: true=ready, false=not ready"),
 ) -> dict:
     """WAV files matching site/start or component filters (catalog only; no disk I/O)."""
     filters = _component_filters(
         family, site, deployment, disk, date, time, df, channel, resample, start
     )
     with open_catalog_read() as conn:
-        return match_recordings(conn, filters=filters, q=q, offset=offset, limit=limit)
+        return match_recordings(
+            conn, filters=filters, q=q, offset=offset, limit=limit, cached=cached
+        )

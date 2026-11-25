@@ -88,6 +88,8 @@ export type RecordingFilters = Partial<{
   resample: string;
   /** Wall-clock start ``YYYY-MM-DD[ HH:MM:SS]`` (prefix match when partial). */
   start: string;
+  /** Filter by GPL cache readiness: true = ready, false = not ready. */
+  cached: boolean;
   q: string;
 }>;
 
@@ -123,7 +125,7 @@ export interface MatchResponse {
 function filtersToParams(filters: RecordingFilters): URLSearchParams {
   const q = new URLSearchParams();
   for (const [key, value] of Object.entries(filters)) {
-    if (value != null && value !== '') q.set(key, value);
+    if (value != null && value !== '') q.set(key, String(value));
   }
   return q;
 }

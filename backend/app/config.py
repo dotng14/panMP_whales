@@ -57,3 +57,8 @@ CATALOG_RUNS_ROOTS: list[Path] = _paths(os.environ.get("CATALOG_RUNS_ROOTS", "")
 CATALOG_CSV_ROOTS: list[Path] = _paths(
     os.environ.get("CATALOG_CSV_ROOTS", "") or str(BACKEND_DIR / "data" / "song_structure")
 )
+# 20-year minute-energy scan results (monthly_hourly.md, hourly/*.png, overview plots).
+SCAN_RESULTS_DIR = Path(
+    os.environ.get("SCAN_RESULTS_DIR", "").strip()
+    or "/home/yfreund/whale_processing/12TB_results"
+)

@@ -241,6 +241,34 @@ def open_catalog_read():
     return closing(catalog.connect(CATALOG_DB, read_only=True))
 
 
+def _row_is_cached(abs_path: Path) -> bool:
+    """Return True if a valid GPL cache exists for ``abs_path`` (never stats ``/mnt/sd*``)."""
+    if _is_external_exfat_mount(str(abs_path)):
+        try:
+            return is_gpl_cached(abs_path)
+        except OSError:
+            return False
+    try:
+        return is_gpl_cached(abs_path) if abs_path.is_file() else False
+    except OSError:
+        return False
+
+
+def _row_to_match_entry(row: dict, root_idx: int, is_cached: bool) -> dict:
+    abs_path = Path(row["abs_path"])
+    return {
+        "type": "file",
+        "name": abs_path.name,
+        "fileId": encode_file_id(root_idx, row["rel_path"]),
+        "sizeBytes": row.get("size_bytes"),
+        "mtime": row.get("mtime"),
+        "cached": is_cached,
+        "stem": row.get("stem"),
+        "startTime": row.get("start_time"),
+        "components": {k: row.get(k) for k in COMPONENT_KEYS},
+    }
+
+
 def match_recordings(
     conn: Any,
     *,
@@ -248,51 +276,55 @@ def match_recordings(
     q: str = "",
     offset: int = 0,
     limit: int = 50,
+    cached: bool | None = None,
 ) -> dict:
     """Paginated WAV matches with ``fileId`` + GPL cache flag."""
     roots = _resolved_root_strings()
-    rows, total = catalog.match_wav_files(
+    if cached is None:
+        rows, total = catalog.match_wav_files(
+            conn,
+            filters=filters,
+            q=q,
+            library_roots=roots,
+            offset=offset,
+            limit=limit,
+        )
+        entries: list[dict] = []
+        for row in rows:
+            root_idx = _root_index_for(row["library_root"])
+            if root_idx is None:
+                continue
+            abs_path = Path(row["abs_path"])
+            entries.append(_row_to_match_entry(row, root_idx, _row_is_cached(abs_path)))
+        return {
+            "total": total,
+            "offset": offset,
+            "limit": limit,
+            "entries": entries,
+        }
+
+    # Filter by readiness across all matching catalog rows (local SSD cache check only).
+    rows, _ = catalog.match_wav_files(
         conn,
         filters=filters,
         q=q,
         library_roots=roots,
-        offset=offset,
-        limit=limit,
+        offset=0,
+        limit=1_000_000,
     )
-    entries: list[dict] = []
+    matched: list[dict] = []
     for row in rows:
         root_idx = _root_index_for(row["library_root"])
         if root_idx is None:
             continue
-        abs_path = Path(row["abs_path"])
-        # For /mnt/sd* roots, is_gpl_cached checks only the local SSD fallback
-        # cache dir (zero I/O on the external mount); never call abs_path.is_file().
-        if _is_external_exfat_mount(str(abs_path)):
-            try:
-                cached = is_gpl_cached(abs_path)
-            except OSError:
-                cached = False
-        else:
-            try:
-                cached = is_gpl_cached(abs_path) if abs_path.is_file() else False
-            except OSError:
-                cached = False
-        entries.append({
-            "type": "file",
-            "name": abs_path.name,
-            "fileId": encode_file_id(root_idx, row["rel_path"]),
-            "sizeBytes": row.get("size_bytes"),
-            "mtime": row.get("mtime"),
-            "cached": cached,
-            "stem": row.get("stem"),
-            "startTime": row.get("start_time"),
-            "components": {k: row.get(k) for k in COMPONENT_KEYS},
-        })
+        is_cached = _row_is_cached(Path(row["abs_path"]))
+        if is_cached is cached:
+            matched.append(_row_to_match_entry(row, root_idx, is_cached))
     return {
-        "total": total,
+        "total": len(matched),
         "offset": offset,
         "limit": limit,
-        "entries": entries,
+        "entries": matched[offset : offset + limit],
     }
 
 

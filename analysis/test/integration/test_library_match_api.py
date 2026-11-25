@@ -194,3 +194,24 @@ def test_siteh_cache_uses_local_fallback(tmp_path, monkeypatch):
         assert got == fallback / "SiteH" / "SOCAL_H_76" / "SOCAL_H_76_230426_193500_df100.x.x.gpl"
     finally:
         roots[:] = saved
+
+
+def test_match_filters_by_cached_status(client, monkeypatch):
+    from app.services import library_service
+
+    monkeypatch.setattr(
+        library_service,
+        "is_gpl_cached",
+        lambda p: "230426_193500" in p.name,
+    )
+
+    ready = client.get("/api/library/match", params={"site": "H", "cached": "true"}).json()
+    assert ready["total"] == 1
+    assert all(e["cached"] is True for e in ready["entries"])
+    assert "230426_193500" in ready["entries"][0]["name"]
+
+    not_ready = client.get("/api/library/match", params={"site": "H", "cached": "false"}).json()
+    assert not_ready["total"] == 3
+    assert all(e["cached"] is False for e in not_ready["entries"])
+    assert all("230426_193500" not in e["name"] for e in not_ready["entries"])
+

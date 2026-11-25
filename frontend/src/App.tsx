@@ -1,11 +1,13 @@
 import { useEffect, useState } from 'react';
 import { SpectrogramViewer } from './components/SpectrogramViewer';
 import { RepeatSpectrogram } from './components/RepeatSpectrogram';
+import { RepeatActionForm } from './components/RepeatSpectrogram/RepeatActionForm';
 import { useSpectrogramScale } from './components/SpectrogramViewer/useSpectrogramScale';
 import type { SpectrogramViewerProps } from './components/SpectrogramViewer/types';
 import { fetchRepeats, type RepeatMatches } from './api/repeats';
 import { WavFileUpload } from './components/WavFileUpload';
 import { RecordingPicker } from './components/RecordingPicker';
+import { ScanViewer } from './components/ScanViewer';
 import { AnalysisPicker } from './components/AnalysisPicker';
 import { describeChoice, type AnalysisChoice } from './api/catalog';
 import { JobProgress } from './components/JobProgress';
@@ -56,6 +58,7 @@ function PanelSection({
   onCatalogRefresh?: () => void;
 }) {
   const [actionNotice, setActionNotice] = useState<string | null>(null);
+  const [actionsOpen, setActionsOpen] = useState(false);
   const scale = useSpectrogramScale({
     audioDurationSec: panel.audioDurationSec,
     freqLo: panel.freqLo,
@@ -98,7 +101,41 @@ function PanelSection({
         highlightedRange={highlightedRange}
         repeats={repeatsWanted ? matches : null}
       />
-      {repeatsWanted && actionNotice && (
+      {showRepeats && effectiveJobId != null && !repeatsWanted && (
+        <div style={{ marginTop: 12, display: 'flex', alignItems: 'center', gap: 10 }}>
+          <button
+            type="button"
+            onClick={() => setActionsOpen(true)}
+            style={{
+              padding: '6px 12px',
+              borderRadius: 6,
+              border: '1px solid #d1d5db',
+              background: '#fff',
+              color: '#111827',
+              fontSize: 13,
+              fontWeight: 500,
+              cursor: 'pointer',
+            }}
+          >
+            Actions
+          </button>
+          <span style={{ fontSize: 12, color: '#6b7280' }}>
+            Build a dictionary (randomized_builder) or view history for this recording.
+          </span>
+          <RepeatActionForm
+            open={actionsOpen}
+            jobId={effectiveJobId}
+            dictionaryId={null}
+            onDictionaryChanged={newId => {
+              setActionsOpen(false);
+              onCatalogRefresh?.();
+              handleDictionaryChanged(newId);
+            }}
+            onClose={() => setActionsOpen(false)}
+          />
+        </div>
+      )}
+      {actionNotice && (
         <p role="status" style={{ color: '#166534', fontSize: 12, marginTop: 8 }}>{actionNotice}</p>
       )}
       {repeatsWanted && repeatsError && (
@@ -177,6 +214,7 @@ export default function App() {
   const [running, setRunning] = useState<{ fileName: string; overlay: string } | null>(
     restoredUi?.running ?? null,
   );
+  const [activeTab, setActiveTab] = useState<'viewer' | 'scan'>('viewer');
   const { status, jobId, progress, panels, error, upload, processLibraryFile, reset } = useGplJob({
     onLibraryJobComplete: fileId =>
       setLibraryCacheRefresh({ fileId, nonce: Date.now() }),
@@ -245,8 +283,57 @@ export default function App() {
 
   return (
     <div className="p-2 md:p-4">
-      <h1 className="text-gray-900 text-lg font-semibold mb-4 font-mono">Spectrogram Viewer</h1>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 16, marginBottom: 16 }}>
+        <h1 className="text-gray-900 text-lg font-semibold font-mono" style={{ margin: 0 }}>
+          Spectrogram Viewer
+        </h1>
+        {!USE_MOCK && (
+          <div
+            role="tablist"
+            style={{
+              display: 'inline-flex',
+              borderRadius: 6,
+              overflow: 'hidden',
+              border: '1px solid #d1d5db',
+            }}
+          >
+            {(
+              [
+                ['viewer', 'Recordings'],
+                ['scan', '20-Year Scan'],
+              ] as const
+            ).map(([tab, label], idx) => {
+              const active = activeTab === tab;
+              return (
+                <button
+                  key={tab}
+                  type="button"
+                  role="tab"
+                  aria-selected={active}
+                  onClick={() => setActiveTab(tab)}
+                  style={{
+                    padding: '4px 12px',
+                    border: 'none',
+                    borderLeft: idx > 0 ? '1px solid #d1d5db' : 'none',
+                    background: active ? '#1d4ed8' : '#fff',
+                    color: active ? '#fff' : '#374151',
+                    fontSize: 13,
+                    fontWeight: active ? 600 : 400,
+                    cursor: 'pointer',
+                  }}
+                >
+                  {label}
+                </button>
+              );
+            })}
+          </div>
+        )}
+      </div>
 
+      {activeTab === 'scan' && !USE_MOCK ? (
+        <ScanViewer />
+      ) : (
+        <>
       {!USE_MOCK && (
         <div style={{ marginBottom: 20 }}>
           {status !== 'idle' && (
@@ -324,6 +411,8 @@ export default function App() {
 
       {!USE_MOCK && panels.length === 0 && status === 'idle' && INPUT_MODE === 'upload' && (
         <p style={{ color: '#888', fontSize: 13 }}>Upload a WAV file to begin processing.</p>
+      )}
+        </>
       )}
     </div>
   );
