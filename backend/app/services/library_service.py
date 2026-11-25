@@ -168,20 +168,25 @@ def _resolved_root_strings() -> list[str]:
     return [str(r.resolve()) for r in WAV_LIBRARY_ROOTS]
 
 
+def _is_external_exfat_mount(path_s: str) -> bool:
+    """External exFAT mounts (``/mnt/sda``, ``/mnt/sdb``, …) can hang on metadata I/O."""
+    return path_s.startswith("/mnt/sd")
+
+
 def ensure_wav_component_index(conn: Any) -> None:
     """Index library roots when empty or missing parsed components.
 
-    Small roots index in-process. ``/mnt/sda`` Site H is not auto-scanned
-    (use ``backend/scripts/index_siteh.py``).
+    Small roots index in-process. External ``/mnt/sd*`` Site H mounts are not
+    auto-scanned (use ``backend/scripts/index_siteh.py``).
     """
     for root in WAV_LIBRARY_ROOTS:
-        # Resolve / skip Site H before any exists/is_dir — those can hang on /mnt/sda.
+        # Resolve / skip Site H before any exists/is_dir — those can hang on /mnt/sd*.
         try:
             root_s = str(root if root.is_absolute() else root.resolve())
         except OSError:
             logger.warning("Skipping library root (resolve failed): %s", root)
             continue
-        if root_s.startswith("/mnt/sda"):
+        if _is_external_exfat_mount(root_s):
             logger.info("Skipping auto-index for %s (run backend/scripts/index_siteh.py)", root_s)
             continue
         try:
@@ -251,8 +256,8 @@ def match_recordings(
         if root_idx is None:
             continue
         abs_path = Path(row["abs_path"])
-        # Avoid exists()/stat on /mnt/sda — metadata I/O there can hang.
-        if str(abs_path).startswith("/mnt/sda"):
+        # Avoid exists()/stat on /mnt/sd* — metadata I/O there can hang.
+        if _is_external_exfat_mount(str(abs_path)):
             cached = False
         else:
             try:

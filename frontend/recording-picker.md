@@ -31,16 +31,17 @@ When: 2023-04-26 19:35:00
 ## Catalog vs disk (hang-safe)
 
 Picker match/facets read **only SQLite**. They never `rglob` / `stat` /
-`listdir` `/mnt/sda`.
+`listdir` `/mnt/sdb` (or `/mnt/sda`).
 
 | Situation | What to do |
 |-----------|------------|
 | Disk down / flaky | Ship from existing `catalog.sqlite`; `start_time` backfills from stem `date`/`time` |
 | (Re)populate Site H names | [`../backend/scripts/index_siteh.py`](../backend/scripts/index_siteh.py) — **manifest + `skip_stat=True`** |
-| Forbidden for Site H | `python -m database index --wav-root /mnt/sda/SiteH` (in-process `rglob`+`stat` can hang) |
+| Forbidden for Site H | `python -m database index --wav-root /mnt/sdb/SiteH` (in-process `rglob`+`stat` can hang) |
 
 ```bash
-# When /mnt/sda is available again — paths from CSV, no metadata I/O on the volume:
+# Paths come from CSV (legacy /mnt/sda/SiteH prefixes are rewritten to /mnt/sdb/SiteH),
+# with no metadata I/O on the volume:
 python backend/scripts/index_siteh.py
 python backend/scripts/index_siteh.py /path/to/manifest.csv
 ```

@@ -145,7 +145,7 @@ def test_match_start_with_t_separator(client):
 
 
 def test_siteh_auto_index_skipped(tmp_path, monkeypatch):
-    """Site H under /mnt/sda must not be rglob'd by ensure_wav_component_index."""
+    """Site H under /mnt/sdb (or /mnt/sda) must not be rglob'd by ensure_wav_component_index."""
     from pathlib import Path
     from unittest.mock import MagicMock
 
@@ -153,7 +153,9 @@ def test_siteh_auto_index_skipped(tmp_path, monkeypatch):
 
     fake_root = MagicMock()
     fake_root.is_dir.return_value = True
-    fake_root.resolve.return_value = Path("/mnt/sda/SiteH")
+    fake_root.is_absolute.return_value = True
+    fake_root.__str__.return_value = "/mnt/sdb/SiteH"
+    fake_root.resolve.return_value = Path("/mnt/sdb/SiteH")
 
     monkeypatch.setattr(config, "CATALOG_DB", tmp_path / "catalog.sqlite")
     roots = config.WAV_LIBRARY_ROOTS
