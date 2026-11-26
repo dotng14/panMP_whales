@@ -356,6 +356,17 @@ export function SpectrogramViewer({
     jumpToColRange(range);
   }, [songStructure, audioDurationSec, timeCols, jumpToColRange]);
 
+  // Auto-jump to Song 1 when songStructure first loads so "Song 1 / N" matches the viewport.
+  const autoJumpedSongRef = useRef<SongStructure | null>(null);
+  useEffect(() => {
+    if (!songStructure || songStructure.songs.length === 0 || !audioDurationSec || timeCols <= 0) {
+      return;
+    }
+    if (autoJumpedSongRef.current === songStructure) return;
+    autoJumpedSongRef.current = songStructure;
+    jumpToSong(0);
+  }, [songStructure, audioDurationSec, timeCols, jumpToSong]);
+
   // Scroll (without moving the playhead) to an externally highlighted range.
   useEffect(() => {
     const el = scrollRef.current;

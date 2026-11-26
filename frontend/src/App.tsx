@@ -8,6 +8,7 @@ import type { SpectrogramViewerProps } from './components/SpectrogramViewer/type
 import { fetchRepeats, type RepeatMatches } from './api/repeats';
 import { WavFileUpload } from './components/WavFileUpload';
 import { RecordingPicker } from './components/RecordingPicker';
+import { HybridDictionaryStrip } from './components/HybridDictionaryStrip';
 import { ScanViewer } from './components/ScanViewer';
 import { AnalysisPicker } from './components/AnalysisPicker';
 import { describeChoice, type AnalysisChoice } from './api/catalog';
@@ -138,6 +139,7 @@ function PanelSection({
       {actionNotice && (
         <p role="status" style={{ color: '#166534', fontSize: 12, marginTop: 8 }}>{actionNotice}</p>
       )}
+      {showRepeats && effectiveJobId != null && !repeatsWanted && <HybridDictionaryStrip />}
       {repeatsWanted && repeatsError && (
         <p role="alert" style={{ color: '#b91c1c', fontSize: 12, marginTop: 8 }}>
           Repeated matches unavailable: {repeatsError}
