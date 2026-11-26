@@ -149,8 +149,14 @@ def ensure_cache_output_dir(wav_path: Path) -> Path:
     return output_dir
 
 
-def finalize_gpl_cache(wav_path: Path, output_dir: Path, *, title: str | None = None) -> Path:
-    """Ensure panel.bin + manifest.json exist (panel usually already written by process_v4)."""
+def finalize_gpl_cache(
+    wav_path: Path,
+    output_dir: Path,
+    *,
+    title: str | None = None,
+    manifest: dict | None = None,
+) -> Path:
+    """Ensure panel.bin + manifest.json exist (panel usually already written by process_v4 or hybrid)."""
     cache_dir = cache_dir_for(wav_path)
     cache_dir.mkdir(parents=True, exist_ok=True)
 
@@ -158,7 +164,8 @@ def finalize_gpl_cache(wav_path: Path, output_dir: Path, *, title: str | None = 
     if not panel_path.is_file():
         write_panel_bin(output_dir, title or wav_path.stem)
 
-    manifest = build_manifest_from_outputs(output_dir, job_id=wav_path.stem)
+    if manifest is None:
+        manifest = build_manifest_from_outputs(output_dir, job_id=wav_path.stem)
     manifest_path = cache_dir / "manifest.json"
     manifest_path.write_text(json.dumps(manifest))
     return cache_dir

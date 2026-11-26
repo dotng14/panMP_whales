@@ -95,7 +95,7 @@ export function SpectrogramViewer({
         .then(data => { if (!cancelled) setPlacements(data.placements); })
         .catch(() => { if (!cancelled) setPlacements(null); });
     }
-    if (!overlayChosen || csvId !== undefined) {
+    if (!overlayChosen || csvId !== undefined || dictionaryId === undefined) {
       fetchSongStructure(jobId, csvId)
         .then(data => { if (!cancelled) setSongStructure(data); })
         .catch(() => { if (!cancelled) setSongStructure(null); });

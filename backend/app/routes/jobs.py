@@ -168,6 +168,9 @@ def get_song_structure(job_id: str, csvId: int | None = Query(None)) -> dict:
     stem = Path(job.filename).stem
     try:
         if csvId is None:
+            hybrid_json = job.job_dir / "output" / "song_structure.json"
+            if hybrid_json.is_file():
+                return json.loads(hybrid_json.read_text())
             payload = load_song_structure(stem)
         else:
             row = catalog_service.get_csv(csvId)
