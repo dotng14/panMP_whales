@@ -103,10 +103,11 @@ def _write_panel_from_spec_bin(spec_path: Path, output_dir: Path, title: str) ->
     energy_smooth = gaussian_filter1d(energy_raw, sigma=3).astype(np.float32)
     cutoffs = argrelmin(energy_smooth, order=5)[0].tolist()
 
-    # Match gpl_outputs.py scaling (vmin=0, floor norm_max at 3.0 so quiet 22h
-    # recordings don't amplify background noise into cyan/grain).
-    norm_max = max(float(np.percentile(display, _MAGNITUDE_PERCENTILE)), 3.0)
-    magnitude_u8 = np.clip(display / norm_max * 255.0, 0, 255).astype(np.uint8)
+    # Gentle floor (0.35) + adaptive p99.9 ceiling (floor 1.85) keeps both
+    # loud and quieter songs smooth-blue with bright red calls.
+    vmin = 0.35
+    norm_max = max(float(np.percentile(display, _MAGNITUDE_PERCENTILE)), 1.85)
+    magnitude_u8 = np.clip((display - vmin) / (norm_max - vmin) * 255.0, 0, 255).astype(np.uint8)
 
     audio_duration_sec = float(total_samples) / float(source_rate)
     header = {
@@ -355,10 +356,11 @@ def render_highres_slice(
 
     clipped, _, _ = clip_intensity_percentile(sl, hi_percentile=_MAGNITUDE_PERCENTILE)
     display = display_from_spwhiten(clipped)
-    # Match gpl_outputs.py scaling (vmin=0, norm_max floor 3.0) so quiet slices
-    # stay smooth dark-blue and song slices match old GPL pixel-for-pixel.
-    norm_max = max(float(np.percentile(display, _MAGNITUDE_PERCENTILE)), 3.0)
-    u8 = np.clip(display / norm_max * 255.0, 0, 255).astype(np.uint8)
+    # Gentle floor (0.35) + adaptive p99.9 ceiling (floor 1.85) keeps both
+    # quieter songs (Song 1) and loud songs (Song 14) smooth-blue with bright red calls.
+    vmin = 0.35
+    norm_max = max(float(np.percentile(display, _MAGNITUDE_PERCENTILE)), 1.85)
+    u8 = np.clip((display - vmin) / (norm_max - vmin) * 255.0, 0, 255).astype(np.uint8)
     u8 = np.ascontiguousarray(u8)
 
     actual_start = base_sec + c0 * hop
