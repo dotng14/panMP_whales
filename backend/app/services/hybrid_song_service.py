@@ -20,7 +20,7 @@ from pathlib import Path
 from typing import Any
 
 import numpy as np
-from scipy.ndimage import gaussian_filter1d
+from scipy.ndimage import gaussian_filter, gaussian_filter1d
 from scipy.signal import argrelmin
 
 from analysis.GPL_Python.gpl_outputs import (
@@ -356,10 +356,10 @@ def render_highres_slice(
 
     clipped, _, _ = clip_intensity_percentile(sl, hi_percentile=_MAGNITUDE_PERCENTILE)
     display = display_from_spwhiten(clipped)
-    # Gentle floor (0.35) + adaptive p99.9 ceiling (floor 1.85) keeps both
-    # quieter songs (Song 1) and loud songs (Song 14) smooth-blue with bright red calls.
+    # Light 2D Gaussian smooth removes background speckle while keeping tonal calls sharp.
+    display = gaussian_filter(display, sigma=(1.2, 0.7))
     vmin = 0.35
-    norm_max = max(float(np.percentile(display, _MAGNITUDE_PERCENTILE)), 1.85)
+    norm_max = max(float(np.percentile(display, _MAGNITUDE_PERCENTILE)), 1.75)
     u8 = np.clip((display - vmin) / (norm_max - vmin) * 255.0, 0, 255).astype(np.uint8)
     u8 = np.ascontiguousarray(u8)
 
