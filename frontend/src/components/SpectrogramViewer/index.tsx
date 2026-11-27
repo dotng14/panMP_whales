@@ -522,6 +522,8 @@ export function SpectrogramViewer({
                   displayWidth={displayWidth}
                   containerHeight={spectrogramH}
                   displayHeight={canvasDisplayHeight}
+                  jobId={jobId}
+                  audioDurationSec={audioDurationSec}
                 />
                 <div
                   ref={lineRef}

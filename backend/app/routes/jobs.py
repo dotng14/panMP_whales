@@ -9,7 +9,7 @@ from contextlib import closing
 from pathlib import Path
 
 from fastapi import APIRouter, HTTPException, Query, UploadFile, WebSocket, WebSocketDisconnect
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, Response
 from pydantic import BaseModel
 
 from app.config import MAX_UPLOAD_MB, TMP_DIR
@@ -152,6 +152,36 @@ async def get_job_audio(job_id: str) -> FileResponse:
     # claims - this silently breaks audio seeking/streaming for any file
     # large enough that the <audio> element issues Range requests.
     return FileResponse(wav_path, media_type="audio/wav", headers={"Content-Encoding": "identity"})
+
+
+@router.get("/api/jobs/{job_id}/spectrogram-slice")
+def get_spectrogram_slice(
+    job_id: str,
+    startSec: float = Query(..., ge=0.0),
+    endSec: float = Query(..., gt=0.0),
+) -> Response:
+    """Compute a full-resolution (0.123 s/col) whitened spectrogram slice on demand."""
+    from app.services.hybrid_song_service import render_highres_slice  # noqa: PLC0415
+
+    job = _require_job(job_id)
+    wav_path = _source_wav(job)
+    if not wav_path.is_file():
+        raise HTTPException(status_code=404, detail="Source WAV not found")
+    result = render_highres_slice(wav_path, startSec, endSec)
+    if result is None:
+        raise HTTPException(status_code=404, detail="High-resolution slice unavailable for this WAV")
+    raw_bytes, freq_bins, time_cols, actual_start, actual_end = result
+    return Response(
+        content=raw_bytes,
+        media_type="application/octet-stream",
+        headers={
+            "X-Freq-Bins": str(freq_bins),
+            "X-Time-Cols": str(time_cols),
+            "X-Start-Sec": f"{actual_start:.6f}",
+            "X-End-Sec": f"{actual_end:.6f}",
+            "Access-Control-Expose-Headers": "X-Freq-Bins, X-Time-Cols, X-Start-Sec, X-End-Sec",
+        },
+    )
 
 
 @router.get("/api/jobs/{job_id}/song-structure")

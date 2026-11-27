@@ -1,4 +1,5 @@
 import { memo, useEffect, useRef, useState, type RefObject } from 'react';
+import { API_BASE } from '../../api/base';
 import { JET, JET_RGBA, magnitudeToIndex } from '../../utils/colormap';
 import { repeatOverlayColor } from './repeatOverlayColors';
 import type { RepeatOverlay } from './types';
@@ -45,6 +46,9 @@ interface Props {
   containerHeight?: number;
   /** CSS height in px the canvas is stretched to before being clipped by containerHeight (frequency zoom); defaults to containerHeight */
   displayHeight?: number;
+  /** Job id + audio duration: when panel.bin is decimated (>0.25 s/col), fetch full-res slices for the visible range. */
+  jobId?: string;
+  audioDurationSec?: number;
 }
 
 export const SpectrogramCanvas = memo(function SpectrogramCanvas({
@@ -64,9 +68,21 @@ export const SpectrogramCanvas = memo(function SpectrogramCanvas({
   displayWidth,
   containerHeight,
   displayHeight,
+  jobId,
+  audioDurationSec,
 }: Props) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const hiResCanvasRef = useRef<HTMLCanvasElement>(null);
   const linesCanvasRef = useRef<HTMLCanvasElement>(null);
+  const [hiResSlice, setHiResSlice] = useState<{
+    startSec: number;
+    endSec: number;
+    freqBins: number;
+    timeCols: number;
+    data: Uint8Array;
+  } | null>(null);
+  const hiResSliceRef = useRef(hiResSlice);
+  hiResSliceRef.current = hiResSlice;
   const cssWidth = displayWidth ?? timeCols;
   const cssContainerHeight = containerHeight ?? SPEC_TARGET_H;
   const cssHeight = displayHeight ?? cssContainerHeight;
@@ -154,6 +170,81 @@ export const SpectrogramCanvas = memo(function SpectrogramCanvas({
 
   const overlayCssW = Math.max(1, Math.min(scrollRef ? viewWidth : cssWidth, MAX_CANVAS_CSS_W));
 
+  // When panel.bin is heavily decimated (e.g. 22h hybrid file at 1.35 s/col),
+  // fetch a full-resolution (0.123 s/col) slice covering the visible viewport.
+  const isDecimated = Boolean(
+    jobId && audioDurationSec && timeCols > 0 && audioDurationSec / timeCols > 0.25,
+  );
+
+  useEffect(() => {
+    setHiResSlice(null);
+  }, [jobId]);
+
+  useEffect(() => {
+    if (!isDecimated || !jobId || !audioDurationSec || cssWidth <= 0) return;
+    const visStart = Math.max(0, (scrollLeft / cssWidth) * audioDurationSec);
+    const visEnd = Math.min(audioDurationSec, ((scrollLeft + viewWidth) / cssWidth) * audioDurationSec);
+    const span = visEnd - visStart;
+    if (span <= 0 || span > 300) return;
+
+    const cur = hiResSliceRef.current;
+    if (cur && cur.startSec <= visStart + 0.5 && cur.endSec >= visEnd - 0.5) return;
+
+    const pad = Math.min(45, Math.max(15, (300 - span) / 2));
+    const reqStart = Math.max(0, visStart - pad);
+    const reqEnd = Math.min(audioDurationSec, visEnd + pad);
+
+    const ac = new AbortController();
+    const timer = window.setTimeout(() => {
+      const url = `${API_BASE}/api/jobs/${encodeURIComponent(jobId)}/spectrogram-slice?startSec=${reqStart.toFixed(2)}&endSec=${reqEnd.toFixed(2)}`;
+      fetch(url, { signal: ac.signal })
+        .then(async res => {
+          if (!res.ok) return;
+          const fb = Number(res.headers.get('X-Freq-Bins'));
+          const tc = Number(res.headers.get('X-Time-Cols'));
+          const s0 = Number(res.headers.get('X-Start-Sec'));
+          const s1 = Number(res.headers.get('X-End-Sec'));
+          const buf = new Uint8Array(await res.arrayBuffer());
+          if (!fb || !tc || buf.length !== fb * tc) return;
+          setHiResSlice({ startSec: s0, endSec: s1, freqBins: fb, timeCols: tc, data: buf });
+        })
+        .catch(() => {
+          // Aborted or unavailable; fall back to base panel.bin canvas.
+        });
+    }, 120);
+
+    return () => {
+      window.clearTimeout(timer);
+      ac.abort();
+    };
+  }, [isDecimated, jobId, audioDurationSec, scrollLeft, viewWidth, cssWidth]);
+
+  useEffect(() => {
+    const canvas = hiResCanvasRef.current;
+    if (!canvas || !hiResSlice) return;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+    const { freqBins: fb, timeCols: tc, data: mag } = hiResSlice;
+    canvas.width = tc;
+    canvas.height = fb;
+    const imageData = ctx.createImageData(tc, fb);
+    const out = imageData.data;
+    for (let row = 0; row < fb; row++) {
+      const canvasRow = fb - 1 - row;
+      const rowBase = canvasRow * tc;
+      const magBase = row * tc;
+      for (let col = 0; col < tc; col++) {
+        const jetOff = mag[magBase + col] * 4;
+        const px = (rowBase + col) * 4;
+        out[px] = JET_RGBA[jetOff];
+        out[px + 1] = JET_RGBA[jetOff + 1];
+        out[px + 2] = JET_RGBA[jetOff + 2];
+        out[px + 3] = 255;
+      }
+    }
+    ctx.putImageData(imageData, 0, 0);
+  }, [hiResSlice]);
+
   useEffect(() => {
     const canvas = linesCanvasRef.current;
     if (!canvas || timeCols <= 0 || cssWidth <= 0) return;
@@ -232,6 +323,20 @@ export const SpectrogramCanvas = memo(function SpectrogramCanvas({
           }}
           onClick={handleClick}
         />
+        {hiResSlice && audioDurationSec && audioDurationSec > 0 && (
+          <canvas
+            ref={hiResCanvasRef}
+            style={{
+              display: 'block',
+              position: 'absolute',
+              bottom: 0,
+              left: (hiResSlice.startSec / audioDurationSec) * cssWidth,
+              width: ((hiResSlice.endSec - hiResSlice.startSec) / audioDurationSec) * cssWidth,
+              height: cssHeight,
+              pointerEvents: 'none',
+            }}
+          />
+        )}
       </div>
       {/* Repeat chunk boxes: absolute DOM overlays above the canvas but below the
           sticky lines/highlight canvas (which follows in DOM order). */}

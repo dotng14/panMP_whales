@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import bisect
 import csv
+import functools
 import json
 import re
 import struct
@@ -102,10 +103,13 @@ def _write_panel_from_spec_bin(spec_path: Path, output_dir: Path, title: str) ->
     energy_smooth = gaussian_filter1d(energy_raw, sigma=3).astype(np.float32)
     cutoffs = argrelmin(energy_smooth, order=5)[0].tolist()
 
-    norm_max = float(np.percentile(display, _MAGNITUDE_PERCENTILE))
-    if norm_max <= 0:
-        norm_max = 1.0
-    magnitude_u8 = np.clip(display / norm_max * 255.0, 0, 255).astype(np.uint8)
+    # Anchor the background floor so long noise-dominated files keep a dark-blue
+    # background instead of washing out into cyan.
+    vmin = float(np.percentile(display, 15.0))
+    norm_max = float(np.percentile(display, 99.8))
+    if norm_max <= vmin:
+        norm_max = vmin + 1.0
+    magnitude_u8 = np.clip((display - vmin) / (norm_max - vmin) * 255.0, 0, 255).astype(np.uint8)
 
     audio_duration_sec = float(total_samples) / float(source_rate)
     header = {
@@ -281,3 +285,84 @@ def run_hybrid_pipeline(wav_path: Path, output_dir: Path, title: str) -> dict[st
         spec_path.unlink(missing_ok=True)
 
     return {"jobId": title, "windows": {}, "source": "hybrid_2023"}
+
+
+# ── On-demand full-resolution spectrogram slices (0.123 s/col) ───────────────
+
+_SLICE_MAX_SPAN_SEC = 360.0
+_SLICE_N_ROWS = 736
+
+
+@functools.lru_cache(maxsize=48)
+def _compute_window_u8_float(wav_path_str: str, win_idx: int, n_rows: int) -> np.ndarray | None:
+    """Compute one 75-second full-res whitened spectrogram window (float32, shape n_rows × 609)."""
+    from analysis.dict_HMM.find_songs import spectro  # noqa: PLC0415
+
+    wav_path = Path(wav_path_str)
+    start_sec = win_idx * float(spectro.WINDOW_SEC)
+    audio = spectro.read_seconds(wav_path, start_sec, float(spectro.WINDOW_SEC))
+    expected = spectro.WINDOW_SEC * spectro.SOURCE_RATE
+    if audio.size < expected:
+        if audio.size < spectro.SOURCE_RATE:
+            return None
+        padded = np.zeros(expected, dtype=audio.dtype)
+        padded[: audio.size] = audio
+        audio = padded
+    spec = spectro.window_spectrogram(audio, n_rows)
+    return spec.astype(np.float32, copy=False)
+
+
+def render_highres_slice(
+    wav_path: Path,
+    start_sec: float,
+    end_sec: float,
+    *,
+    n_rows: int = _SLICE_N_ROWS,
+) -> tuple[bytes, int, int, float, float] | None:
+    """Return full-res (0.123 s/col) uint8 spectrogram slice for [start_sec, end_sec].
+
+    Returns ``(raw_u8_bytes, freq_bins, time_cols, actual_start_sec, actual_end_sec)``
+    or ``None`` if the WAV is not a readable 10 kHz mono PCM16 file.
+    """
+    fmt = _read_wav_fmt(wav_path)
+    if fmt is None:
+        return None
+    rate, channels, audio_fmt, bits = fmt
+    if rate != SOURCE_RATE or channels != 1 or audio_fmt != 1 or bits != 16:
+        return None
+
+    from analysis.dict_HMM.find_songs import spectro  # noqa: PLC0415
+
+    s0 = max(0.0, float(start_sec))
+    s1 = max(s0 + 1.0, min(float(end_sec), s0 + _SLICE_MAX_SPAN_SEC))
+    win_sec = float(spectro.WINDOW_SEC)
+    hop = float(spectro.HOP_SEC)
+    w0 = int(s0 // win_sec)
+    w1 = int(s1 // win_sec)
+
+    windows: list[np.ndarray] = []
+    wav_str = str(wav_path)
+    for w in range(w0, w1 + 1):
+        arr = _compute_window_u8_float(wav_str, w, n_rows)
+        if arr is None:
+            break
+        windows.append(arr)
+    if not windows:
+        return None
+
+    full = np.concatenate(windows, axis=1)
+    base_sec = w0 * win_sec
+    c0 = max(0, int(round((s0 - base_sec) / hop)))
+    c1 = min(full.shape[1], max(c0 + 1, int(round((s1 - base_sec) / hop))))
+    sl = full[:, c0:c1]
+
+    display = display_from_spwhiten(sl)
+    vmin = float(np.percentile(display, 15.0))
+    vmax = max(float(np.percentile(display, 99.8)), vmin + 1.0)
+    u8 = np.clip((display - vmin) / (vmax - vmin) * 255.0, 0, 255).astype(np.uint8)
+    u8 = np.ascontiguousarray(u8)
+
+    actual_start = base_sec + c0 * hop
+    actual_end = base_sec + c1 * hop
+    return u8.tobytes(), int(u8.shape[0]), int(u8.shape[1]), actual_start, actual_end
+
