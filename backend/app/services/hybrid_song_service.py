@@ -158,14 +158,14 @@ def _build_song_structure_json(
                     end_sec = float(row["end_sec"])
                 except (KeyError, TypeError, ValueError):
                     continue
-                if not (min_margin > 0 and shuffles == 0):
-                    continue
-                song_num = len(songs) + 1
-                songs.append({
-                    "song": song_num,
-                    "startSec": start_sec,
-                    "endSec": end_sec,
-                })
+                # Only conforming windows count as songs, but every decoded window
+                # keeps its themes (themes are not dropped with the song filter).
+                if min_margin > 0 and shuffles == 0:
+                    songs.append({
+                        "song": len(songs) + 1,
+                        "startSec": start_sec,
+                        "endSec": end_sec,
+                    })
                 try:
                     t_starts = [float(x) for x in row["theme_starts_sec"].split("/")]
                     t_mins = [float(x) for x in row["theme_minutes"].split("/")]
@@ -178,6 +178,12 @@ def _build_song_structure_json(
                             })
                 except (KeyError, ValueError):
                     pass
+
+    # The span lookup bisects on start times, so both lists must be time-ordered.
+    themes.sort(key=lambda t: t["startSec"])
+    songs.sort(key=lambda s: s["startSec"])
+    for number, song in enumerate(songs, start=1):
+        song["song"] = number
 
     song_starts = [s["startSec"] for s in songs]
     theme_starts = [t["startSec"] for t in themes]
