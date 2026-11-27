@@ -140,6 +140,10 @@ def _write_panel_from_spec_bin(spec_path: Path, output_dir: Path, title: str) ->
     return panel_path
 
 
+# Bump whenever the song_structure.json builder changes so cached files rebuild on read.
+SONG_STRUCTURE_VERSION = 2
+
+
 def _build_song_structure_json(
     output_dir: Path,
     wav_name: str,
@@ -220,13 +224,33 @@ def _build_song_structure_json(
                 })
 
     payload = {
+        "version": SONG_STRUCTURE_VERSION,
         "wavStartUnix": _wav_start_unix(wav_name),
         "units": units,
         "songs": songs,
         "themes": themes if themes else None,
     }
-    (output_dir / "song_structure.json").write_text(json.dumps(payload))
+    try:
+        (output_dir / "song_structure.json").write_text(json.dumps(payload))
+    except OSError:
+        pass
     return payload
+
+
+def load_or_rebuild_song_structure(output_dir: Path, wav_name: str) -> dict[str, Any] | None:
+    """Return cached ``song_structure.json``, rebuilding from ``decoded_songs.csv`` if stale."""
+    hybrid_json = output_dir / "song_structure.json"
+    cached: dict[str, Any] | None = None
+    if hybrid_json.is_file():
+        try:
+            cached = json.loads(hybrid_json.read_text())
+        except (OSError, ValueError):
+            cached = None
+        if cached is not None and cached.get("version") == SONG_STRUCTURE_VERSION:
+            return cached
+    if (output_dir / "decoded_songs.csv").is_file():
+        return _build_song_structure_json(output_dir, wav_name)
+    return cached
 
 
 def run_hybrid_pipeline(wav_path: Path, output_dir: Path, title: str) -> dict[str, Any]:

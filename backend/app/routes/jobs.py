@@ -158,6 +158,7 @@ async def get_job_audio(job_id: str) -> FileResponse:
 def get_song_structure(job_id: str, csvId: int | None = Query(None)) -> dict:
     """Motif / song / theme / phrase units: from catalog CSV ``csvId`` (its Parquet copy), else the CSV named after the WAV."""
     from app.services import catalog_service  # noqa: PLC0415
+    from app.services.hybrid_song_service import load_or_rebuild_song_structure  # noqa: PLC0415
     from app.services.song_structure import (  # noqa: PLC0415
         load_song_structure,
         load_song_structure_csv,
@@ -168,9 +169,9 @@ def get_song_structure(job_id: str, csvId: int | None = Query(None)) -> dict:
     stem = Path(job.filename).stem
     try:
         if csvId is None:
-            hybrid_json = job.job_dir / "output" / "song_structure.json"
-            if hybrid_json.is_file():
-                return json.loads(hybrid_json.read_text())
+            hybrid_payload = load_or_rebuild_song_structure(job.job_dir / "output", job.filename)
+            if hybrid_payload is not None:
+                return hybrid_payload
             payload = load_song_structure(stem)
         else:
             row = catalog_service.get_csv(csvId)
