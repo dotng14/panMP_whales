@@ -332,17 +332,25 @@ def register_gpl_output(wav_path: Path, output_dir: Path, *, library_root: Path 
 
     Creates the catalog when it does not exist yet. Safe to repeat (upserts).
     """
+    skip_stat = str(wav_path).startswith("/mnt/sd")
     with closing(_write_conn()) as conn:
-        wav_id = catalog.upsert_wav_file(conn, library_root=library_root or wav_path.parent, abs_path=wav_path)
+        wav_id = catalog.upsert_wav_file(
+            conn,
+            library_root=library_root or wav_path.parent,
+            abs_path=wav_path,
+            skip_stat=skip_stat,
+        )
         segmentation_id = catalog.index_gpl_dir(conn, output_dir, wav_id=wav_id)
         conn.commit()
     return segmentation_id
 
 
 def reindex() -> dict[str, Any]:
+    # Never auto-rglob external /mnt/sd* mounts (use backend/scripts/index_siteh.py).
+    safe_wav_roots = [r for r in config.WAV_LIBRARY_ROOTS if not str(r).startswith("/mnt/sd")]
     return index_existing.reindex(
         config.CATALOG_DB,
-        wav_roots=list(config.WAV_LIBRARY_ROOTS),
+        wav_roots=safe_wav_roots,
         runs_roots=list(config.CATALOG_RUNS_ROOTS),
         csv_roots=list(config.CATALOG_CSV_ROOTS),
         result_dirname=config.GPL_RESULT_DIRNAME,

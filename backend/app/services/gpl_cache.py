@@ -2,12 +2,13 @@
 from __future__ import annotations
 
 import json
+import os
 import shutil
 import threading
 from dataclasses import dataclass
 from pathlib import Path
 
-from app.config import GPL_RESULT_DIRNAME, WAV_LIBRARY_ROOTS
+from app.config import GPL_FALLBACK_CACHE_DIR, GPL_RESULT_DIRNAME, WAV_LIBRARY_ROOTS
 from app.services import catalog_service
 from app.services.manifest_builder import build_manifest_from_outputs
 from analysis.GPL_Python.gpl_outputs import PANEL_VERSION, read_panel_header, write_panel_bin
@@ -22,20 +23,39 @@ class CacheStatus:
     repeats_rebuilt: bool = False
 
 
+def _norm_no_stat(path: Path) -> Path:
+    """Normalize an absolute path without ``stat``/``resolve`` (safe on exFAT mounts)."""
+    if path.is_absolute() and str(path).startswith("/mnt/sd"):
+        return Path(os.path.normpath(str(path)))
+    return path.resolve()
+
+
 def containing_root(wav_path: Path) -> Path | None:
-    wav = wav_path.resolve()
+    wav = _norm_no_stat(wav_path)
     for root in WAV_LIBRARY_ROOTS:
-        r = root.resolve()
+        r = _norm_no_stat(root)
         if wav.is_relative_to(r):
             return r
     return None
+
+
+def _use_fallback_cache(root: Path) -> bool:
+    """Use local writable cache for external exFAT mounts or read-only roots."""
+    if str(root).startswith("/mnt/sd"):
+        return True
+    try:
+        return not os.access(root, os.W_OK)
+    except OSError:
+        return True
 
 
 def cache_dir_for(wav_path: Path) -> Path:
     root = containing_root(wav_path)
     if root is None:
         return wav_path.with_suffix(".gpl")
-    rel = wav_path.resolve().relative_to(root)
+    rel = _norm_no_stat(wav_path).relative_to(root)
+    if _use_fallback_cache(root):
+        return GPL_FALLBACK_CACHE_DIR / root.name / rel.with_suffix(".gpl")
     return root / GPL_RESULT_DIRNAME / rel.with_suffix(".gpl")
 
 
@@ -129,8 +149,14 @@ def ensure_cache_output_dir(wav_path: Path) -> Path:
     return output_dir
 
 
-def finalize_gpl_cache(wav_path: Path, output_dir: Path, *, title: str | None = None) -> Path:
-    """Ensure panel.bin + manifest.json exist (panel usually already written by process_v4)."""
+def finalize_gpl_cache(
+    wav_path: Path,
+    output_dir: Path,
+    *,
+    title: str | None = None,
+    manifest: dict | None = None,
+) -> Path:
+    """Ensure panel.bin + manifest.json exist (panel usually already written by process_v4 or hybrid)."""
     cache_dir = cache_dir_for(wav_path)
     cache_dir.mkdir(parents=True, exist_ok=True)
 
@@ -138,7 +164,8 @@ def finalize_gpl_cache(wav_path: Path, output_dir: Path, *, title: str | None = 
     if not panel_path.is_file():
         write_panel_bin(output_dir, title or wav_path.stem)
 
-    manifest = build_manifest_from_outputs(output_dir, job_id=wav_path.stem)
+    if manifest is None:
+        manifest = build_manifest_from_outputs(output_dir, job_id=wav_path.stem)
     manifest_path = cache_dir / "manifest.json"
     manifest_path.write_text(json.dumps(manifest))
     return cache_dir

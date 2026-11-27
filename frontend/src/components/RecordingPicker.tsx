@@ -16,6 +16,7 @@ import {
   parseRecordingWhen,
   partsAreEmpty,
   partsFromStemDateTime,
+  partsToStartPattern,
   partsToStartPrefix,
   startToParts,
   type WallClockField,
@@ -38,12 +39,18 @@ interface Props {
   libraryCacheRefresh?: { fileId: string; nonce: number } | null;
 }
 
-function toFilters(whenText: string, parts: WallClockParts): RecordingFilters {
+type ReadyFilter = 'all' | 'ready' | 'not_ready';
+
+function toFilters(
+  whenText: string,
+  parts: WallClockParts,
+  readyFilter: ReadyFilter,
+): RecordingFilters {
   const filters: RecordingFilters = { site: DEFAULT_SITE, family: 'SOCAL' };
-  const fromParts = partsToStartPrefix(parts);
+  const fromParts = partsToStartPattern(parts);
   const fromWhen = parseRecordingWhen(whenText, DEFAULT_SITE).start;
 
-  // Prefer typed boxes when any are filled; otherwise When paste.
+  // Prefer typed boxes when any are filled (supports any subset, e.g. Hour alone).
   if (fromParts) {
     filters.start = fromParts;
   } else if (fromWhen) {
@@ -51,6 +58,8 @@ function toFilters(whenText: string, parts: WallClockParts): RecordingFilters {
   } else if (whenText.trim() && partsAreEmpty(parts)) {
     filters.q = whenText.trim();
   }
+  if (readyFilter === 'ready') filters.cached = true;
+  else if (readyFilter === 'not_ready') filters.cached = false;
   return filters;
 }
 
@@ -61,6 +70,7 @@ function digitsOnly(raw: string, maxLen: number): string {
 export function RecordingPicker({ onSelectFile, selectedFileId, disabled, libraryCacheRefresh }: Props) {
   const [when, setWhen] = useState('');
   const [parts, setParts] = useState<WallClockParts>({});
+  const [readyFilter, setReadyFilter] = useState<ReadyFilter>('all');
   const [match, setMatch] = useState<MatchResponse | null>(null);
   const [offset, setOffset] = useState(0);
   const [loading, setLoading] = useState(false);
@@ -78,6 +88,7 @@ export function RecordingPicker({ onSelectFile, selectedFileId, disabled, librar
     async (
       whenText: string,
       nextParts: WallClockParts,
+      nextReady: ReadyFilter,
       off: number,
       opts?: { preserveSelection?: boolean; silent?: boolean },
     ) => {
@@ -85,7 +96,7 @@ export function RecordingPicker({ onSelectFile, selectedFileId, disabled, librar
         opts?.silent && listScrollRef.current ? listScrollRef.current.scrollTop : null;
       if (!opts?.silent) setLoading(true);
       setError(null);
-      const filters = toFilters(whenText, nextParts);
+      const filters = toFilters(whenText, nextParts, nextReady);
       try {
         const matchRes = await matchRecordings({ ...filters, offset: off, limit: PAGE_SIZE });
         setMatch(matchRes);
@@ -107,7 +118,7 @@ export function RecordingPicker({ onSelectFile, selectedFileId, disabled, librar
   );
 
   useEffect(() => {
-    load('', {}, 0);
+    load('', {}, 'all', 0);
   }, [load]);
 
   useEffect(() => {
@@ -124,12 +135,12 @@ export function RecordingPicker({ onSelectFile, selectedFileId, disabled, librar
           }
         : prev,
     );
-    load(when, parts, offset, { preserveSelection: true, silent: true });
+    load(when, parts, readyFilter, offset, { preserveSelection: true, silent: true });
   }, [libraryCacheRefresh]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  function scheduleLoad(whenText: string, nextParts: WallClockParts) {
+  function scheduleLoad(whenText: string, nextParts: WallClockParts, nextReady: ReadyFilter) {
     if (debounceRef.current) clearTimeout(debounceRef.current);
-    debounceRef.current = setTimeout(() => load(whenText, nextParts, 0), 250);
+    debounceRef.current = setTimeout(() => load(whenText, nextParts, nextReady, 0), 250);
   }
 
   function applyWhen(raw: string) {
@@ -146,7 +157,7 @@ export function RecordingPicker({ onSelectFile, selectedFileId, disabled, librar
     }
 
     setParts(next);
-    scheduleLoad(raw, next);
+    scheduleLoad(raw, next, readyFilter);
   }
 
   function setPart(field: WallClockField, raw: string) {
@@ -160,19 +171,28 @@ export function RecordingPicker({ onSelectFile, selectedFileId, disabled, librar
     const nextWhen = prefix ?? '';
     setParts(next);
     setWhen(nextWhen);
-    scheduleLoad(nextWhen, next);
+    scheduleLoad(nextWhen, next, readyFilter);
+  }
+
+  function applyReadyFilter(nextReady: ReadyFilter) {
+    if (nextReady === readyFilter) return;
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    setReadyFilter(nextReady);
+    setOffset(0);
+    load(when, parts, nextReady, 0);
   }
 
   function clearAll() {
     setWhen('');
     setParts({});
+    setReadyFilter('all');
     setOffset(0);
-    load('', {}, 0);
+    load('', {}, 'all', 0);
   }
 
   const totalPages = match ? Math.ceil(match.total / PAGE_SIZE) : 0;
   const currentPage = Math.floor(offset / PAGE_SIZE) + 1;
-  const hasFilters = Boolean(when.trim()) || !partsAreEmpty(parts);
+  const hasFilters = Boolean(when.trim()) || !partsAreEmpty(parts) || readyFilter !== 'all';
 
   const boxStyle: CSSProperties = {
     width: '100%',
@@ -347,8 +367,57 @@ export function RecordingPicker({ onSelectFile, selectedFileId, disabled, librar
         </div>
       </div>
 
-      <div style={{ padding: '8px 12px', fontSize: 12, color: '#6b7280', borderBottom: '1px solid #f3f4f6' }}>
-        {match ? `${match.total.toLocaleString()} matching recording${match.total === 1 ? '' : 's'}` : '…'}
+      <div
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          gap: 8,
+          padding: '8px 12px',
+          fontSize: 12,
+          color: '#6b7280',
+          borderBottom: '1px solid #f3f4f6',
+        }}
+      >
+        <span>
+          {match ? `${match.total.toLocaleString()} matching recording${match.total === 1 ? '' : 's'}` : '…'}
+        </span>
+        <div
+          role="group"
+          aria-label="Filter by readiness"
+          style={{ display: 'inline-flex', borderRadius: 6, overflow: 'hidden', border: '1px solid #d1d5db' }}
+        >
+          {(
+            [
+              ['all', 'All'],
+              ['ready', 'Ready'],
+              ['not_ready', 'Not ready'],
+            ] as const
+          ).map(([value, label], idx) => {
+            const active = readyFilter === value;
+            return (
+              <button
+                key={value}
+                type="button"
+                aria-pressed={active}
+                disabled={disabled}
+                onClick={() => applyReadyFilter(value)}
+                style={{
+                  padding: '3px 9px',
+                  border: 'none',
+                  borderLeft: idx > 0 ? '1px solid #d1d5db' : 'none',
+                  background: active ? '#1d4ed8' : '#fff',
+                  color: active ? '#fff' : '#374151',
+                  fontSize: 12,
+                  fontWeight: active ? 600 : 400,
+                  cursor: disabled ? 'default' : 'pointer',
+                }}
+              >
+                {label}
+              </button>
+            );
+          })}
+        </div>
       </div>
 
       <div ref={listScrollRef} style={{ maxHeight: 320, overflowY: 'auto' }}>
@@ -452,7 +521,7 @@ export function RecordingPicker({ onSelectFile, selectedFileId, disabled, librar
           onClick={() => {
             const next = Math.max(0, offset - PAGE_SIZE);
             setOffset(next);
-            load(when, parts, next, { preserveSelection: true });
+            load(when, parts, readyFilter, next, { preserveSelection: true });
           }}
           disabled={offset === 0 || loading}
           style={{
@@ -476,7 +545,7 @@ export function RecordingPicker({ onSelectFile, selectedFileId, disabled, librar
           onClick={() => {
             const next = offset + PAGE_SIZE;
             setOffset(next);
-            load(when, parts, next, { preserveSelection: true });
+            load(when, parts, readyFilter, next, { preserveSelection: true });
           }}
           disabled={!match || offset + PAGE_SIZE >= match.total || loading}
           style={{

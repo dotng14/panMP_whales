@@ -7,6 +7,7 @@ analysis/dict_learning/runs/
 .coverage
 .coverage.*
 backend/data/catalog.sqlite*
+backend/data/gpl_cache/
 
 # Local, uncommitted work files (added on dat-script)
 analysis/matrix_profile/replicate_report/cache_193500/coeffs_matlab_10hz.mat

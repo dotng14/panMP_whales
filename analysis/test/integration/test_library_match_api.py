@@ -145,7 +145,7 @@ def test_match_start_with_t_separator(client):
 
 
 def test_siteh_auto_index_skipped(tmp_path, monkeypatch):
-    """Site H under /mnt/sda must not be rglob'd by ensure_wav_component_index."""
+    """Site H under /mnt/sdb (or /mnt/sda) must not be rglob'd by ensure_wav_component_index."""
     from pathlib import Path
     from unittest.mock import MagicMock
 
@@ -153,7 +153,9 @@ def test_siteh_auto_index_skipped(tmp_path, monkeypatch):
 
     fake_root = MagicMock()
     fake_root.is_dir.return_value = True
-    fake_root.resolve.return_value = Path("/mnt/sda/SiteH")
+    fake_root.is_absolute.return_value = True
+    fake_root.__str__.return_value = "/mnt/sdb/SiteH"
+    fake_root.resolve.return_value = Path("/mnt/sdb/SiteH")
 
     monkeypatch.setattr(config, "CATALOG_DB", tmp_path / "catalog.sqlite")
     roots = config.WAV_LIBRARY_ROOTS
@@ -173,3 +175,43 @@ def test_siteh_auto_index_skipped(tmp_path, monkeypatch):
 
     assert calls == []
     roots[:] = saved
+
+
+def test_siteh_cache_uses_local_fallback(tmp_path, monkeypatch):
+    """External /mnt/sdb/SiteH caches on local SSD (no PermissionError / exFAT writes)."""
+    from pathlib import Path
+
+    from app.services import gpl_cache
+
+    fallback = tmp_path / "gpl_cache"
+    monkeypatch.setattr(gpl_cache, "GPL_FALLBACK_CACHE_DIR", fallback)
+    roots = config.WAV_LIBRARY_ROOTS
+    saved = list(roots)
+    roots[:] = [Path("/mnt/sdb/SiteH")]
+    try:
+        wav = Path("/mnt/sdb/SiteH/SOCAL_H_76/SOCAL_H_76_230426_193500_df100.x.x.wav")
+        got = gpl_cache.cache_dir_for(wav)
+        assert got == fallback / "SiteH" / "SOCAL_H_76" / "SOCAL_H_76_230426_193500_df100.x.x.gpl"
+    finally:
+        roots[:] = saved
+
+
+def test_match_filters_by_cached_status(client, monkeypatch):
+    from app.services import library_service
+
+    monkeypatch.setattr(
+        library_service,
+        "is_gpl_cached",
+        lambda p: "230426_193500" in p.name,
+    )
+
+    ready = client.get("/api/library/match", params={"site": "H", "cached": "true"}).json()
+    assert ready["total"] == 1
+    assert all(e["cached"] is True for e in ready["entries"])
+    assert "230426_193500" in ready["entries"][0]["name"]
+
+    not_ready = client.get("/api/library/match", params={"site": "H", "cached": "false"}).json()
+    assert not_ready["total"] == 3
+    assert all(e["cached"] is False for e in not_ready["entries"])
+    assert all("230426_193500" not in e["name"] for e in not_ready["entries"])
+

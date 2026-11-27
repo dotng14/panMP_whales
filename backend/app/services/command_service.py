@@ -561,6 +561,29 @@ def _persist_randomized_build(
 # --------------------------------------------------------------------------- #
 
 
+def _ensure_segmentation_for_builder(ctx: CommandContext) -> int:
+    """Return ``ctx.segmentation_id``, running GPL on demand if the job only ran hybrid."""
+    if ctx.segmentation_id is not None:
+        return int(ctx.segmentation_id)
+    if not ctx.source_wav:
+        raise CommandError("no GPL segmentation is associated with this job yet")
+
+    wav_path = Path(ctx.source_wav)
+    if ctx.progress_callback is not None:
+        ctx.progress_callback({
+            "message": "Running GPL segmentation (needed for randomized_builder)...",
+            "fraction": 0.0,
+        })
+    from analysis.GPL_Python.process_v4 import ProcessingOrchestrator  # noqa: PLC0415
+    from app.services.gpl_cache import ensure_cache_output_dir, register_gpl_in_catalog  # noqa: PLC0415
+
+    output_dir = ensure_cache_output_dir(wav_path)
+    ProcessingOrchestrator(output_dir).process(wav_path)
+    seg_id = register_gpl_in_catalog(wav_path)
+    ctx.segmentation_id = seg_id
+    return int(seg_id)
+
+
 def _cmd_randomized_builder(
     ctx: CommandContext, kwargs: dict[str, Any], positionals: list[str]
 ) -> CommandResult:
@@ -569,7 +592,7 @@ def _cmd_randomized_builder(
     window_limit = kwargs.pop("__window_limit__", None)
 
     learn_outer = _resolve_function("randomized_builder")
-    seg_id = _require_segmentation(ctx)
+    seg_id = _ensure_segmentation_for_builder(ctx)
 
     from analysis.dict_learning.code.io import load_detections_csv
     from database import catalog

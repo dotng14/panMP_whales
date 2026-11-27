@@ -59,6 +59,7 @@ enum {
     MAX_GPUS = 8,
     MAX_CPU_THREADS = 256,
     POOL_CHUNKS = 8,
+    MAX_SAVE_SPEC_COLS = 60000,
 };
 static const double HOP_SEC = (double)STEP / 12500.0;
 static const double BIN_SEC = 30.0;
@@ -745,6 +746,9 @@ static Chunk *fifo_pop(Fifo *q) {
 static const Model *g_model;
 static Recording *g_recordings;
 static int g_n_recordings;
+static float *g_save_spec_buf = NULL;
+static int g_save_spec_cols = 0;
+static int g_save_spec_stride = 1;
 static pthread_mutex_t g_mu = PTHREAD_MUTEX_INITIALIZER;
 static pthread_cond_t g_free_cv = PTHREAD_COND_INITIALIZER; /* a chunk buffer was returned */
 static pthread_cond_t g_cpu_cv = PTHREAD_COND_INITIALIZER;  /* windows are waiting for a CPU thread */
@@ -868,6 +872,19 @@ static void *cpu_main(void *arg) {
             double t0 = now();
             front_end(m, c->samples + (size_t)window * WINDOW_SAMPLES, &scratch, c->spec + (size_t)window * window_cells,
                       c->cumulative + (size_t)window * (N_TIME + 1));
+            if (g_save_spec_buf && c->recording == 0) {
+                size_t base_col = (size_t)(c->chunk * CHUNK_WINDOWS + window) * N_TIME;
+                const gpu_real *wspec = c->spec + (size_t)window * window_cells;
+                for (int t = 0; t < N_TIME; t++) {
+                    size_t gcol = base_col + (size_t)t;
+                    if (gcol % (size_t)g_save_spec_stride != 0) continue;
+                    size_t ocol = gcol / (size_t)g_save_spec_stride;
+                    if (ocol >= (size_t)g_save_spec_cols) continue;
+                    for (int r = 0; r < m->n_rows; r++)
+                        g_save_spec_buf[(size_t)r * (size_t)g_save_spec_cols + ocol] =
+                            (float)wspec[(size_t)r * N_TIME + t];
+                }
+            }
             t_front += now() - t0;
             pthread_mutex_lock(&g_mu);
             if (++c->done_windows == c->n_windows) {
@@ -1225,17 +1242,32 @@ static void finish_recording(const Model *m, Recording *rec, Pcg64 *rng, const c
 }
 
 int main(int argc, char **argv) {
-    if (argc < 4) {
-        fprintf(stderr, "usage: %s MODEL OUT_DIR WAV [WAV ...]\n", argv[0]);
+    const char *save_spec_path = NULL;
+    int argi = 1;
+    if (argi + 1 < argc && strcmp(argv[argi], "--save-spec") == 0) {
+        save_spec_path = argv[argi + 1];
+        argi += 2;
+    }
+    if (argc - argi < 3) {
+        fprintf(stderr, "usage: %s [--save-spec PATH] MODEL OUT_DIR WAV [WAV ...]\n", argv[0]);
         return 2;
     }
     double began = now();
-    Model model = load_model(argv[1]);
+    Model model = load_model(argv[argi]);
     g_model = &model;
-    const char *out_dir = argv[2];
-    g_n_recordings = argc - 3;
+    const char *out_dir = argv[argi + 1];
+    g_n_recordings = argc - (argi + 2);
     g_recordings = xmalloc((size_t)g_n_recordings * sizeof(Recording));
-    for (int i = 0; i < g_n_recordings; i++) g_recordings[i] = open_recording(argv[3 + i]);
+    for (int i = 0; i < g_n_recordings; i++) g_recordings[i] = open_recording(argv[argi + 2 + i]);
+
+    if (save_spec_path && g_n_recordings > 0 && g_recordings[0].n_windows > 0) {
+        size_t total_cols = (size_t)g_recordings[0].n_windows * N_TIME;
+        g_save_spec_stride = total_cols > MAX_SAVE_SPEC_COLS
+                                 ? (int)((total_cols + MAX_SAVE_SPEC_COLS - 1) / MAX_SAVE_SPEC_COLS)
+                                 : 1;
+        g_save_spec_cols = (int)((total_cols + (size_t)g_save_spec_stride - 1) / (size_t)g_save_spec_stride);
+        g_save_spec_buf = xcalloc((size_t)model.n_rows * (size_t)g_save_spec_cols, sizeof(float));
+    }
 
     init_front_end();
     build_template_host(&model);
@@ -1282,6 +1314,34 @@ int main(int argc, char **argv) {
     for (int i = 0; i < g_n_recordings; i++)
         finish_recording(&model, &g_recordings[i], &rng, out_dir, songs, &n_cycles, &n_conforming);
     fclose(songs);
+
+    if (save_spec_path && g_save_spec_buf) {
+        FILE *sf = fopen(save_spec_path, "wb");
+        if (!sf) die("cannot write", save_spec_path);
+        int32_t hdr_i[5] = {
+            model.n_rows,
+            g_save_spec_cols,
+            g_save_spec_stride,
+            g_recordings[0].n_windows,
+            SOURCE_RATE,
+        };
+        int64_t total_samples = (int64_t)g_recordings[0].n_windows * WINDOW_SAMPLES;
+        double freqs[2] = {
+            (double)FIRST_BIN * 12500.0 / (double)FFTL,
+            (double)(FIRST_BIN + model.n_rows - 1) * 12500.0 / (double)FFTL,
+        };
+        if (fwrite("SPEC0001", 1, 8, sf) != 8 ||
+            fwrite(hdr_i, sizeof(int32_t), 5, sf) != 5 ||
+            fwrite(&total_samples, sizeof(int64_t), 1, sf) != 1 ||
+            fwrite(freqs, sizeof(double), 2, sf) != 2 ||
+            fwrite(g_save_spec_buf, sizeof(float), (size_t)model.n_rows * (size_t)g_save_spec_cols, sf) !=
+                (size_t)model.n_rows * (size_t)g_save_spec_cols) {
+            die("write failed", save_spec_path);
+        }
+        fclose(sf);
+        free(g_save_spec_buf);
+        g_save_spec_buf = NULL;
+    }
     double done = now();
 
     fprintf(stderr, "cycles decoded %d, conforming %d\n", n_cycles, n_conforming);

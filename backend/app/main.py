@@ -7,6 +7,7 @@ from app.routes.catalog import router as catalog_router
 from app.routes.health import router as health_router
 from app.routes.jobs import router as jobs_router
 from app.routes.library import router as library_router
+from app.routes.scan import router as scan_router
 
 app = FastAPI(title="Spectrogram Viewer API")
 
@@ -24,3 +25,4 @@ app.include_router(health_router)
 app.include_router(jobs_router)
 app.include_router(library_router)
 app.include_router(catalog_router)
+app.include_router(scan_router)

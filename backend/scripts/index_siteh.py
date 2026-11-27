@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
 """Hang-safe Site H catalog ingest (manifest + ``skip_stat``).
 
-Does **not** ``rglob`` / ``stat`` ``/mnt/sda/SiteH`` (exFAT metadata I/O can
+Does **not** ``rglob`` / ``stat`` ``/mnt/sdb/SiteH`` (exFAT metadata I/O can
 hang or raise I/O errors). Prefer this over ``python -m database index`` for
 Site H. Paths come from a CSV on a local filesystem; upserts use
 ``skip_stat=True`` so the volume need not be readable at index time.
 
-When ``/mnt/sda`` is down, skip this script and ship the picker from whatever
+When ``/mnt/sdb`` is down, skip this script and ship the picker from whatever
 rows are already in the catalog (``start_time`` backfills from stem date/time).
 
 Default manifest: hybrid-run CSV with ~6800 absolute ``wav_path`` values.
@@ -25,7 +25,8 @@ sys.path[:0] = [str(REPO), str(REPO / "backend")]
 
 from database import catalog  # noqa: E402
 
-SITEH = Path("/mnt/sda/SiteH")
+SITEH = Path("/mnt/sdb/SiteH")
+LEGACY_SITEH_PREFIX = "/mnt/sda/SiteH"
 DEFAULT_DB = REPO / "backend" / "data" / "catalog.sqlite"
 DEFAULT_MANIFEST = Path(
     "/home/yfreund/projects/panMP_whales/analysis/dict_HMM/find_songs/"
@@ -47,6 +48,8 @@ def main() -> int:
     for row in rows:
         raw = (row.get("wav_path") or "").strip()
         if raw.endswith(".wav"):
+            if raw.startswith(LEGACY_SITEH_PREFIX):
+                raw = siteh + raw[len(LEGACY_SITEH_PREFIX):]
             paths.append(Path(raw))
     # unique, stable order
     paths = sorted(set(paths), key=lambda p: str(p))
