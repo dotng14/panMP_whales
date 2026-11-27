@@ -10,7 +10,7 @@ Object-oriented Python translation baseline of the `GPL_v4` core pipeline (`proc
 - Runs GPL-like STFT + whitening + iterative threshold/crop/merge detector
 - Aggregates detections with absolute sample/julian times
 - Writes:
-  - `Detections_<name>.mat`
+  - `Detections_<name>.npy` (Python dict via `np.load(..., allow_pickle=True).item()`)
   - `Labels_<name>.tlab`
   - `CSV_<name>.csv`
   - whitened spectrogram windows as `.npy` in `spectrogram_npy/` (with sidecar JSON)
@@ -23,7 +23,7 @@ Per detection, as MATLAB's `GPL_struct(k)`:
 
 - **Contours**: `cm` (all islands of pixels over `contour_cutoff`), `cm_max` (the strongest
   island), `cm_max2` (the second). Each is kept sparse, as `GPL_sparse.m` keeps it
-  (`values` uint16 of `scale`, 1-based column-major `index`, `size`), in the `.mat`'s `calls`.
+  (`values` uint16 of `scale`, 1-based column-major `index`, `size`), in the `.npy`'s `calls`.
 - **Measurements** of each contour: `duration_sec`, `slope` (Hz/s) with `slope_ci` and
   `slope_y_int`, `freq_bandwidth_hz`, `start_freq_hz` / `end_freq_hz` / `min_freq_hz` /
   `max_freq_hz` / `abs_bandwidth_hz`; per call, `spec_rl` and `spec_noise`.

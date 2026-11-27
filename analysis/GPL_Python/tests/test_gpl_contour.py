@@ -7,7 +7,9 @@ import json
 
 import numpy as np
 import pytest
-from scipy.io import loadmat, wavfile
+from scipy.io import wavfile
+
+from analysis.GPL_Python.gpl_outputs import load_detections_npy
 
 from analysis.GPL_Python import gpl_contour as gc
 from analysis.GPL_Python.gpl_signal import DetectorParams, load_params_file
@@ -137,7 +139,7 @@ def test_switches_choose_contours_columns_and_rl():
     assert gc.describe_call(_call(), _call(), 0.0, _parm(template_on=0)) == {}
 
 
-def test_end_to_end_writes_contour_columns_and_mat_calls(tmp_path):
+def test_end_to_end_writes_contour_columns_and_npy_calls(tmp_path):
     t = np.arange(SR * 8) / SR
     sig = 0.01 * np.random.default_rng(1).standard_normal(t.size)
     on = (t >= 3.0) & (t < 4.6)  # one 1.6 s upsweep, 500 -> 1500 Hz (625 Hz/s)
@@ -158,6 +160,7 @@ def test_end_to_end_writes_contour_columns_and_mat_calls(tmp_path):
     assert float(sweep["cm_duration_sec"]) > 1.0
     assert 450 < float(sweep["cm_slope"]) < 800
     assert 350 < float(sweep["start_freq_hz"]) < 650 and 1350 < float(sweep["end_freq_hz"]) < 1650
-    mat = loadmat(out / "Detections_demo_20240101_000000.mat", simplify_cells=True)
-    calls = mat["calls"] if isinstance(mat["calls"], list) else [mat["calls"]]
+    det = load_detections_npy(out / "Detections_demo_20240101_000000.npy")
+    calls = det["calls"]
     assert len(calls) == len(rows) and {"values", "index", "scale", "size", "slope"} <= set(calls[0]["cm"])
+    assert not (out / "Detections_demo_20240101_000000.mat").exists()

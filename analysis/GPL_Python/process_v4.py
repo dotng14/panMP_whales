@@ -8,7 +8,7 @@ Core behavior:
 - run GPL-like detector per window
 - aggregate detections
 - export whitened spectrogram windows as .npy (+ sidecar JSON)
-- export Detections_*.mat, Labels_*.tlab, CSV_*.csv summaries, with call contours
+- export Detections_*.npy, Labels_*.tlab, CSV_*.csv summaries, with call contours
   and their measurements (``gpl_contour``) as the parameters ask
 
 The contour, measurement and filter switches default to
@@ -173,8 +173,10 @@ class ProcessingOrchestrator:
                     all_detections.append(det)
 
         clean_name = wav_files[0].stem
-        mat_path, tlab_path, csv_path = self.writer.write_detection_outputs(clean_name, all_detections, parm)
-        print(f"Saved MAT:  {mat_path}")
+        detections_path, tlab_path, csv_path = self.writer.write_detection_outputs(
+            clean_name, all_detections, parm
+        )
+        print(f"Saved NPY:  {detections_path}")
         print(f"Saved TLAB: {tlab_path}")
         print(f"Saved CSV:  {csv_path}")
         print(f"Saved NPY spectrograms: {self.writer.npy_dir}")

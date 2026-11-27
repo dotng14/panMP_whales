@@ -11,7 +11,6 @@ from typing import Any
 
 import matplotlib.pyplot as plt
 import numpy as np
-from scipy.io import savemat
 
 from .gpl_contour import CONTOURS, table_columns, table_row
 from .gpl_signal import DetectorParams
@@ -23,20 +22,34 @@ def _cm_value(d: dict[str, Any], key: str) -> float:
     return float(value) if np.isscalar(value) else np.nan
 
 
-def _matlab_safe(value: Any) -> Any:
-    """``value`` with None as NaN, so ``savemat`` can write it."""
+def _npy_safe(value: Any) -> Any:
+    """Make nested detection payloads ``np.save``-friendly (None → NaN; arrays copied)."""
     if value is None:
         return np.nan
     if isinstance(value, dict):
-        return {k: _matlab_safe(v) for k, v in value.items()}
+        return {k: _npy_safe(v) for k, v in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [_npy_safe(v) for v in value]
+    if isinstance(value, np.ndarray):
+        return np.asarray(value)
     return value
 
 
 def _call_struct(d: dict[str, Any]) -> dict[str, Any]:
-    """One detection as MATLAB's ``hyd.detection.calls(k)``: times, flag, contours, measurements, filter flags."""
+    """One detection: times, flag, sparse contours, measurements, filter flags."""
     keep = ("start_time", "end_time", "julian_start_time", "julian_end_time", "boundary_cross_flag",
             "fname", "spec_noise", "spec_rl", "filter_v3", *CONTOURS)
     return {k: d[k] for k in keep if k in d}
+
+
+def load_detections_npy(path: Path) -> dict[str, Any]:
+    """Load ``Detections_*.npy`` written by :meth:`OutputWriter.write_detection_outputs`."""
+    payload = np.load(Path(path), allow_pickle=True)
+    if isinstance(payload, np.ndarray) and payload.shape == ():
+        payload = payload.item()
+    if not isinstance(payload, dict):
+        raise TypeError(f"Expected a dict in {path}, got {type(payload)}")
+    return payload
 
 
 def matlab_datenum_from_datetime(dt: datetime) -> float:
@@ -142,7 +155,7 @@ class OutputWriter:
     def write_detection_outputs(
         self, clean_name: str, detections: list[dict[str, Any]], parm: DetectorParams
     ) -> tuple[Path, Path, Path]:
-        mat_path = self.output_dir / f"Detections_{clean_name}.mat"
+        detections_path = self.output_dir / f"Detections_{clean_name}.npy"
         tlab_path = self.output_dir / f"Labels_{clean_name}.tlab"
         csv_path = self.output_dir / f"CSV_{clean_name}.csv"
 
@@ -160,22 +173,19 @@ class OutputWriter:
                         "end_freq_hz": _cm_value(d, "end_freq_hz"),
                         "min_freq_hz": _cm_value(d, "min_freq_hz"),
                         "max_freq_hz": _cm_value(d, "max_freq_hz"),
-                        "energy": d.get("energy", np.array([])),
+                        "energy": np.asarray(d.get("energy", np.array([])), dtype=np.float64),
                         "fname": d["fname"],
                     }
                 )
                 labels.append(int(d.get("boundary_cross_flag", 0)))
-            savemat(
-                mat_path,
-                {
-                    "Times": np.array(times_struct, dtype=object),
-                    "Labels": np.array(labels, dtype=object),
-                    "parm": _matlab_safe(asdict(parm)),
-                    # Contours (sparse: values / index / scale / size) and their measurements.
-                    "calls": np.array([_call_struct(d) for d in detections], dtype=object),
-                },
-                do_compression=True,
-            )
+            # Sparse contours (values / index / scale / size), measurements, Times, Labels, parm.
+            payload = {
+                "Times": times_struct,
+                "Labels": np.asarray(labels, dtype=np.int64),
+                "parm": _npy_safe(asdict(parm)),
+                "calls": [_npy_safe(_call_struct(d)) for d in detections],
+            }
+            np.save(detections_path, payload, allow_pickle=True)
             with tlab_path.open("w") as f:
                 for d, lbl in zip(detections, labels):
                     # Keep simple: absolute MATLAB datenums in file.
@@ -217,10 +227,14 @@ class OutputWriter:
                         }
                     )
         else:
-            mat_path.write_bytes(b"")
+            np.save(
+                detections_path,
+                {"Times": [], "Labels": np.zeros(0, dtype=np.int64), "parm": _npy_safe(asdict(parm)), "calls": []},
+                allow_pickle=True,
+            )
             tlab_path.write_text("")
             csv_path.write_text("")
-        return mat_path, tlab_path, csv_path
+        return detections_path, tlab_path, csv_path
 
 import json
 import os
