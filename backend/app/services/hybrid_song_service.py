@@ -310,6 +310,35 @@ def _compute_window_u8_float(wav_path_str: str, win_idx: int, n_rows: int) -> np
     return spec.astype(np.float32, copy=False)
 
 
+@functools.lru_cache(maxsize=64)
+def _read_wav_fmt_cached(wav_path_str: str) -> tuple[int, int, int, int] | None:
+    return _read_wav_fmt(Path(wav_path_str))
+
+
+@functools.lru_cache(maxsize=128)
+def _render_window_u8(
+    wav_path_str: str, win_idx: int, n_rows: int
+) -> tuple[bytes, int, int, float, float] | None:
+    """Compute and cache one 75-second full-res uint8 spectrogram tile."""
+    from analysis.dict_HMM.find_songs import spectro  # noqa: PLC0415
+
+    sl = _compute_window_u8_float(wav_path_str, win_idx, n_rows)
+    if sl is None:
+        return None
+    clipped, _, _ = clip_intensity_percentile(sl, hi_percentile=_MAGNITUDE_PERCENTILE)
+    display = display_from_spwhiten(clipped)
+    # Light 2D Gaussian smooth removes background speckle while keeping tonal calls sharp.
+    display = gaussian_filter(display, sigma=(1.2, 0.7))
+    vmin = 0.35
+    norm_max = max(float(np.percentile(display, _MAGNITUDE_PERCENTILE)), 1.75)
+    u8 = np.clip((display - vmin) / (norm_max - vmin) * 255.0, 0, 255).astype(np.uint8)
+    u8 = np.ascontiguousarray(u8)
+
+    base_sec = win_idx * float(spectro.WINDOW_SEC)
+    actual_end = base_sec + u8.shape[1] * float(spectro.HOP_SEC)
+    return u8.tobytes(), int(u8.shape[0]), int(u8.shape[1]), base_sec, actual_end
+
+
 def render_highres_slice(
     wav_path: Path,
     start_sec: float,
@@ -322,7 +351,8 @@ def render_highres_slice(
     Returns ``(raw_u8_bytes, freq_bins, time_cols, actual_start_sec, actual_end_sec)``
     or ``None`` if the WAV is not a readable 10 kHz mono PCM16 file.
     """
-    fmt = _read_wav_fmt(wav_path)
+    wav_str = str(wav_path)
+    fmt = _read_wav_fmt_cached(wav_str)
     if fmt is None:
         return None
     rate, channels, audio_fmt, bits = fmt
@@ -336,10 +366,13 @@ def render_highres_slice(
     win_sec = float(spectro.WINDOW_SEC)
     hop = float(spectro.HOP_SEC)
     w0 = int(s0 // win_sec)
-    w1 = int(s1 // win_sec)
+    w1 = int(max(s0, s1 - 1e-6) // win_sec)
+
+    # Fast path: aligned single 75-second tile (cached end-to-end as uint8 bytes).
+    if w0 == w1 and abs(s0 - w0 * win_sec) < 0.05 and abs(s1 - (w0 + 1) * win_sec) < 0.05:
+        return _render_window_u8(wav_str, w0, n_rows)
 
     windows: list[np.ndarray] = []
-    wav_str = str(wav_path)
     for w in range(w0, w1 + 1):
         arr = _compute_window_u8_float(wav_str, w, n_rows)
         if arr is None:

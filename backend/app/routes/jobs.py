@@ -179,6 +179,7 @@ def get_spectrogram_slice(
             "X-Time-Cols": str(time_cols),
             "X-Start-Sec": f"{actual_start:.6f}",
             "X-End-Sec": f"{actual_end:.6f}",
+            "Cache-Control": "public, max-age=3600",
             "Access-Control-Expose-Headers": "X-Freq-Bins, X-Time-Cols, X-Start-Sec, X-End-Sec",
         },
     )

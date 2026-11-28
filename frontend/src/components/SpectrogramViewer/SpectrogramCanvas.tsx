@@ -9,6 +9,50 @@ export const SPEC_TARGET_H = 400;
 /** Browsers reject canvases near ~16k–32k px; stay well under that (matches LaneCanvas). */
 const MAX_CANVAS_CSS_W = 8192;
 
+/** High-res tile size matches backend spectro.WINDOW_SEC (75 s) for 1:1 cached hits. */
+const TILE_SEC = 75;
+const MAX_CACHED_TILES = 48;
+const MAX_CONCURRENT_TILE_FETCHES = 6;
+const MAX_HIRES_SPAN_SEC = 600;
+/** Prefetch covers this many seconds of audio at the current scroll/playback speed. */
+const LOOKAHEAD_SEC = 4;
+const MIN_AHEAD_TILES = 2;
+const MAX_AHEAD_TILES = 12;
+/** Treat scroll as stopped after this many ms without movement (drops lookahead to minimum). */
+const IDLE_AFTER_MS = 400;
+
+interface HiResTile {
+  startSec: number;
+  endSec: number;
+  freqBins: number;
+  canvas: HTMLCanvasElement;
+}
+
+function buildTileCanvas(mag: Uint8Array, freqBins: number, timeCols: number): HTMLCanvasElement {
+  const off = document.createElement('canvas');
+  off.width = timeCols;
+  off.height = freqBins;
+  const ctx = off.getContext('2d');
+  if (!ctx) return off;
+  const imageData = ctx.createImageData(timeCols, freqBins);
+  const out = imageData.data;
+  for (let row = 0; row < freqBins; row++) {
+    const canvasRow = freqBins - 1 - row;
+    const rowBase = canvasRow * timeCols;
+    const magBase = row * timeCols;
+    for (let col = 0; col < timeCols; col++) {
+      const jetOff = mag[magBase + col] * 4;
+      const px = (rowBase + col) * 4;
+      out[px] = JET_RGBA[jetOff];
+      out[px + 1] = JET_RGBA[jetOff + 1];
+      out[px + 2] = JET_RGBA[jetOff + 2];
+      out[px + 3] = 255;
+    }
+  }
+  ctx.putImageData(imageData, 0, 0);
+  return off;
+}
+
 const NO_LINES: { col: number; color: string }[] = [];
 const NO_CUTOFFS: number[] = [];
 
@@ -74,15 +118,9 @@ export const SpectrogramCanvas = memo(function SpectrogramCanvas({
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const hiResCanvasRef = useRef<HTMLCanvasElement>(null);
   const linesCanvasRef = useRef<HTMLCanvasElement>(null);
-  const [hiResSlice, setHiResSlice] = useState<{
-    startSec: number;
-    endSec: number;
-    freqBins: number;
-    timeCols: number;
-    data: Uint8Array;
-  } | null>(null);
-  const hiResSliceRef = useRef(hiResSlice);
-  hiResSliceRef.current = hiResSlice;
+  const tileCacheRef = useRef<Map<number, HiResTile>>(new Map());
+  const inFlightRef = useRef<Map<number, AbortController>>(new Map());
+  const failedTilesRef = useRef<Set<number>>(new Set());
   const cssWidth = displayWidth ?? timeCols;
   const cssContainerHeight = containerHeight ?? SPEC_TARGET_H;
   const cssHeight = displayHeight ?? cssContainerHeight;
@@ -176,74 +214,216 @@ export const SpectrogramCanvas = memo(function SpectrogramCanvas({
     jobId && audioDurationSec && timeCols > 0 && audioDurationSec / timeCols > 0.25,
   );
 
+  // Reset tile cache and abort in-flight fetches when switching recordings.
   useEffect(() => {
-    setHiResSlice(null);
+    for (const ac of inFlightRef.current.values()) ac.abort();
+    inFlightRef.current.clear();
+    tileCacheRef.current.clear();
+    failedTilesRef.current.clear();
   }, [jobId]);
 
-  useEffect(() => {
-    if (!isDecimated || !jobId || !audioDurationSec || cssWidth <= 0) return;
-    const visStart = Math.max(0, (scrollLeft / cssWidth) * audioDurationSec);
-    const visEnd = Math.min(audioDurationSec, ((scrollLeft + viewWidth) / cssWidth) * audioDurationSec);
-    const span = visEnd - visStart;
-    if (span <= 0 || span > 300) return;
-
-    const cur = hiResSliceRef.current;
-    if (cur && cur.startSec <= visStart + 0.5 && cur.endSec >= visEnd - 0.5) return;
-
-    const pad = Math.min(45, Math.max(15, (300 - span) / 2));
-    const reqStart = Math.max(0, visStart - pad);
-    const reqEnd = Math.min(audioDurationSec, visEnd + pad);
-
-    const ac = new AbortController();
-    const timer = window.setTimeout(() => {
-      const url = `${API_BASE}/api/jobs/${encodeURIComponent(jobId)}/spectrogram-slice?startSec=${reqStart.toFixed(2)}&endSec=${reqEnd.toFixed(2)}`;
-      fetch(url, { signal: ac.signal })
-        .then(async res => {
-          if (!res.ok) return;
-          const fb = Number(res.headers.get('X-Freq-Bins'));
-          const tc = Number(res.headers.get('X-Time-Cols'));
-          const s0 = Number(res.headers.get('X-Start-Sec'));
-          const s1 = Number(res.headers.get('X-End-Sec'));
-          const buf = new Uint8Array(await res.arrayBuffer());
-          if (!fb || !tc || buf.length !== fb * tc) return;
-          setHiResSlice({ startSec: s0, endSec: s1, freqBins: fb, timeCols: tc, data: buf });
-        })
-        .catch(() => {
-          // Aborted or unavailable; fall back to base panel.bin canvas.
-        });
-    }, 120);
-
-    return () => {
-      window.clearTimeout(timer);
-      ac.abort();
-    };
-  }, [isDecimated, jobId, audioDurationSec, scrollLeft, viewWidth, cssWidth]);
-
+  // Stream & prefetch 75-second full-res tiles as the user scrolls or listens,
+  // painting cached tiles directly onto a viewport-sized overlay canvas with
+  // zero React-state lag and without aborting visible/upcoming fetches mid-scroll.
   useEffect(() => {
     const canvas = hiResCanvasRef.current;
-    if (!canvas || !hiResSlice) return;
-    const ctx = canvas.getContext('2d');
-    if (!ctx) return;
-    const { freqBins: fb, timeCols: tc, data: mag } = hiResSlice;
-    canvas.width = tc;
-    canvas.height = fb;
-    const imageData = ctx.createImageData(tc, fb);
-    const out = imageData.data;
-    for (let row = 0; row < fb; row++) {
-      const canvasRow = fb - 1 - row;
-      const rowBase = canvasRow * tc;
-      const magBase = row * tc;
-      for (let col = 0; col < tc; col++) {
-        const jetOff = mag[magBase + col] * 4;
-        const px = (rowBase + col) * 4;
-        out[px] = JET_RGBA[jetOff];
-        out[px + 1] = JET_RGBA[jetOff + 1];
-        out[px + 2] = JET_RGBA[jetOff + 2];
-        out[px + 3] = 255;
+    if (!isDecimated || !jobId || !audioDurationSec || cssWidth <= 0) {
+      for (const ac of inFlightRef.current.values()) ac.abort();
+      inFlightRef.current.clear();
+      if (canvas) {
+        const ctx = canvas.getContext('2d');
+        ctx?.clearRect(0, 0, canvas.width, canvas.height);
       }
+      return;
     }
-    ctx.putImageData(imageData, 0, 0);
-  }, [hiResSlice]);
+
+    let disposed = false;
+    // Scroll-motion state (per effect run): speed/direction drive the lookahead.
+    let velSecPerSec = 0;
+    let scrollDir: 1 | -1 = 1;
+    let lastLeft: number | null = null;
+    let lastT = 0;
+    let lastMoveT = 0;
+    const currentSpeed = () =>
+      performance.now() - lastMoveT < IDLE_AFTER_MS ? Math.abs(velSecPerSec) : 0;
+    const maxTile = Math.max(0, Math.floor(Math.max(0, audioDurationSec - 1e-3) / TILE_SEC));
+
+    const getViewport = () => {
+      const el = scrollRef?.current;
+      const left = el ? el.scrollLeft : 0;
+      const width = el ? Math.max(1, el.clientWidth) : Math.max(1, cssWidth);
+      return { left, width };
+    };
+
+    const paint = (curLeft: number, curWidth: number) => {
+      const c = hiResCanvasRef.current;
+      if (!c) return;
+      const w = Math.max(1, Math.min(Math.ceil(curWidth), MAX_CANVAS_CSS_W));
+      if (c.width !== w) c.width = w;
+      if (c.height !== freqBins) c.height = freqBins;
+      c.style.left = `${curLeft}px`;
+      c.style.width = `${w}px`;
+
+      const ctx = c.getContext('2d');
+      if (!ctx) return;
+      ctx.clearRect(0, 0, w, freqBins);
+
+      const visStart = Math.max(0, (curLeft / cssWidth) * audioDurationSec);
+      const visEnd = Math.min(audioDurationSec, ((curLeft + w) / cssWidth) * audioDurationSec);
+      const span = visEnd - visStart;
+      if (span <= 0 || span > MAX_HIRES_SPAN_SEC) return;
+
+      const firstTile = Math.max(0, Math.floor(visStart / TILE_SEC));
+      const lastTile = Math.min(maxTile, Math.floor(Math.max(visStart, visEnd - 1e-4) / TILE_SEC));
+      const cache = tileCacheRef.current;
+
+      ctx.imageSmoothingEnabled = true;
+      ctx.imageSmoothingQuality = 'high';
+      for (let k = firstTile; k <= lastTile; k++) {
+        const tile = cache.get(k);
+        if (!tile) continue;
+        // Touch LRU
+        cache.delete(k);
+        cache.set(k, tile);
+        const x0 = (tile.startSec / audioDurationSec) * cssWidth - curLeft;
+        const x1 = (tile.endSec / audioDurationSec) * cssWidth - curLeft;
+        ctx.drawImage(tile.canvas, x0, 0, x1 - x0, freqBins);
+      }
+    };
+
+    const schedule = (curLeft: number, curWidth: number) => {
+      if (disposed) return;
+      const w = Math.max(1, Math.min(Math.ceil(curWidth), MAX_CANVAS_CSS_W));
+      const visStart = Math.max(0, (curLeft / cssWidth) * audioDurationSec);
+      const visEnd = Math.min(audioDurationSec, ((curLeft + w) / cssWidth) * audioDurationSec);
+      const span = visEnd - visStart;
+      const inFlight = inFlightRef.current;
+
+      if (span <= 0 || span > MAX_HIRES_SPAN_SEC) {
+        for (const ac of inFlight.values()) ac.abort();
+        inFlight.clear();
+        return;
+      }
+
+      const firstVis = Math.max(0, Math.floor(visStart / TILE_SEC));
+      const lastVis = Math.min(maxTile, Math.floor(Math.max(visStart, visEnd - 1e-4) / TILE_SEC));
+      // Lookahead scales with measured scroll/playback speed: enough tiles to
+      // cover LOOKAHEAD_SEC of audio at the current speed (clamped to a min/max).
+      const speed = currentSpeed();
+      const aheadTiles = Math.min(
+        MAX_AHEAD_TILES,
+        Math.max(MIN_AHEAD_TILES, Math.ceil((speed * LOOKAHEAD_SEC) / TILE_SEC)),
+      );
+      const center = Math.floor(((visStart + visEnd) / 2) / TILE_SEC);
+
+      // Priority order (earliest entries are fetched first):
+      //  1. tiles on screen, nearest to the viewport center first
+      //  2. tiles ahead in the scroll/playback direction, nearest first
+      //  3. one tile behind, in case the direction reverses
+      const visTiles: number[] = [];
+      for (let k = firstVis; k <= lastVis; k++) visTiles.push(k);
+      visTiles.sort((a, b) => Math.abs(a - center) - Math.abs(b - center));
+
+      const ahead: number[] = [];
+      for (let i = 1; i <= aheadTiles; i++) {
+        const k = scrollDir > 0 ? lastVis + i : firstVis - i;
+        if (k >= 0 && k <= maxTile) ahead.push(k);
+      }
+      const behind = scrollDir > 0 ? firstVis - 1 : lastVis + 1;
+      const behindList = behind >= 0 && behind <= maxTile ? [behind] : [];
+
+      const prioritized = [...visTiles, ...ahead, ...behindList];
+      const desired = new Set(prioritized);
+      for (const [k, ac] of inFlight.entries()) {
+        if (!desired.has(k)) {
+          ac.abort();
+          inFlight.delete(k);
+        }
+      }
+
+      const cache = tileCacheRef.current;
+      const failed = failedTilesRef.current;
+      for (const tileIdx of prioritized) {
+        if (inFlight.size >= MAX_CONCURRENT_TILE_FETCHES) break;
+        if (cache.has(tileIdx) || inFlight.has(tileIdx) || failed.has(tileIdx)) continue;
+
+        const reqStart = tileIdx * TILE_SEC;
+        const reqEnd = (tileIdx + 1) * TILE_SEC;
+        const ac = new AbortController();
+        inFlight.set(tileIdx, ac);
+        const url = `${API_BASE}/api/jobs/${encodeURIComponent(jobId)}/spectrogram-slice?startSec=${reqStart}&endSec=${reqEnd}`;
+
+        fetch(url, { signal: ac.signal })
+          .then(async res => {
+            inFlight.delete(tileIdx);
+            if (!res.ok) {
+              if (res.status === 404) failed.add(tileIdx);
+              return;
+            }
+            const fb = Number(res.headers.get('X-Freq-Bins'));
+            const tc = Number(res.headers.get('X-Time-Cols'));
+            const buf = new Uint8Array(await res.arrayBuffer());
+            if (!fb || !tc || buf.length !== fb * tc) return;
+            const tileCanvas = buildTileCanvas(buf, fb, tc);
+            cache.set(tileIdx, {
+              startSec: reqStart,
+              endSec: Math.min(audioDurationSec, reqEnd),
+              freqBins: fb,
+              canvas: tileCanvas,
+            });
+            while (cache.size > MAX_CACHED_TILES) {
+              const oldestKey = cache.keys().next().value;
+              if (oldestKey === undefined) break;
+              cache.delete(oldestKey);
+            }
+            if (!disposed) {
+              const vp = getViewport();
+              paint(vp.left, vp.width);
+              schedule(vp.left, vp.width);
+            }
+          })
+          .catch(() => {
+            inFlight.delete(tileIdx);
+          });
+      }
+    };
+
+    const sync = () => {
+      const { left, width } = getViewport();
+      const now = performance.now();
+      if (lastLeft === null) {
+        lastLeft = left;
+        lastT = now;
+      } else if (left !== lastLeft) {
+        const dt = (now - lastT) / 1000;
+        if (dt > 0 && dt < 1) {
+          // Smoothed scroll speed in audio-seconds per wall-second (sign = direction).
+          const dSec = ((left - lastLeft) / cssWidth) * audioDurationSec;
+          velSecPerSec = 0.5 * velSecPerSec + 0.5 * (dSec / dt);
+        } else {
+          velSecPerSec = 0;
+        }
+        scrollDir = left > lastLeft ? 1 : -1;
+        lastLeft = left;
+        lastT = now;
+        lastMoveT = now;
+      }
+      paint(left, width);
+      schedule(left, width);
+    };
+
+    sync();
+    const el = scrollRef?.current;
+    if (!el) return () => { disposed = true; };
+    el.addEventListener('scroll', sync, { passive: true });
+    const ro = new ResizeObserver(sync);
+    ro.observe(el);
+    return () => {
+      disposed = true;
+      el.removeEventListener('scroll', sync);
+      ro.disconnect();
+    };
+  }, [isDecimated, jobId, audioDurationSec, cssWidth, freqBins, scrollRef]);
 
   useEffect(() => {
     const canvas = linesCanvasRef.current;
@@ -323,15 +503,13 @@ export const SpectrogramCanvas = memo(function SpectrogramCanvas({
           }}
           onClick={handleClick}
         />
-        {hiResSlice && audioDurationSec && audioDurationSec > 0 && (
+        {isDecimated && (
           <canvas
             ref={hiResCanvasRef}
             style={{
               display: 'block',
               position: 'absolute',
               bottom: 0,
-              left: (hiResSlice.startSec / audioDurationSec) * cssWidth,
-              width: ((hiResSlice.endSec - hiResSlice.startSec) / audioDurationSec) * cssWidth,
               height: cssHeight,
               pointerEvents: 'none',
             }}
