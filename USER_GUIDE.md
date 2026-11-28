@@ -1,12 +1,12 @@
 # Whale Song Viewer — User Guide
 
-This guide explains how to browse Site H recordings, inspect spectrograms and detected songs/themes/motifs, and view the 2023 motif dictionary in the web app.
+This guide explains how to browse Site H recordings, inspect spectrograms and detected songs/themes/motifs, review repeated motif matches, and jump back to previously visited times in the web app.
 
 ---
 
 ## 1. Overview
 
-The app has one view, **Recordings**: pick a Site H WAV recording, listen to the audio, inspect the spectrogram, and view detected motifs, themes, and songs.
+The app has one view, **Recordings**: pick a Site H WAV recording, listen to the audio, inspect the spectrogram, view detected motifs, themes, and songs, and browse repeated matches for each motif.
 
 ---
 
@@ -21,7 +21,7 @@ Use the picker at the top to find a file:
   - **Not ready** — Not yet processed; clicking it runs the GPU hybrid detector (`song_detector`, ~5–10 s for a 22-hour 10 kHz WAV) and caches the result.
 - **Example recording with clear songs:** Filter to `2023-04-26 05:48:45` (`SOCAL_H_76_230426_054845_df20.x.wav`). It has 21 conforming songs (Song 1 starts around `264m`; Songs 11–21 around `1156m–1291m` have especially strong calls).
 
-**YF** I think it would be nice to have a history of times observed, so one can easily jump back
+- **History (`🕒 History`):** Located next to the file picker. Whenever you interact with a recording (click the spectrogram to seek, step through songs, click a lane bar or repeated match, or pause playback), that `(file, time)` is saved automatically in your browser. Open **History** to filter and jump straight back to any previously observed recording and timestamp.
 
 ---
 
@@ -31,7 +31,7 @@ Once a recording loads:
 
 - **Play / Pause & Follow:** Play the audio and toggle **Follow** to keep the spectrogram scrolled with the playhead.
 - **Click to seek:** Click anywhere on the spectrogram to jump the playhead to that time.
-- **`px/sec` slider:** Horizontal zoom (time scale). When zoomed in to a window of 5 minutes or less on a long recording, the viewer automatically fetches a full-resolution (`0.123 s/col`) spectrogram slice for the visible area.
+- **`px/sec` slider:** Horizontal zoom (time scale). When zoomed in to a window of 10 minutes or less on a long recording, the viewer streams seamless full-resolution (`0.123 s/col`) tiles on demand and prefetches ahead as you scroll or listen.
 - **`Max Hz` slider:** Vertical zoom (frequency cap, up to `4498 Hz` for 10 kHz recordings). Lowering this to `1500–2000 Hz` makes low-frequency humpback calls larger and easier to read.
 - **`← Song` / `Song →` buttons:** Step directly through detected conforming songs. When a recording with songs first loads, the viewer automatically jumps to **Song 1**.
 
@@ -51,21 +51,12 @@ Click any bar in a lane to highlight and jump to that span on the spectrogram.
 
 ---
 
-## 5. 2023 Motif Dictionary
+## 5. Repeated Matches (2023 Motif Dictionary)
 
-Below the spectrogram (when no per-recording catalog dictionary is selected), the **2023 Motif Dictionary (35 motifs)** strip displays all 35 motifs from the fixed 2023 model:
+Below the spectrogram, the **Repeated Matches** panel shows where each motif from the 2023 model (`song_model.bin`, 35 motifs `M0`–`M49`) fits in the recording, using the matching-pursuit placements produced by `song_detector`:
 
-- Each tile shows the motif ID (`M0`, `M1`, …) and its duration in seconds.
-- **Click any motif** to open a zoomed popup with time (s), frequency (Hz), and relative power (dB) axes.
-**YF** I'd like to bring back the examples of the locations where the motifs fit, like we used to have.
-- Use **◀ Prev / Next ▶** (or `←` / `→` arrow keys) to step through motifs, and `×` or `Esc` to close.
-
-> **Note:** This dictionary is a single fixed model trained on 2023 data (`song_model.bin`) and is used as the reference dictionary for all recordings processed by the hybrid detector.
-
----
-
-## 6. Repeated Matches
+- Use **Prev / Next** to step through motifs. For each motif, the left side displays its average template spectrogram and a distance CDF plot, and the main strip displays the best-matching patches (sorted by lowest unexplained energy, up to 200 per motif).
+- **Play** listens to the stitched matched patches; **Click any patch** (with **Original** enabled) to highlight and jump straight to that location on the main spectrogram above.
+- When a per-recording catalog dictionary is selected in the analysis picker, **Repeated Matches** switches to that catalog dictionary and also enables catalog-specific review/rename/action tools.
 
 **YF** We do need a way to communicate how the processing was done (which version of the dictionary + HMM). I think that visualization by the developers will be done using notebooks and when things are ready, the version of the dictionary and HMM will be updated and used for the visualization. The version will include a separate model for each year. It would be good to have several versions loaded, so that their performance can be compared visually.
-
-- **Repeated Matches:** When a recording has a catalog dictionary selected in the analysis picker, the **Repeated Matches** panel appears below the spectrogram, showing matched patches grouped by template. Clicking a patch highlights its location on the main spectrogram.

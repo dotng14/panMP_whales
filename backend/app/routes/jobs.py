@@ -256,6 +256,35 @@ def get_repeats(job_id: str, dictionaryId: int | None = Query(None)) -> dict:
     return repeat_reviews.stamp_reviews_onto_templates(raw.get("templates", []), reviews)
 
 
+@router.get("/api/jobs/{job_id}/repeat-strip")
+def get_repeat_strip(
+    job_id: str,
+    motifId: int = Query(..., ge=0),
+) -> Response:
+    """Full-resolution (0.123 s/col) stitched spectrogram strip for one 2023 motif's matches."""
+    from app.services.hybrid_song_service import render_hybrid_repeat_strip  # noqa: PLC0415
+
+    job = _require_job(job_id)
+    wav_path = _source_wav(job)
+    if not wav_path.is_file():
+        raise HTTPException(status_code=404, detail="Source WAV not found")
+    result = render_hybrid_repeat_strip(wav_path, job.job_dir / "output", job.filename, motifId)
+    if result is None:
+        raise HTTPException(status_code=404, detail="Full-resolution repeat strip unavailable")
+    raw_bytes, freq_bins, time_cols, widths = result
+    return Response(
+        content=raw_bytes,
+        media_type="application/octet-stream",
+        headers={
+            "X-Freq-Bins": str(freq_bins),
+            "X-Time-Cols": str(time_cols),
+            "X-Chunk-Widths": ",".join(str(w) for w in widths),
+            "Cache-Control": "public, max-age=3600",
+            "Access-Control-Expose-Headers": "X-Freq-Bins, X-Time-Cols, X-Chunk-Widths",
+        },
+    )
+
+
 @router.put("/api/jobs/{job_id}/repeat-reviews")
 def put_repeat_review(
     job_id: str, body: RepeatReviewRequest, dictionaryId: int = Query(...)

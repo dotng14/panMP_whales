@@ -577,3 +577,74 @@ def build_hybrid_repeats(
 
     return {"version": _HYBRID_REPEATS_VERSION, "templates": templates}
 
+
+def render_hybrid_repeat_strip(
+    wav_path: Path,
+    output_dir: Path,
+    wav_name: str,
+    motif_id: int,
+    *,
+    max_chunks: int = _HYBRID_REPEATS_MAX_PER_MOTIF,
+) -> tuple[bytes, int, int, list[int]] | None:
+    """Stitch full-resolution (0.123 s/col) patches for one 2023 motif from ``_tile_u8``."""
+    from analysis.dict_HMM.find_songs import spectro  # noqa: PLC0415
+
+    wav_str = str(wav_path)
+    fmt = _read_wav_fmt_cached(wav_str)
+    if fmt is None:
+        return None
+    rate, channels, audio_fmt, bits = fmt
+    if rate != SOURCE_RATE or channels != 1 or audio_fmt != 1 or bits != 16:
+        return None
+
+    stem = Path(wav_name).stem
+    placements_csv = output_dir / f"placements_{stem}.csv"
+    if not placements_csv.is_file():
+        candidates = sorted(output_dir.glob("placements_*.csv"))
+        if not candidates:
+            return None
+        placements_csv = candidates[0]
+
+    rows: list[tuple[float, float, float]] = []
+    with placements_csv.open(newline="") as f:
+        for row in csv.DictReader(f):
+            try:
+                if int(row["motif"]) != motif_id:
+                    continue
+                rows.append((float(row["unexplained"]), float(row["start_sec"]), float(row["end_sec"])))
+            except (KeyError, ValueError):
+                continue
+
+    if not rows:
+        return None
+    rows.sort(key=lambda r: r[0])
+    if max_chunks > 0 and len(rows) > max_chunks:
+        rows = rows[:max_chunks]
+
+    hop = float(spectro.HOP_SEC)
+    patches: list[np.ndarray] = []
+    widths: list[int] = []
+    tile_arrays: dict[int, np.ndarray] = {}
+
+    for _unexp, s0, s1 in rows:
+        g0 = max(0, int(round(s0 / hop)))
+        g1 = max(g0 + 1, int(round(s1 / hop)))
+        k0 = g0 // TILE_FRAMES
+        k1 = (g1 - 1) // TILE_FRAMES
+        parts: list[np.ndarray] = []
+        for k in range(k0, k1 + 1):
+            arr = tile_arrays.get(k)
+            if arr is None:
+                arr = np.frombuffer(_tile_u8(wav_str, k), dtype=np.uint8).reshape(_SLICE_N_ROWS, TILE_FRAMES)
+                tile_arrays[k] = arr
+            lo = max(0, g0 - k * TILE_FRAMES)
+            hi = min(TILE_FRAMES, g1 - k * TILE_FRAMES)
+            parts.append(arr[:, lo:hi])
+        patch = parts[0] if len(parts) == 1 else np.concatenate(parts, axis=1)
+        patches.append(patch)
+        widths.append(int(patch.shape[1]))
+
+    stitched = np.ascontiguousarray(np.concatenate(patches, axis=1))
+    return stitched.tobytes(), _SLICE_N_ROWS, int(stitched.shape[1]), widths
+
+

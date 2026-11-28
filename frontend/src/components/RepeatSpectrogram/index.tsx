@@ -211,10 +211,73 @@ export function RepeatSpectrogram({
       }),
     };
   }, [activeMatches.templates, stagedLabels, template]);
-  const composed = useMemo(
+  const baseComposed = useMemo(
     () => composeTemplate(source, displayTemplate),
     [source, displayTemplate],
   );
+  const hiResStripCacheRef = useRef<Map<number, ComposedTemplate>>(new Map());
+  const [hiResStrip, setHiResStrip] = useState<{ motifId: number; composed: ComposedTemplate } | null>(null);
+
+  useEffect(() => {
+    hiResStripCacheRef.current.clear();
+    setHiResStrip(null);
+  }, [jobId]);
+
+  useEffect(() => {
+    if (dictionaryId !== null || !displayTemplate || displayTemplate.chunks.length === 0) {
+      setHiResStrip(null);
+      return;
+    }
+    const motifId = displayTemplate.templateNumber;
+    const cached = hiResStripCacheRef.current.get(motifId);
+    if (cached) {
+      setHiResStrip({ motifId, composed: cached });
+      return;
+    }
+    setHiResStrip(null);
+    const ac = new AbortController();
+    const url = `${API_BASE}/api/jobs/${encodeURIComponent(jobId)}/repeat-strip?motifId=${motifId}`;
+    fetch(url, { signal: ac.signal })
+      .then(async res => {
+        if (!res.ok) return;
+        const fb = Number(res.headers.get('X-Freq-Bins'));
+        const tc = Number(res.headers.get('X-Time-Cols'));
+        const widthsRaw = res.headers.get('X-Chunk-Widths') ?? '';
+        const widths = widthsRaw ? widthsRaw.split(',').map(Number) : [];
+        const buf = new Uint8Array(await res.arrayBuffer());
+        if (!fb || !tc || buf.length !== fb * tc || widths.length === 0) return;
+
+        const cutoffs: number[] = [];
+        const cutoffDistances: Array<number | null> = [];
+        const ranges: Array<{ start: number; end: number }> = [];
+        let col = 0;
+        widths.forEach((w, idx) => {
+          ranges.push({ start: col, end: col + w });
+          col += w;
+          cutoffs.push(col);
+          const d = displayTemplate.chunks[idx]?.distanceNorm;
+          cutoffDistances.push(typeof d === 'number' ? d : null);
+        });
+        const built: ComposedTemplate = {
+          magnitude: buf,
+          timeCols: tc,
+          cutoffs,
+          cutoffDistances,
+          ranges,
+        };
+        hiResStripCacheRef.current.set(motifId, built);
+        setHiResStrip({ motifId, composed: built });
+      })
+      .catch(() => {
+        // Aborted or unavailable; fall back to baseComposed.
+      });
+    return () => ac.abort();
+  }, [dictionaryId, jobId, displayTemplate]);
+
+  const usingHiResStrip = Boolean(
+    hiResStrip && displayTemplate && hiResStrip.motifId === displayTemplate.templateNumber,
+  );
+  const composed = usingHiResStrip && hiResStrip ? hiResStrip.composed : baseComposed;
   const averageMagnitude = useMemo(() => {
     const average = template?.average;
     if (!average) return null;
@@ -229,9 +292,11 @@ export function RepeatSpectrogram({
       .map(chunk => chunk.distanceNorm)
       .filter((d): d is number => typeof d === 'number' && Number.isFinite(d));
   }, [displayTemplate]);
-  const repeatDurationSec = source.audioDurationSec
-    ? (composed.timeCols / source.timeCols) * source.audioDurationSec
-    : 0;
+  const repeatDurationSec = usingHiResStrip
+    ? composed.timeCols * (1536 / 12500)
+    : source.audioDurationSec
+      ? (composed.timeCols / source.timeCols) * source.audioDurationSec
+      : 0;
   const displayWidth = repeatDurationSec
     ? Math.max(1, Math.round(repeatDurationSec * pxPerSec))
     : composed.timeCols;
