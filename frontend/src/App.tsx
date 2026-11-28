@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { SpectrogramViewer } from './components/SpectrogramViewer';
 import { RepeatSpectrogram } from './components/RepeatSpectrogram';
 import { useSpectrogramScale } from './components/SpectrogramViewer/useSpectrogramScale';
@@ -6,12 +6,19 @@ import type { SpectrogramViewerProps } from './components/SpectrogramViewer/type
 import { fetchRepeats, type RepeatMatches } from './api/repeats';
 import { WavFileUpload } from './components/WavFileUpload';
 import { RecordingPicker } from './components/RecordingPicker';
-import { HybridDictionaryStrip } from './components/HybridDictionaryStrip';
+import { HistoryButton } from './components/HistoryButton';
 import { AnalysisPicker } from './components/AnalysisPicker';
 import { describeChoice, type AnalysisChoice } from './api/catalog';
 import { JobProgress } from './components/JobProgress';
 import { useGplJob } from './hooks/useGplJob';
 import { generateMockData } from './utils/mockData';
+import {
+  clearViewHistory,
+  loadViewHistory,
+  recordViewHistory,
+  removeViewHistoryEntry,
+  type ViewHistoryEntry,
+} from './utils/viewHistory';
 
 const USE_MOCK = import.meta.env.VITE_USE_MOCK === 'true';
 const INPUT_MODE = import.meta.env.VITE_INPUT_MODE ?? 'library';
@@ -46,6 +53,8 @@ function PanelSection({
   showRepeats,
   onDictionaryChanged,
   onCatalogRefresh,
+  onInteractTime,
+  pendingSeek,
 }: {
   panel: SpectrogramViewerProps;
   analysis: AnalysisChoice | undefined;
@@ -55,6 +64,8 @@ function PanelSection({
   onDictionaryChanged?: (newDictionaryId: number) => void;
   /** The catalog gained a dictionary: refresh pickers that list it. */
   onCatalogRefresh?: () => void;
+  onInteractTime?: (timeSec: number, context?: string) => void;
+  pendingSeek?: { timeSec: number; nonce: number } | null;
 }) {
   const [actionNotice, setActionNotice] = useState<string | null>(null);
   const scale = useSpectrogramScale({
@@ -65,15 +76,15 @@ function PanelSection({
   const [matches, setMatches] = useState<RepeatMatches | null>(null);
   const [repeatsError, setRepeatsError] = useState<string | null>(null);
   const [highlightedRange, setHighlightedRange] = useState<{ startCol: number; endCol: number } | null>(null);
-  const dictionaryId = analysis?.dictionary?.id;
+  const dictionaryId = analysis?.dictionary?.id ?? null;
   const effectiveJobId = panel.jobId ?? jobId;
-  const repeatsWanted = showRepeats && effectiveJobId != null && dictionaryId !== undefined;
+  const repeatsWanted = showRepeats && effectiveJobId != null;
 
   useEffect(() => {
     setMatches(null);
     setRepeatsError(null);
     setHighlightedRange(null);
-    if (!repeatsWanted || effectiveJobId == null || dictionaryId === undefined) return;
+    if (!repeatsWanted || effectiveJobId == null) return;
     let cancelled = false;
     fetchRepeats(effectiveJobId, dictionaryId)
       .then(data => { if (!cancelled) setMatches(data); })
@@ -98,17 +109,18 @@ function PanelSection({
         scale={scale}
         highlightedRange={highlightedRange}
         repeats={repeatsWanted ? matches : null}
+        onInteractTime={onInteractTime}
+        pendingSeek={pendingSeek}
       />
       {actionNotice && (
         <p role="status" style={{ color: '#166534', fontSize: 12, marginTop: 8 }}>{actionNotice}</p>
       )}
-      {showRepeats && effectiveJobId != null && !repeatsWanted && <HybridDictionaryStrip />}
       {repeatsWanted && repeatsError && (
         <p role="alert" style={{ color: '#b91c1c', fontSize: 12, marginTop: 8 }}>
           Repeated matches unavailable: {repeatsError}
         </p>
       )}
-      {repeatsWanted && matches && effectiveJobId != null && dictionaryId !== undefined && (
+      {repeatsWanted && matches && effectiveJobId != null && (
         <div style={{ marginTop: 16 }}>
           <RepeatSpectrogram
             jobId={effectiveJobId}
@@ -179,6 +191,12 @@ export default function App() {
   const [running, setRunning] = useState<{ fileName: string; overlay: string } | null>(
     restoredUi?.running ?? null,
   );
+  const [history, setHistory] = useState<ViewHistoryEntry[]>(() => loadViewHistory());
+  const [pendingSeek, setPendingSeek] = useState<{
+    fileId: string;
+    timeSec: number;
+    nonce: number;
+  } | null>(null);
   const { status, jobId, progress, panels, error, upload, processLibraryFile, reset } = useGplJob({
     onLibraryJobComplete: fileId =>
       setLibraryCacheRefresh({ fileId, nonce: Date.now() }),
@@ -221,7 +239,30 @@ export default function App() {
     setAnalysis(choice);
     setRunning({ fileName: selectedFile.name, overlay: describeChoice(choice) });
     setPickerCollapsed(true);
+    setPendingSeek(null);
     processLibraryFile(selectedFile.fileId);
+  };
+  const handleInteractTime = useCallback((timeSec: number, context?: string) => {
+    if (!selectedFile) return;
+    setHistory(prev => recordViewHistory(prev, {
+      fileId: selectedFile.fileId,
+      fileName: selectedFile.name,
+      timeSec,
+      context,
+    }));
+  }, [selectedFile]);
+  const handleSelectHistory = (entry: ViewHistoryEntry) => {
+    const seek = { fileId: entry.fileId, timeSec: entry.timeSec, nonce: Date.now() };
+    setPendingSeek(seek);
+    if (selectedFile?.fileId === entry.fileId && status === 'complete') {
+      return;
+    }
+    const defaultChoice: AnalysisChoice = { dictionary: null, csv: null };
+    setSelectedFile({ fileId: entry.fileId, name: entry.fileName });
+    setAnalysis(defaultChoice);
+    setRunning({ fileName: entry.fileName, overlay: describeChoice(defaultChoice) });
+    setPickerCollapsed(true);
+    processLibraryFile(entry.fileId);
   };
   // An Actions run built a new dictionary: make it the chosen overlay (keeping the
   // CSV), which refetches the repeats, and refresh the picker's catalog list.
@@ -256,27 +297,35 @@ export default function App() {
       <>
       {!USE_MOCK && (
         <div style={{ marginBottom: 20 }}>
-          {status !== 'idle' && (
-            <button
-              onClick={() => setPickerCollapsed(c => !c)}
-              style={{
-                marginBottom: isPickerHidden ? 0 : 8,
-                padding: '3px 10px',
-                borderRadius: 4,
-                border: '1px solid #d1d5db',
-                background: '#f9fafb',
-                color: '#374151',
-                cursor: 'pointer',
-                fontSize: 12,
-              }}
-            >
-              {isPickerHidden
-                ? running
-                  ? `🎵 ${running.fileName} · ${running.overlay} — change`
-                  : '📂 Show file picker'
-                : '📂 Hide file picker'}
-            </button>
-          )}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: isPickerHidden ? 0 : 8, flexWrap: 'wrap' }}>
+            {status !== 'idle' && (
+              <button
+                onClick={() => setPickerCollapsed(c => !c)}
+                style={{
+                  padding: '3px 10px',
+                  borderRadius: 4,
+                  border: '1px solid #d1d5db',
+                  background: '#f9fafb',
+                  color: '#374151',
+                  cursor: 'pointer',
+                  fontSize: 12,
+                }}
+              >
+                {isPickerHidden
+                  ? running
+                    ? `🎵 ${running.fileName} · ${running.overlay} — change`
+                    : '📂 Show file picker'
+                  : '📂 Hide file picker'}
+              </button>
+            )}
+            <HistoryButton
+              entries={history}
+              onSelect={handleSelectHistory}
+              onRemove={id => setHistory(prev => removeViewHistoryEntry(prev, id))}
+              onClear={() => setHistory(clearViewHistory())}
+              disabled={isProcessing}
+            />
+          </div>
           {/* Hidden rather than unmounted: collapsing must not lose the browsed
               directory, the selected file, or the overlay picker under it. */}
           <div style={{ display: isPickerHidden ? 'none' : 'block' }}>
@@ -324,6 +373,12 @@ export default function App() {
               showRepeats={i === 0}
               onDictionaryChanged={handleDictionaryChanged}
               onCatalogRefresh={handleCatalogRefresh}
+              onInteractTime={i === 0 ? handleInteractTime : undefined}
+              pendingSeek={
+                i === 0 && pendingSeek && selectedFile?.fileId === pendingSeek.fileId
+                  ? { timeSec: pendingSeek.timeSec, nonce: pendingSeek.nonce }
+                  : null
+              }
             />
           </section>
         ))

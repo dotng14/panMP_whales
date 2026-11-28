@@ -240,11 +240,17 @@ def _review_dir(job: JobState, dictionary_id: int) -> Path:
 
 
 @router.get("/api/jobs/{job_id}/repeats")
-def get_repeats(job_id: str, dictionaryId: int = Query(...)) -> dict:
-    """RepeatMatches for a catalog dictionary, with this job's staged relabels stamped on."""
+def get_repeats(job_id: str, dictionaryId: int | None = Query(None)) -> dict:
+    """RepeatMatches for a catalog dictionary, or 2023 hybrid placements when dictionaryId is omitted."""
     from app.services import catalog_service, repeat_reviews  # noqa: PLC0415
+    from app.services.hybrid_song_service import build_hybrid_repeats  # noqa: PLC0415
 
     job = _require_job(job_id)
+    if dictionaryId is None:
+        hybrid = build_hybrid_repeats(job.job_dir / "output", job.filename)
+        if hybrid is None:
+            raise HTTPException(status_code=404, detail="No repeated matches available for this recording")
+        return hybrid
     raw = catalog_service.build_repeats(dictionaryId)
     reviews = repeat_reviews.load_reviews(_review_dir(job, dictionaryId))
     return repeat_reviews.stamp_reviews_onto_templates(raw.get("templates", []), reviews)

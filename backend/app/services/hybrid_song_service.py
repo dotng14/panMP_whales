@@ -8,6 +8,7 @@ with ``--save-spec`` to produce:
 """
 from __future__ import annotations
 
+import base64
 import bisect
 import csv
 import functools
@@ -29,6 +30,7 @@ from analysis.GPL_Python.gpl_outputs import (
     _header_padding,
     clip_intensity_percentile,
     display_from_spwhiten,
+    read_panel_header,
 )
 from app.config import BACKEND_DIR
 
@@ -451,3 +453,127 @@ def render_highres_slice(
     off = g0 - k0 * TILE_FRAMES
     sl = np.ascontiguousarray(full[:, off : off + (g1 - g0)])
     return sl.tobytes(), _SLICE_N_ROWS, int(sl.shape[1]), g0 * hop, g1 * hop
+
+
+# ── Repeated Matches from 2023 motif dictionary (matching-pursuit placements) ─
+
+_MODEL_HOP_SEC = 1536.0 / 12500.0
+_HYBRID_REPEATS_MAX_PER_MOTIF = 200
+_HYBRID_REPEATS_VERSION = 7
+
+
+@functools.lru_cache(maxsize=4)
+def _load_model_averages(mtime: float) -> dict[int, tuple[int, dict[str, Any]]]:
+    """Read 2023 motif averages from ``song_model.bin`` -> ``{motif_id: (width_bins, average_dict)}``."""
+    _ = mtime
+    out: dict[int, tuple[int, dict[str, Any]]] = {}
+    with HYBRID_MODEL_BIN.open("rb") as f:
+        if f.read(8) != b"SONGMDL1":
+            return out
+        n_motifs, n_comp, n_rows, _n_themes = struct.unpack("<4i", f.read(16))
+        ids = np.frombuffer(f.read(n_motifs * 4), dtype="<i4").tolist()
+        widths = np.frombuffer(f.read(n_motifs * 4), dtype="<i4").tolist()
+        for mid, w in zip(ids, widths):
+            mean_arr = np.frombuffer(f.read(n_rows * w * 8), dtype="<f8").reshape((n_rows, w))
+            f.seek(n_comp * n_rows * w * 8, 1)
+            clipped, _, _ = clip_intensity_percentile(mean_arr, hi_percentile=_MAGNITUDE_PERCENTILE)
+            display = display_from_spwhiten(clipped)
+            norm_max = float(np.percentile(display, _MAGNITUDE_PERCENTILE))
+            if norm_max <= 0:
+                norm_max = 1.0
+            u8 = np.clip(display / norm_max * 255.0, 0, 255).astype(np.uint8)
+            out[int(mid)] = (
+                int(w),
+                {
+                    "rows": int(n_rows),
+                    "cols": int(w),
+                    "durationSec": round(w * _MODEL_HOP_SEC, 4),
+                    "normMax": norm_max,
+                    "magnitude": base64.b64encode(np.ascontiguousarray(u8).tobytes()).decode("ascii"),
+                },
+            )
+    return out
+
+
+def build_hybrid_repeats(
+    output_dir: Path,
+    wav_name: str,
+    *,
+    max_per_motif: int = _HYBRID_REPEATS_MAX_PER_MOTIF,
+) -> dict[str, Any] | None:
+    """Build a ``RepeatMatches`` payload from ``placements_*.csv`` + 2023 ``song_model.bin``."""
+    stem = Path(wav_name).stem
+    placements_csv = output_dir / f"placements_{stem}.csv"
+    if not placements_csv.is_file():
+        candidates = sorted(output_dir.glob("placements_*.csv"))
+        if not candidates:
+            return None
+        placements_csv = candidates[0]
+
+    panel_path = output_dir / "panel.bin"
+    if not panel_path.is_file():
+        return None
+    header = read_panel_header(panel_path)
+    time_cols = int(header.get("timeCols", 0))
+    audio_duration_sec = float(header.get("audioDurationSec", 0.0))
+    if time_cols <= 0 or audio_duration_sec <= 0.0:
+        return None
+
+    averages: dict[int, tuple[int, dict[str, Any]]] = {}
+    if HYBRID_MODEL_BIN.is_file():
+        averages = _load_model_averages(HYBRID_MODEL_BIN.stat().st_mtime)
+
+    by_motif: dict[int, list[tuple[float, float, float]]] = {}
+    with placements_csv.open(newline="") as f:
+        for row in csv.DictReader(f):
+            try:
+                mid = int(row["motif"])
+                s0 = float(row["start_sec"])
+                s1 = float(row["end_sec"])
+                unexp = float(row["unexplained"])
+            except (KeyError, ValueError):
+                continue
+            by_motif.setdefault(mid, []).append((unexp, s0, s1))
+
+    motif_ids = sorted(set(averages.keys()) | set(by_motif.keys()))
+    templates: list[dict[str, Any]] = []
+    for mid in motif_ids:
+        rows = by_motif.get(mid, [])
+        # Best matches first (lowest unexplained energy fraction).
+        rows.sort(key=lambda r: r[0])
+        if max_per_motif > 0 and len(rows) > max_per_motif:
+            rows = rows[:max_per_motif]
+
+        chunks: list[dict[str, Any]] = []
+        for idx, (unexp, s0, s1) in enumerate(rows):
+            c0 = max(0, min(time_cols - 1, int(round(s0 / audio_duration_sec * time_cols))))
+            c1 = max(c0 + 1, min(time_cols, int(round(s1 / audio_duration_sec * time_cols))))
+            samp0 = max(0, int(round(s0 * SOURCE_RATE)))
+            samp1 = max(samp0 + 1, int(round(s1 * SOURCE_RATE)))
+            chunks.append({
+                "id": f"template-{mid}:{idx}",
+                "sourceStartCol": c0,
+                "sourceEndCol": c1,
+                "sourceStartSample": samp0,
+                "sourceEndSample": samp1,
+                "windowId": f"w{int(s0 // 75):06d}",
+                "windowStartCol": 0,
+                "amplitude": 1.0,
+                "originalTemplateNumber": mid,
+                "stagedTemplateNumber": mid,
+                "distanceNorm": max(0.0, min(1.0, unexp)),
+            })
+
+        width_bins, avg = averages.get(mid, (None, None))
+        templates.append({
+            "id": f"template-{mid}",
+            "templateNumber": mid,
+            "name": f"M{mid}",
+            "sourceSegmentId": None,
+            "widthBins": width_bins,
+            "chunks": chunks,
+            "average": avg,
+        })
+
+    return {"version": _HYBRID_REPEATS_VERSION, "templates": templates}
+

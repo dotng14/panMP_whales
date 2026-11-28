@@ -41,8 +41,8 @@ const sideTitleStyle: CSSProperties = {
 };
 interface Props {
   jobId: string;
-  /** Catalog dictionary whose matchings are reviewed. */
-  dictionaryId: number;
+  /** Catalog dictionary whose matchings are reviewed, or null for the fixed 2023 hybrid model. */
+  dictionaryId: number | null;
   source: SpectrogramViewerProps;
   matches: RepeatMatches;
   onShowOriginal: (range: { startCol: number; endCol: number } | null) => void;
@@ -429,7 +429,7 @@ export function RepeatSpectrogram({
     : '';
 
   const saveTemplateName = useCallback(async (next: string) => {
-    if (!template) return;
+    if (!template || dictionaryId === null) return;
     const result = await patchJobTemplateLabel(
       jobId,
       template.templateNumber,
@@ -450,6 +450,7 @@ export function RepeatSpectrogram({
     chunk: RepeatTemplate['chunks'][number],
     rawValue: string,
   ) => {
+    if (dictionaryId === null) return false;
     const parsed = Number(rawValue);
     if (rawValue.trim() === '' || !Number.isInteger(parsed) || parsed < 0) {
       setSaveError('Enter a non-negative whole number.');
@@ -667,9 +668,11 @@ export function RepeatSpectrogram({
     onDictionaryChanged?.(newDictionaryId);
   }, [onCatalogRefresh, onDictionaryChanged]);
 
+  const isCatalogDict = dictionaryId !== null;
+
   // Rendered as a sibling of the review root so its keystrokes never reach the
   // review's chunk/playback shortcuts. Kept mounted so progress survives close/reopen.
-  const actionForm = (
+  const actionForm = isCatalogDict ? (
     <RepeatActionForm
       jobId={jobId}
       dictionaryId={dictionaryId}
@@ -678,7 +681,7 @@ export function RepeatSpectrogram({
       onDictionaryChanged={handleActionDictionaryChanged}
       onClose={() => setActionsOpen(false)}
     />
-  );
+  ) : null;
 
   if (activeMatches.templates.length === 0) {
     return (
@@ -686,9 +689,11 @@ export function RepeatSpectrogram({
         <div className="spectrogram-outer" style={{ textAlign: 'center', color: '#6b7280' }}>
           <p style={{ color: '#7c3aed', fontWeight: 600 }}>REPEATED MATCHES</p>
           <p>No repeat templates were found for this recording.</p>
-          <SpectrogramButton onClick={() => setActionsOpen(true)} style={{ padding: '6px 10px' }}>
-            Actions
-          </SpectrogramButton>
+          {isCatalogDict && (
+            <SpectrogramButton onClick={() => setActionsOpen(true)} style={{ padding: '6px 10px' }}>
+              Actions
+            </SpectrogramButton>
+          )}
         </div>
         {actionForm}
       </>
@@ -800,24 +805,28 @@ export function RepeatSpectrogram({
             </SpectrogramButton>
             {/* Submit-rebuild is not ported yet (backend answers 501). Relabels are
                 still saved as you edit; they just do not rebuild the dictionary. */}
-            <SpectrogramButton
-              disabled
-              title="Submit-rebuild is not available yet. Relabels are saved automatically."
-              onClick={() => void handleSubmitReview()}
-              style={{ padding: '6px 10px' }}
-            >
-              {submitting ? 'Submitting…' : 'Submit'}
-            </SpectrogramButton>
-            <SpectrogramButton
-              onClick={() => setActionsOpen(true)}
-              title="Dictionary actions: randomized builder and action history"
-              style={{ padding: '6px 10px' }}
-            >
-              Actions
-            </SpectrogramButton>
+            {isCatalogDict && (
+              <>
+                <SpectrogramButton
+                  disabled
+                  title="Submit-rebuild is not available yet. Relabels are saved automatically."
+                  onClick={() => void handleSubmitReview()}
+                  style={{ padding: '6px 10px' }}
+                >
+                  {submitting ? 'Submitting…' : 'Submit'}
+                </SpectrogramButton>
+                <SpectrogramButton
+                  onClick={() => setActionsOpen(true)}
+                  title="Dictionary actions: randomized builder and action history"
+                  style={{ padding: '6px 10px' }}
+                >
+                  Actions
+                </SpectrogramButton>
+              </>
+            )}
             <span style={{ fontSize: 11, color: '#6b7280', display: 'inline-flex', alignItems: 'center', gap: 4 }}>
               {templateNamed ? template.name : `T ${templateIndex + 1}/${activeMatches.templates.length}`}
-              {template && (
+              {isCatalogDict && template && (
                 <InlineRename
                   value={templateNamed ? (template.name ?? '') : ''}
                   untitled={!templateNamed}

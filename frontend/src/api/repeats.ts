@@ -50,10 +50,12 @@ export interface RepeatMatches {
   templates: RepeatTemplate[];
 }
 
-export async function fetchRepeats(jobId: string, dictionaryId: number): Promise<RepeatMatches> {
-  const response = await fetch(
-    `${API_BASE}/api/jobs/${jobId}/repeats?dictionaryId=${encodeURIComponent(dictionaryId)}`,
-  );
+export async function fetchRepeats(
+  jobId: string,
+  dictionaryId?: number | null,
+): Promise<RepeatMatches> {
+  const query = dictionaryId != null ? `?dictionaryId=${encodeURIComponent(dictionaryId)}` : '';
+  const response = await fetch(`${API_BASE}/api/jobs/${jobId}/repeats${query}`);
   if (!response.ok) throw new Error(`Repeat matches fetch failed: ${response.status}`);
   return response.json() as Promise<RepeatMatches>;
 }

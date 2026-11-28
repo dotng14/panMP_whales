@@ -43,10 +43,16 @@ export function SpectrogramViewer({
   scale: sharedScale,
   highlightedRange = null,
   repeats = null,
+  onInteractTime,
+  pendingSeek = null,
 }: SpectrogramViewerProps & {
   scale?: SpectrogramScale;
   /** Column range to outline and scroll into view (e.g. the repeat chunk being reviewed). */
   highlightedRange?: { startCol: number; endCol: number } | null;
+  /** Called when the user interacts with a time in this recording (for viewing history). */
+  onInteractTime?: (timeSec: number, context?: string) => void;
+  /** External seek target (e.g. chosen from History); jumps playhead + scroll here. */
+  pendingSeek?: { timeSec: number; nonce: number } | null;
 }) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const lineRef = useRef<HTMLDivElement>(null);
@@ -245,8 +251,11 @@ export function SpectrogramViewer({
       audio.pause();
       setPlaying(false);
       if (rafRef.current !== null) cancelAnimationFrame(rafRef.current);
+      if (Number.isFinite(audio.currentTime)) {
+        onInteractTime?.(audio.currentTime, 'Paused');
+      }
     }
-  }, [syncLine, playerId]);
+  }, [syncLine, playerId, onInteractTime]);
 
   const handleColClick = useCallback((col: number) => {
     const audio = audioRef.current;
@@ -254,6 +263,7 @@ export function SpectrogramViewer({
 
     const seekSec = (col / timeCols) * audioDurationSec;
     audio.currentTime = seekSec;
+    onInteractTime?.(seekSec, 'Seek');
 
     const el = scrollRef.current;
     const line = lineRef.current;
@@ -268,7 +278,7 @@ export function SpectrogramViewer({
     if (!audio.paused && rafRef.current === null) {
       rafRef.current = requestAnimationFrame(syncLine);
     }
-  }, [audioDurationSec, timeCols, displayWidth, syncLine]);
+  }, [audioDurationSec, timeCols, displayWidth, syncLine, onInteractTime]);
 
   const activeSong = songStructure?.songs[songIndex] ?? null;
   const activeSongRange = useMemo(() => {
@@ -342,7 +352,7 @@ export function SpectrogramViewer({
     }
   }, [audioDurationSec, timeCols, displayWidth]);
 
-  const jumpToSong = useCallback((index: number) => {
+  const jumpToSong = useCallback((index: number, record = true) => {
     if (!songStructure || !audioDurationSec) return;
     const song = songStructure.songs[index];
     if (!song) return;
@@ -354,9 +364,27 @@ export function SpectrogramViewer({
       endCol: secToCol(song.endSec, audioDurationSec, timeCols),
     };
     jumpToColRange(range);
-  }, [songStructure, audioDurationSec, timeCols, jumpToColRange]);
+    if (record) onInteractTime?.(song.startSec, `Song ${index + 1}`);
+  }, [songStructure, audioDurationSec, timeCols, jumpToColRange, onInteractTime]);
+
+  // Apply an external seek target (e.g. from the History menu).
+  const appliedSeekNonceRef = useRef<number | null>(null);
+  useEffect(() => {
+    if (!pendingSeek || !audioDurationSec || timeCols <= 0) return;
+    if (appliedSeekNonceRef.current === pendingSeek.nonce) return;
+    appliedSeekNonceRef.current = pendingSeek.nonce;
+    const clampedSec = Math.max(0, Math.min(audioDurationSec, pendingSeek.timeSec));
+    const el = scrollRef.current;
+    const line = lineRef.current;
+    const canvasX = (clampedSec / audioDurationSec) * displayWidth;
+    if (el) el.scrollLeft = Math.max(0, canvasX - el.clientWidth / 2);
+    const audio = audioRef.current;
+    if (audio) audio.currentTime = clampedSec;
+    if (line) line.style.transform = `translateX(${canvasX}px)`;
+  }, [pendingSeek, audioDurationSec, timeCols, displayWidth]);
 
   // Auto-jump to Song 1 when songStructure first loads so "Song 1 / N" matches the viewport.
+  // Skip when an explicit pendingSeek (from History) is targeting this recording.
   const autoJumpedSongRef = useRef<SongStructure | null>(null);
   useEffect(() => {
     if (!songStructure || songStructure.songs.length === 0 || !audioDurationSec || timeCols <= 0) {
@@ -364,8 +392,9 @@ export function SpectrogramViewer({
     }
     if (autoJumpedSongRef.current === songStructure) return;
     autoJumpedSongRef.current = songStructure;
-    jumpToSong(0);
-  }, [songStructure, audioDurationSec, timeCols, jumpToSong]);
+    if (pendingSeek) return;
+    jumpToSong(0, false);
+  }, [songStructure, audioDurationSec, timeCols, jumpToSong, pendingSeek]);
 
   // Scroll (without moving the playhead) to an externally highlighted range.
   useEffect(() => {
@@ -376,13 +405,21 @@ export function SpectrogramViewer({
       left: (centerCol / timeCols) * displayWidth - el.clientWidth / 2,
       behavior: 'smooth',
     });
-  }, [highlightedRange, timeCols, displayWidth]);
+    if (audioDurationSec) {
+      onInteractTime?.((highlightedRange.startCol / timeCols) * audioDurationSec, 'Match');
+    }
+  }, [highlightedRange, timeCols, displayWidth, audioDurationSec, onInteractTime]);
 
   const onLaneSelect = useCallback((range: { startCol: number; endCol: number } | null) => {
     setLaneHighlight(range);
     setSongNavActive(false);
-    if (range) jumpToColRange(range);
-  }, [jumpToColRange]);
+    if (range) {
+      jumpToColRange(range);
+      if (audioDurationSec && timeCols > 0) {
+        onInteractTime?.((range.startCol / timeCols) * audioDurationSec, 'Lane');
+      }
+    }
+  }, [jumpToColRange, audioDurationSec, timeCols, onInteractTime]);
 
   // Green line covers the spectrogram only (not the x-axis below)
   const totalH = spectrogramH;
