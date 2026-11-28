@@ -250,6 +250,12 @@ def get_repeats(job_id: str, dictionaryId: int | None = Query(None)) -> dict:
         hybrid = build_hybrid_repeats(job.job_dir / "output", job.filename)
         if hybrid is None:
             raise HTTPException(status_code=404, detail="No repeated matches available for this recording")
+        wav_path = _source_wav(job)
+        if wav_path.is_file():
+            from app.services.hybrid_song_service import prewarm_hybrid_repeat_strips  # noqa: PLC0415
+
+            motif_ids = [int(t["templateNumber"]) for t in hybrid.get("templates", [])]
+            prewarm_hybrid_repeat_strips(wav_path, job.job_dir / "output", job.filename, motif_ids)
         return hybrid
     raw = catalog_service.build_repeats(dictionaryId)
     reviews = repeat_reviews.load_reviews(_review_dir(job, dictionaryId))

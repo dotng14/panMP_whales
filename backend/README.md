@@ -20,27 +20,53 @@ dict_learning CLIs, not from the web app.
    and has one checkbox per kind to hide dictionaries or CSVs. "Spectrogram
    only" shows no overlay. Upload mode skips this step.
 3. **Process** — `POST /api/jobs/from-library` (or `POST /api/jobs` for an
-   upload) creates a job and runs `analysis.GPL_Python.process_v4.ProcessingOrchestrator`
-   on it in the background. For library files, a pre-existing `.gpl` cache
-   (see `app/services/gpl_cache.py`, built by `preprocess.py`) skips straight
-   to "complete" instead of reprocessing.
+   upload) creates a job and runs either the GPU hybrid song-detector
+   (`app/services/hybrid_song_service.py` → `song_detector` with the 2023
+   `song_model.bin` dictionary + 4-theme cyclic HMM, for 10 kHz mono PCM16
+   Site H WAVs) or `analysis.GPL_Python.process_v4.ProcessingOrchestrator` in
+   the background. For library files, a pre-existing `.gpl` cache
+   (see `app/services/gpl_cache.py`) skips straight to "complete" instead of
+   reprocessing.
 4. **Watch progress** — `GET /api/jobs/{id}/events` is a WebSocket that
    reports status until the job completes.
-5. **View** — `GET /api/jobs/{id}/panel` serves the rendered `panel.bin`
-   (spectrogram magnitude + energy arrays); `GET /api/jobs/{id}/audio`
-   streams the source WAV for playback alongside it. A CSV overlay comes from
-   `GET /api/jobs/{id}/song-structure?csvId=` (motif / phrase / theme / song
-   lanes); a dictionary overlay from
-   `GET /api/catalog/dictionaries/{id}/placements` (one atom lane, a box per
-   placement).
+5. **View** —
+   - `GET /api/jobs/{id}/panel` serves the overview `panel.bin`
+     (spectrogram magnitude + energy arrays); `GET /api/jobs/{id}/audio`
+     streams the source WAV for playback alongside it.
+   - `GET /api/jobs/{id}/spectrogram-slice?startSec=&endSec=` serves
+     frame-aligned full-resolution (`0.123 s/col`, 736-row) tiles assembled
+     from 610-frame (`74.9568 s`) cached blocks with block-interpolated
+     whitening floors and fixed display scaling (`0.35`–`1.85`) so tiles join
+     seamlessly. The frontend (`SpectrogramCanvas`) streams visible tiles and
+     prefetches 2–12 tiles ahead based on scroll/playback speed.
+   - `GET /api/jobs/{id}/song-structure?csvId=` serves motif / phrase / theme /
+     song lanes (from the hybrid `song_structure.json` when `csvId` is omitted,
+     or a catalog CSV).
+   - `GET /api/jobs/{id}/repeats` (with optional `dictionaryId`) serves
+     `RepeatMatches` for the **Repeated Matches** panel below the spectrogram:
+     a catalog dictionary when `dictionaryId` is given, or the 2023 model's
+     matching-pursuit placements (`placements_*.csv` + `song_model.bin`
+     averages, top 200 per motif) when omitted.
+   - `GET /api/jobs/{id}/repeat-strip?motifId=` serves the full-resolution
+     (`0.123 s/col`) stitched spectrogram strip for one 2023 motif's matches,
+     disk-cached under `output/repeat_strips/motif_<id>.bin` and pre-warmed in
+     a background thread when `/repeats` is requested.
+   - A catalog dictionary overlay on the main spectrogram comes from
+     `GET /api/catalog/dictionaries/{id}/placements` (one atom lane, a box per
+     placement).
+6. **History (frontend)** — `HistoryButton` (next to the file picker) records
+   `(file, timeSec, context)` in `localStorage` on user interactions (seek,
+   song step, lane click, repeated-match click, or pause) so users can jump
+   straight back to any previously observed recording and timestamp.
 
 ## Layout
 
 | Path                            | Role                                                             |
 | -------------------------------- | ----------------------------------------------------------------- |
-| `app/routes/jobs.py`             | Upload/library job creation, panel + audio serving, job events   |
+| `app/routes/jobs.py`             | Upload/library job creation, panel + audio + high-res slice + repeat-strip serving, job events |
 | `app/routes/library.py`          | Library root listing + directory browsing; the overlay picker's list |
 | `app/routes/catalog.py`          | `/api/catalog/*`: dictionaries, runs, placements, CSVs, labels, feedback, reindex |
+| `app/services/hybrid_song_service.py` | GPU `song_detector` runner, `song_structure.json` builder, seamless 610-frame high-res tile renderer, 2023 `RepeatMatches` + disk-cached `/repeat-strip` builder & pre-warmer |
 | `app/services/catalog_service.py` | Adapter over [`database/`](../database/README.md); read-only for reads |
 | `app/services/song_structure.py` | Song-structure CSV → lanes (by catalog id, or by WAV stem)       |
 | `app/services/pipeline_service.py` | Runs the GPL pipeline for a job in a thread-pool executor      |

@@ -16,6 +16,7 @@ import json
 import re
 import struct
 import subprocess
+import threading
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -578,6 +579,72 @@ def build_hybrid_repeats(
     return {"version": _HYBRID_REPEATS_VERSION, "templates": templates}
 
 
+_REPEAT_STRIP_MAGIC = b"RSTRP001"
+_PREWARM_IN_FLIGHT: set[str] = set()
+_PREWARM_LOCK = threading.Lock()
+
+
+def _repeat_strip_cache_path(output_dir: Path, motif_id: int) -> Path:
+    return output_dir / "repeat_strips" / f"motif_{motif_id}.bin"
+
+
+def _read_cached_repeat_strip(path: Path) -> tuple[bytes, int, int, list[int]] | None:
+    if not path.is_file():
+        return None
+    try:
+        data = path.read_bytes()
+        if len(data) < 20 or data[:8] != _REPEAT_STRIP_MAGIC:
+            return None
+        freq_bins, time_cols, n_chunks = struct.unpack("<3i", data[8:20])
+        widths_end = 20 + n_chunks * 4
+        if len(data) != widths_end + freq_bins * time_cols:
+            return None
+        widths = list(struct.unpack(f"<{n_chunks}i", data[20:widths_end]))
+        return data[widths_end:], freq_bins, time_cols, widths
+    except OSError:
+        return None
+
+
+def _write_cached_repeat_strip(
+    path: Path, raw_bytes: bytes, freq_bins: int, time_cols: int, widths: list[int]
+) -> None:
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        header = (
+            _REPEAT_STRIP_MAGIC
+            + struct.pack("<3i", freq_bins, time_cols, len(widths))
+            + struct.pack(f"<{len(widths)}i", *widths)
+        )
+        tmp = path.with_suffix(".bin.tmp")
+        tmp.write_bytes(header + raw_bytes)
+        tmp.replace(path)
+    except OSError:
+        pass
+
+
+def prewarm_hybrid_repeat_strips(
+    wav_path: Path, output_dir: Path, wav_name: str, motif_ids: list[int]
+) -> None:
+    """Pre-compute and disk-cache repeat strips in a background thread."""
+    key = str(output_dir)
+    with _PREWARM_LOCK:
+        if key in _PREWARM_IN_FLIGHT:
+            return
+        _PREWARM_IN_FLIGHT.add(key)
+
+    def _worker() -> None:
+        try:
+            for mid in motif_ids:
+                if _repeat_strip_cache_path(output_dir, mid).is_file():
+                    continue
+                render_hybrid_repeat_strip(wav_path, output_dir, wav_name, mid)
+        finally:
+            with _PREWARM_LOCK:
+                _PREWARM_IN_FLIGHT.discard(key)
+
+    threading.Thread(target=_worker, name=f"prewarm-strips-{Path(wav_name).stem}", daemon=True).start()
+
+
 def render_hybrid_repeat_strip(
     wav_path: Path,
     output_dir: Path,
@@ -587,6 +654,11 @@ def render_hybrid_repeat_strip(
     max_chunks: int = _HYBRID_REPEATS_MAX_PER_MOTIF,
 ) -> tuple[bytes, int, int, list[int]] | None:
     """Stitch full-resolution (0.123 s/col) patches for one 2023 motif from ``_tile_u8``."""
+    cache_path = _repeat_strip_cache_path(output_dir, motif_id)
+    cached = _read_cached_repeat_strip(cache_path)
+    if cached is not None:
+        return cached
+
     from analysis.dict_HMM.find_songs import spectro  # noqa: PLC0415
 
     wav_str = str(wav_path)
@@ -645,6 +717,9 @@ def render_hybrid_repeat_strip(
         widths.append(int(patch.shape[1]))
 
     stitched = np.ascontiguousarray(np.concatenate(patches, axis=1))
-    return stitched.tobytes(), _SLICE_N_ROWS, int(stitched.shape[1]), widths
+    raw_bytes = stitched.tobytes()
+    time_cols = int(stitched.shape[1])
+    _write_cached_repeat_strip(cache_path, raw_bytes, _SLICE_N_ROWS, time_cols, widths)
+    return raw_bytes, _SLICE_N_ROWS, time_cols, widths
 
 
