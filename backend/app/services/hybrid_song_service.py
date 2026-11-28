@@ -286,28 +286,22 @@ def run_hybrid_pipeline(wav_path: Path, output_dir: Path, title: str) -> dict[st
 
 
 # ── On-demand full-resolution spectrogram slices (0.123 s/col) ───────────────
+#
+# Tiles lie on the 12.5 kHz frame grid: tile k covers frames [k*TILE_FRAMES,
+# (k+1)*TILE_FRAMES), so neighbouring tiles share an exact frame boundary.
+# Each column depends only on global data, so tiles agree at their edges:
+#   * the noise floor (mu) of each row is estimated once per tile-sized block
+#     and linearly interpolated across block centres (no step at tile edges);
+#   * the colour scale is fixed (no per-tile percentile);
+#   * resampling, whitening and smoothing run on a context of CONTEXT_FRAMES
+#     on each side, which is then cropped away.
 
-_SLICE_MAX_SPAN_SEC = 360.0
+_SLICE_MAX_SPAN_SEC = 600.0
 _SLICE_N_ROWS = 736
-
-
-@functools.lru_cache(maxsize=48)
-def _compute_window_u8_float(wav_path_str: str, win_idx: int, n_rows: int) -> np.ndarray | None:
-    """Compute one 75-second full-res whitened spectrogram window (float32, shape n_rows × 609)."""
-    from analysis.dict_HMM.find_songs import spectro  # noqa: PLC0415
-
-    wav_path = Path(wav_path_str)
-    start_sec = win_idx * float(spectro.WINDOW_SEC)
-    audio = spectro.read_seconds(wav_path, start_sec, float(spectro.WINDOW_SEC))
-    expected = spectro.WINDOW_SEC * spectro.SOURCE_RATE
-    if audio.size < expected:
-        if audio.size < spectro.SOURCE_RATE:
-            return None
-        padded = np.zeros(expected, dtype=audio.dtype)
-        padded[: audio.size] = audio
-        audio = padded
-    spec = spectro.window_spectrogram(audio, n_rows)
-    return spec.astype(np.float32, copy=False)
+TILE_FRAMES = 610  # 74.9568 s; a multiple of 5 so 10 kHz tile starts are integers
+CONTEXT_FRAMES = 20  # multiple of 5 for the same reason
+DISPLAY_VMIN = 0.35
+DISPLAY_VMAX = 1.85
 
 
 @functools.lru_cache(maxsize=64)
@@ -315,42 +309,125 @@ def _read_wav_fmt_cached(wav_path_str: str) -> tuple[int, int, int, int] | None:
     return _read_wav_fmt(Path(wav_path_str))
 
 
-@functools.lru_cache(maxsize=128)
-def _render_window_u8(
-    wav_path_str: str, win_idx: int, n_rows: int
-) -> tuple[bytes, int, int, float, float] | None:
-    """Compute and cache one 75-second full-res uint8 spectrogram tile."""
+def _frame_to_sample_10k(frame: int) -> int:
+    """10 kHz sample index of the start of a 12.5 kHz frame (exact for frame % 5 == 0)."""
+    return frame * 1536 * 4 // 5
+
+
+def _read_10k_samples(wav_path: Path, start: int, count: int) -> np.ndarray:
+    """``count`` samples from ``start`` in [-1, 1); samples outside the file read as silence."""
     from analysis.dict_HMM.find_songs import spectro  # noqa: PLC0415
 
-    sl = _compute_window_u8_float(wav_path_str, win_idx, n_rows)
-    if sl is None:
-        return None
-    clipped, _, _ = clip_intensity_percentile(sl, hi_percentile=_MAGNITUDE_PERCENTILE)
-    display = display_from_spwhiten(clipped)
-    # Light 2D Gaussian smooth removes background speckle while keeping tonal calls sharp.
-    display = gaussian_filter(display, sigma=(1.2, 0.7))
-    vmin = 0.35
-    norm_max = max(float(np.percentile(display, _MAGNITUDE_PERCENTILE)), 1.75)
-    u8 = np.clip((display - vmin) / (norm_max - vmin) * 255.0, 0, 255).astype(np.uint8)
-    u8 = np.ascontiguousarray(u8)
+    _rate, offset, n_total = spectro.wav_layout(wav_path)
+    out = np.zeros(count, dtype=np.float64)
+    lo, hi = max(0, start), min(n_total, start + count)
+    if hi > lo:
+        data = np.fromfile(wav_path, dtype="<i2", count=hi - lo, offset=offset + 2 * lo)
+        out[lo - start : hi - start] = data / 32768.0
+    return out
 
-    base_sec = win_idx * float(spectro.WINDOW_SEC)
-    actual_end = base_sec + u8.shape[1] * float(spectro.HOP_SEC)
-    return u8.tobytes(), int(u8.shape[0]), int(u8.shape[1]), base_sec, actual_end
+
+def _padded_magnitudes(wav_path: Path, first_frame: int, n_frames: int) -> np.ndarray:
+    """Magnitudes (rows 0..N, frames) for global frames [first_frame, first_frame + n_frames)."""
+    from scipy.signal import resample_poly  # noqa: PLC0415
+
+    from analysis.dict_HMM.find_songs import spectro  # noqa: PLC0415
+
+    need_12k = (n_frames - 1) * spectro.STEP + spectro.FFTL
+    count_10k = -(-need_12k * 4 // 5) + 16
+    x = _read_10k_samples(wav_path, _frame_to_sample_10k(first_frame), count_10k)
+    audio = resample_poly(x, 5, 4)
+    frames = np.lib.stride_tricks.sliding_window_view(audio, spectro.FFTL)[:: spectro.STEP][:n_frames]
+    spectrum = np.abs(np.fft.rfft(frames * np.hamming(spectro.FFTL), axis=1))
+    # Rows 0..N: one extra row above the kept band so the smoothing sees the same neighbour.
+    return spectrum[:, spectro.FIRST_BIN : spectro.FIRST_BIN + _SLICE_N_ROWS + 1].T
+
+
+def _n_blocks(wav_path: Path) -> int:
+    from analysis.dict_HMM.find_songs import spectro  # noqa: PLC0415
+
+    _rate, _offset, n_total = spectro.wav_layout(wav_path)
+    total_frames = (n_total * 5) // 4 // spectro.STEP
+    return max(1, total_frames // TILE_FRAMES)
+
+
+@functools.lru_cache(maxsize=256)
+def _block_floor(wav_str: str, block: int) -> np.ndarray:
+    """Per-row noise floor (N+1,) from the frames of one tile-sized block only."""
+    from analysis.dict_HMM.find_songs import spectro  # noqa: PLC0415
+
+    wav_path = Path(wav_str)
+    block = min(max(block, 0), _n_blocks(wav_path) - 1)
+    mag = _padded_magnitudes(
+        wav_path,
+        block * TILE_FRAMES - CONTEXT_FRAMES,
+        TILE_FRAMES + 2 * CONTEXT_FRAMES,
+    )
+    mu = spectro.shortest_half_mean(mag[:, CONTEXT_FRAMES : CONTEXT_FRAMES + TILE_FRAMES])
+    return np.maximum(mu, 1e-12)
+
+
+def _column_floors(wav_str: str, tile: int, first_frame: int, n_frames: int) -> np.ndarray:
+    """Noise floor for every column (N+1, n_frames): linear between block centres."""
+    frames = first_frame + np.arange(n_frames)
+    block = frames // TILE_FRAMES
+    offset = frames - block * TILE_FRAMES
+    frac = (offset + 0.5 - TILE_FRAMES / 2) / TILE_FRAMES  # in [-0.5, 0.5)
+    partner = np.where(frac < 0, block - 1, block + 1)
+    weight = np.abs(frac)
+
+    # Blocks needed: tile-1, tile, tile+1 (the padded frames never reach further).
+    stack = np.stack([_block_floor(wav_str, tile + d) for d in (-1, 0, 1)], axis=0)  # (3, N+1)
+    idx_block = block - (tile - 1)
+    idx_partner = partner - (tile - 1)
+    assert idx_block.min() >= 0 and idx_block.max() <= 2
+    assert idx_partner.min() >= 0 and idx_partner.max() <= 2
+    mu_block = stack[idx_block].T  # (N+1, n_frames)
+    mu_partner = stack[idx_partner].T
+    return (1.0 - weight) * mu_block + weight * mu_partner
+
+
+def _whiten_with_floor(mag: np.ndarray, mu: np.ndarray) -> np.ndarray:
+    """Same neighbourhood smoothing as ``spectro.whiten``, with a per-column noise floor."""
+    white = np.abs((mag - mu) / mu)
+    out = 4.0 * white
+    out[1:, :] += white[:-1, :]
+    out[:-1, :] += white[1:, :]
+    out[:, 1:] += white[:, :-1]
+    out[:, :-1] += white[:, 1:]
+    return (out / 8.0)[:_SLICE_N_ROWS]
+
+
+@functools.lru_cache(maxsize=160)
+def _tile_u8(wav_str: str, tile: int) -> bytes:
+    """Colour-mapped uint8 bytes (N, TILE_FRAMES) of one tile, row 0 = lowest frequency."""
+    from scipy.ndimage import gaussian_filter  # noqa: PLC0415
+
+    wav_path = Path(wav_str)
+    first = tile * TILE_FRAMES - CONTEXT_FRAMES
+    n = TILE_FRAMES + 2 * CONTEXT_FRAMES
+    mag = _padded_magnitudes(wav_path, first, n)
+    mu = _column_floors(wav_str, tile, first, n)
+    white = _whiten_with_floor(mag, mu)
+    display = display_from_spwhiten(white)
+    display = gaussian_filter(display, sigma=(1.2, 0.7))
+    u8 = np.clip((display - DISPLAY_VMIN) / (DISPLAY_VMAX - DISPLAY_VMIN) * 255.0, 0, 255)
+    cropped = u8[:, CONTEXT_FRAMES : CONTEXT_FRAMES + TILE_FRAMES].astype(np.uint8)
+    return np.ascontiguousarray(cropped).tobytes()
 
 
 def render_highres_slice(
     wav_path: Path,
     start_sec: float,
     end_sec: float,
-    *,
-    n_rows: int = _SLICE_N_ROWS,
 ) -> tuple[bytes, int, int, float, float] | None:
     """Return full-res (0.123 s/col) uint8 spectrogram slice for [start_sec, end_sec].
 
     Returns ``(raw_u8_bytes, freq_bins, time_cols, actual_start_sec, actual_end_sec)``
     or ``None`` if the WAV is not a readable 10 kHz mono PCM16 file.
     """
+    from analysis.dict_HMM.find_songs import spectro  # noqa: PLC0415
+
     wav_str = str(wav_path)
     fmt = _read_wav_fmt_cached(wav_str)
     if fmt is None:
@@ -359,44 +436,18 @@ def render_highres_slice(
     if rate != SOURCE_RATE or channels != 1 or audio_fmt != 1 or bits != 16:
         return None
 
-    from analysis.dict_HMM.find_songs import spectro  # noqa: PLC0415
-
-    s0 = max(0.0, float(start_sec))
-    s1 = max(s0 + 1.0, min(float(end_sec), s0 + _SLICE_MAX_SPAN_SEC))
-    win_sec = float(spectro.WINDOW_SEC)
     hop = float(spectro.HOP_SEC)
-    w0 = int(s0 // win_sec)
-    w1 = int(max(s0, s1 - 1e-6) // win_sec)
+    g0 = max(0, int(round(float(start_sec) / hop)))
+    g1 = max(g0 + 1, int(round(float(end_sec) / hop)))
+    g1 = min(g1, g0 + int(_SLICE_MAX_SPAN_SEC / hop))
 
-    # Fast path: aligned single 75-second tile (cached end-to-end as uint8 bytes).
-    if w0 == w1 and abs(s0 - w0 * win_sec) < 0.05 and abs(s1 - (w0 + 1) * win_sec) < 0.05:
-        return _render_window_u8(wav_str, w0, n_rows)
-
-    windows: list[np.ndarray] = []
-    for w in range(w0, w1 + 1):
-        arr = _compute_window_u8_float(wav_str, w, n_rows)
-        if arr is None:
-            break
-        windows.append(arr)
-    if not windows:
-        return None
-
-    full = np.concatenate(windows, axis=1)
-    base_sec = w0 * win_sec
-    c0 = max(0, int(round((s0 - base_sec) / hop)))
-    c1 = min(full.shape[1], max(c0 + 1, int(round((s1 - base_sec) / hop))))
-    sl = full[:, c0:c1]
-
-    clipped, _, _ = clip_intensity_percentile(sl, hi_percentile=_MAGNITUDE_PERCENTILE)
-    display = display_from_spwhiten(clipped)
-    # Light 2D Gaussian smooth removes background speckle while keeping tonal calls sharp.
-    display = gaussian_filter(display, sigma=(1.2, 0.7))
-    vmin = 0.35
-    norm_max = max(float(np.percentile(display, _MAGNITUDE_PERCENTILE)), 1.75)
-    u8 = np.clip((display - vmin) / (norm_max - vmin) * 255.0, 0, 255).astype(np.uint8)
-    u8 = np.ascontiguousarray(u8)
-
-    actual_start = base_sec + c0 * hop
-    actual_end = base_sec + c1 * hop
-    return u8.tobytes(), int(u8.shape[0]), int(u8.shape[1]), actual_start, actual_end
-
+    k0 = g0 // TILE_FRAMES
+    k1 = (g1 - 1) // TILE_FRAMES
+    tiles = [
+        np.frombuffer(_tile_u8(wav_str, k), dtype=np.uint8).reshape(_SLICE_N_ROWS, TILE_FRAMES)
+        for k in range(k0, k1 + 1)
+    ]
+    full = np.concatenate(tiles, axis=1)
+    off = g0 - k0 * TILE_FRAMES
+    sl = np.ascontiguousarray(full[:, off : off + (g1 - g0)])
+    return sl.tobytes(), _SLICE_N_ROWS, int(sl.shape[1]), g0 * hop, g1 * hop

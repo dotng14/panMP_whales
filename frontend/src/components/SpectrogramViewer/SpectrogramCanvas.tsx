@@ -9,8 +9,8 @@ export const SPEC_TARGET_H = 400;
 /** Browsers reject canvases near ~16k–32k px; stay well under that (matches LaneCanvas). */
 const MAX_CANVAS_CSS_W = 8192;
 
-/** High-res tile size matches backend spectro.WINDOW_SEC (75 s) for 1:1 cached hits. */
-const TILE_SEC = 75;
+/** High-res tile length: 610 frames of 0.12288 s, matching backend TILE_FRAMES (frame-aligned, seamless). */
+const TILE_SEC = (610 * 1536) / 12500;
 const MAX_CACHED_TILES = 48;
 const MAX_CONCURRENT_TILE_FETCHES = 6;
 const MAX_HIRES_SPAN_SEC = 600;
